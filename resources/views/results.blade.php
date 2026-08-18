@@ -1,0 +1,323 @@
+{{--
+    /results - Phase 1 shell.
+
+    Charts and tables are rendered against the hardcoded fake aggregates in
+    ResultsController. The shapes match what the real `simulation_runs` queries
+    return, so build step 22 swaps the data source and nothing else.
+--}}
+@php
+    $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+    $modeColours = ['fixed' => '#ea580c', 'adaptive' => '#8b5cf6', 'green_wave' => '#059669'];
+    $powerLabels = ['normal' => 'Normal power', 'load_shedding' => 'Load shedding'];
+    $sensorLabels = [
+        'none' => 'None (timer only)',
+        'inductive_loop' => 'Inductive loop',
+        'radar' => 'Radar',
+        'camera' => 'Camera',
+        'magnetometer' => 'Magnetometer',
+    ];
+
+    $byKey = [];
+    foreach ($aggregates as $row) {
+        $byKey["{$row['controller_mode']}|{$row['power_state']}"] = $row;
+    }
+
+    $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
+    $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
+    $select = 'rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+@endphp
+
+<x-app-layout title="Results" wide>
+    <x-slot name="header">
+        <div class="flex flex-wrap items-end justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100">Results</h1>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Aggregates across {{ number_format($totalRuns) }} batch runs · 30 seeded reps per condition
+                </p>
+            </div>
+            @if ($isFakeData)
+                <span class="inline-flex items-center gap-2 rounded-md border border-amber-400 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+                    Phase 1 · placeholder data
+                </span>
+            @endif
+        </div>
+    </x-slot>
+
+    @if ($isFakeData)
+        <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
+            <strong class="font-semibold">Nothing below is measured yet.</strong>
+            Every figure on this page is a hardcoded placeholder shaped like the real aggregate, so the
+            comparison design can be reviewed before there is data to review. Build steps 17–21 generate
+            the real dataset with the headless batch runner; step 22 points these charts at
+            <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>.
+        </div>
+    @endif
+
+    {{-- ONE filter row, scoping everything below it. --}}
+    <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
+        <div>
+            <label for="filter-corridor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Corridor</label>
+            <select id="filter-corridor" class="{{ $select }}">
+                @foreach ($corridors as $corridor)
+                    <option value="{{ $corridor['id'] }}">{{ $corridor['name'] }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label for="filter-sensor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Sensor mode</label>
+            <select id="filter-sensor" class="{{ $select }}">
+                <option value="all">All sensor modes</option>
+                @foreach ($sensorLabels as $key => $label)
+                    <option value="{{ $key }}">{{ $label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
+            Filters are inert in Phase 1. In Phase 2 they scope every chart and table on this page
+            through the same query.
+        </p>
+    </div>
+
+    {{-- ============================================ the research question --}}
+    <section class="mb-8">
+        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
+        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            Paired comparison against Webster-timed fixed-time control on the same seeds. Average wait
+            time is the headline metric; lower is better.
+        </p>
+
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            @foreach ($pairedComparisons as $comparison)
+                @php
+                    $improves = $comparison['wait_improves'];
+                    $tone = $improves
+                        ? 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]'
+                        : 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]';
+                    $figureTone = $improves
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : 'text-rose-700 dark:text-rose-300';
+                @endphp
+                <div class="rounded-lg border {{ $tone }} p-4">
+                    <div class="flex items-center gap-2">
+                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {{ $modeColours[$comparison['mode']] }}"></span>
+                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $modeLabels[$comparison['mode']] }}</span>
+                        <span class="text-[10px] text-slate-500">vs fixed-time</span>
+                    </div>
+                    <div class="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                        {{ $powerLabels[$comparison['power_state']] }}
+                    </div>
+
+                    <div class="mt-3 flex items-baseline gap-2">
+                        <span class="text-3xl font-semibold leading-none {{ $figureTone }}">
+                            {{ $comparison['wait_delta_pct'] > 0 ? '+' : '' }}{{ number_format($comparison['wait_delta_pct'], 1) }}%
+                        </span>
+                        <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $figureTone }}">
+                            <span aria-hidden="true">{{ $improves ? '▼' : '▲' }}</span>
+                            {{ $improves ? 'less waiting' : 'more waiting' }}
+                        </span>
+                    </div>
+                    <p class="mt-0.5 text-[10px] text-slate-500">average wait per vehicle</p>
+
+                    <dl class="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-[11px] dark:border-slate-800">
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-slate-500">Throughput</dt>
+                            <dd class="font-medium text-slate-800 dark:text-slate-200">
+                                {{ $comparison['throughput_delta_pct'] > 0 ? '+' : '' }}{{ number_format($comparison['throughput_delta_pct'], 1) }}%
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-slate-500">Cleared w/o stopping</dt>
+                            <dd class="font-medium text-slate-800 dark:text-slate-200">
+                                {{ $comparison['cleared_delta_pp'] > 0 ? '+' : '' }}{{ number_format($comparison['cleared_delta_pp'], 1) }} pp
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            @endforeach
+        </div>
+    </section>
+
+    {{-- ========================================================= bar trio --}}
+    <section class="mb-8">
+        <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Per-condition means</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Each controller mode under normal power and under load shedding.</p>
+            </div>
+            {{-- Shared legend: identity is text + swatch, never colour alone. --}}
+            <ul class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                @foreach ($controllerModes as $mode)
+                    <li class="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300">
+                        <span class="h-2.5 w-2.5 rounded-full" style="background-color: {{ $modeColours[$mode] }}"></span>
+                        {{ $modeLabels[$mode] }}
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+
+        <div class="grid gap-4 xl:grid-cols-3">
+            @foreach ([
+                ['id' => 'chart-wait', 'title' => 'Average wait time', 'unit' => 'seconds per vehicle', 'better' => 'lower is better'],
+                ['id' => 'chart-throughput', 'title' => 'Throughput', 'unit' => 'vehicles cleared per minute', 'better' => 'higher is better'],
+                ['id' => 'chart-cleared', 'title' => 'Cleared without stopping', 'unit' => '% of vehicles', 'better' => 'higher is better'],
+            ] as $chart)
+                {{-- min-w-0 matters: without it the grid item takes its min-content
+                     width from the canvas, the canvas sizes itself from the item, and
+                     the chart overflows the card. --}}
+                <figure class="min-w-0 {{ $card }} p-4">
+                    <figcaption class="mb-1">
+                        <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">{{ $chart['title'] }}</span>
+                        <span class="text-[10px] text-slate-500">{{ $chart['unit'] }} · {{ $chart['better'] }}</span>
+                    </figcaption>
+                    <div class="relative h-[260px] w-full">
+                        <canvas id="{{ $chart['id'] }}"></canvas>
+                    </div>
+                </figure>
+            @endforeach
+        </div>
+
+        {{-- Table twin for the three charts above. --}}
+        <details class="mt-3 {{ $card }}">
+            <summary class="cursor-pointer px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
+                Show data table
+            </summary>
+            <div class="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
+                <table class="w-full min-w-[720px] text-left text-xs">
+                    <thead class="{{ $tableHead }}">
+                        <tr>
+                            <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
+                            <th scope="col" class="px-4 py-2 font-semibold">Power state</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Runs</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Cleared w/o stop (%)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Recovery (s)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
+                        @foreach ($powerStates as $power)
+                            @foreach ($controllerModes as $mode)
+                                @php $row = $byKey["{$mode}|{$power}"] ?? null; @endphp
+                                @if ($row)
+                                    <tr class="text-slate-700 dark:text-slate-300">
+                                        <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
+                                            <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
+                                            {{ $modeLabels[$mode] }}
+                                        </th>
+                                        <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">{{ $powerLabels[$power] }}</td>
+                                        <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
+                                        <td class="px-4 py-2 text-right">{{ number_format($row['avg_wait_time'], 1) }}</td>
+                                        <td class="px-4 py-2 text-right">{{ number_format($row['throughput_per_min'], 1) }}</td>
+                                        <td class="px-4 py-2 text-right">{{ number_format($row['pct_cleared_without_stop'], 1) }}</td>
+                                        <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
+                                            {{ $row['time_to_recovery_seconds'] === null ? '—' : number_format($row['time_to_recovery_seconds'], 1) }}
+                                        </td>
+                                    </tr>
+                                @endif
+                            @endforeach
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    </section>
+
+    {{-- ========================================================= recovery --}}
+    <section class="mb-8 grid gap-4 xl:grid-cols-[2fr_1fr]">
+        <figure class="min-w-0 {{ $card }} p-4">
+            <figcaption class="mb-1 flex flex-wrap items-end justify-between gap-2">
+                <span>
+                    <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut</span>
+                    <span class="text-[10px] text-slate-500">
+                        average wait, seconds per vehicle · lights dark from 120&nbsp;s to 240&nbsp;s
+                    </span>
+                </span>
+                <span class="text-[10px] text-slate-500">
+                    source: per-tick CSV (§9), not <code class="text-slate-600 dark:text-slate-400">simulation_runs</code>
+                </span>
+            </figcaption>
+            <div class="relative h-[280px] w-full">
+                <canvas id="chart-recovery"></canvas>
+            </div>
+        </figure>
+
+        <figure class="min-w-0 {{ $card }} p-4">
+            <figcaption class="mb-1">
+                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery</span>
+                <span class="text-[10px] text-slate-500">seconds back to pre-cut wait · lower is better</span>
+            </figcaption>
+            <div class="relative h-[280px] w-full">
+                <canvas id="chart-recovery-time"></canvas>
+            </div>
+        </figure>
+    </section>
+
+    {{-- ====================================================== recent runs --}}
+    <section class="mb-10">
+        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Recent runs</h2>
+        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            One row per completed batch run. The seed plus the corridor config is enough to reproduce any
+            row exactly.
+        </p>
+
+        <div class="overflow-x-auto {{ $card }}">
+            <table class="w-full min-w-[860px] text-left text-xs">
+                <thead class="{{ $tableHead }}">
+                    <tr>
+                        <th scope="col" class="px-4 py-2.5 font-semibold">Run</th>
+                        <th scope="col" class="px-4 py-2.5 font-semibold">Seed</th>
+                        <th scope="col" class="px-4 py-2.5 font-semibold">Controller</th>
+                        <th scope="col" class="px-4 py-2.5 font-semibold">Power</th>
+                        <th scope="col" class="px-4 py-2.5 font-semibold">Sensor</th>
+                        <th scope="col" class="px-4 py-2.5 text-right font-semibold">Avg wait (s)</th>
+                        <th scope="col" class="px-4 py-2.5 text-right font-semibold">Thru (/min)</th>
+                        <th scope="col" class="px-4 py-2.5 text-right font-semibold">No-stop (%)</th>
+                        <th scope="col" class="px-4 py-2.5 text-right font-semibold">Recovery (s)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
+                    @foreach ($recentRuns as $run)
+                        <tr class="text-slate-700 dark:text-slate-300">
+                            <td class="whitespace-nowrap px-4 py-2 font-mono text-slate-400 dark:text-slate-500">#{{ $run['id'] }}</td>
+                            <td class="whitespace-nowrap px-4 py-2 font-mono text-slate-500 dark:text-slate-400">{{ $run['seed'] }}</td>
+                            <td class="whitespace-nowrap px-4 py-2">
+                                <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$run['controller_mode']] }}"></span>
+                                {{ $modeLabels[$run['controller_mode']] }}
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-2">
+                                @if ($run['power_state'] === 'load_shedding')
+                                    <span class="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">Load shedding</span>
+                                @else
+                                    <span class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">Normal</span>
+                                @endif
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">
+                                {{ $run['sensor_mode'] === null ? '—' : $sensorLabels[$run['sensor_mode']] }}
+                            </td>
+                            <td class="px-4 py-2 text-right">{{ number_format($run['avg_wait_time'], 1) }}</td>
+                            <td class="px-4 py-2 text-right">{{ number_format($run['throughput_per_min'], 1) }}</td>
+                            <td class="px-4 py-2 text-right">{{ number_format($run['pct_cleared_without_stop'], 1) }}</td>
+                            <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
+                                {{ $run['time_to_recovery_seconds'] === null ? '—' : number_format($run['time_to_recovery_seconds'], 1) }}
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    @php
+        $chartPayload = [
+            'aggregates' => $aggregates,
+            'controllerModes' => $controllerModes,
+            'powerStates' => $powerStates,
+            'recoveryTimeline' => $recoveryTimeline,
+        ];
+    @endphp
+    <script type="application/json" id="results-data">@json($chartPayload)</script>
+
+    @vite('resources/js/results.js')
+</x-app-layout>

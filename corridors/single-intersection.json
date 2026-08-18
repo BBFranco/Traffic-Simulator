@@ -1,0 +1,47 @@
+{
+  "id": "single-intersection",
+  "sortOrder": 3,
+  "name": "Single 4-Way Intersection (debug)",
+  "description": "One signalised 4-way intersection. This is the config build steps 6-10 work against: controller, sensor and load-shedding logic are far easier to debug here than on the full grid.",
+  "meta": {
+    "geometryUnits": "metres",
+    "axes": "x increases east, y increases south (screen convention)"
+  },
+  "defaults": {
+    "laneWidthM": 3.5,
+    "carLengthM": 4.5,
+    "crossStreetStubLengthM": 220,
+    "sensorMode": "inductive_loop",
+    "connectorMode": "fixed",
+    "handedness": "left"
+  },
+  "arterials": [
+    {
+      "id": "main",
+      "name": "Main Street (eastbound)",
+      "shortName": "Main St",
+      "oneWay": true,
+      "direction": "eastbound",
+      "lanes": 4,
+      "targetSpeedKph": 50,
+      "mode": "fixed",
+      "origin": { "xM": 0, "yM": 0 },
+      "approachLengthM": 260,
+      "exitLengthM": 260,
+      "demand": {
+        "spawnRatePerLanePerMin": 9,
+        "saturationFlowPerLanePerHour": 1900
+      },
+      "intersections": [
+        {
+          "id": "main_1",
+          "name": "Main & Cross",
+          "crossStreetName": "Cross St",
+          "crossStreetLanes": 2,
+          "distanceToNextM": null
+        }
+      ]
+    }
+  ],
+  "connectors": []
+}

@@ -1,0 +1,90 @@
+{
+  "id": "two-intersection-test",
+  "sortOrder": 2,
+  "name": "Two-Intersection Test Corridor",
+  "description": "Build step 11: the smallest config that still exercises the data-driven loader, two arterials and a connector - one offset link in the green-wave chain, one cross-route. Verify this before loading the full Hatfield grid.",
+  "meta": {
+    "geometryUnits": "metres",
+    "axes": "x increases east, y increases south (screen convention)"
+  },
+  "defaults": {
+    "laneWidthM": 3.5,
+    "carLengthM": 4.5,
+    "crossStreetStubLengthM": 70,
+    "sensorMode": "inductive_loop",
+    "connectorMode": "fixed",
+    "handedness": "left"
+  },
+  "arterials": [
+    {
+      "id": "north",
+      "name": "North Street (westbound)",
+      "shortName": "North St",
+      "oneWay": true,
+      "direction": "westbound",
+      "lanes": 3,
+      "targetSpeedKph": 50,
+      "mode": "fixed",
+      "origin": { "xM": 300, "yM": 0 },
+      "approachLengthM": 220,
+      "exitLengthM": 220,
+      "demand": {
+        "spawnRatePerLanePerMin": 9,
+        "saturationFlowPerLanePerHour": 1900
+      },
+      "intersections": [
+        { "id": "n_1", "name": "North & Second", "distanceToNextM": 300 },
+        { "id": "n_2", "name": "North & First", "distanceToNextM": null }
+      ]
+    },
+    {
+      "id": "south",
+      "name": "South Street (eastbound)",
+      "shortName": "South St",
+      "oneWay": true,
+      "direction": "eastbound",
+      "lanes": 3,
+      "targetSpeedKph": 50,
+      "mode": "fixed",
+      "origin": { "xM": 0, "yM": 130 },
+      "approachLengthM": 220,
+      "exitLengthM": 220,
+      "demand": {
+        "spawnRatePerLanePerMin": 9,
+        "saturationFlowPerLanePerHour": 1900
+      },
+      "intersections": [
+        { "id": "s_1", "name": "South & First", "distanceToNextM": 300 },
+        { "id": "s_2", "name": "South & Second", "distanceToNextM": null }
+      ]
+    }
+  ],
+  "connectors": [
+    {
+      "id": "conn_first",
+      "name": "First St",
+      "lanes": 2,
+      "twoWay": true,
+      "linksArterialNodes": ["s_1", "n_2"],
+      "crossChance": 0.2,
+      "mode": "fixed",
+      "demand": {
+        "spawnRatePerLanePerMin": 4,
+        "saturationFlowPerLanePerHour": 1800
+      }
+    },
+    {
+      "id": "conn_second",
+      "name": "Second St",
+      "lanes": 2,
+      "twoWay": true,
+      "linksArterialNodes": ["s_2", "n_1"],
+      "crossChance": 0.2,
+      "mode": "fixed",
+      "demand": {
+        "spawnRatePerLanePerMin": 4,
+        "saturationFlowPerLanePerHour": 1800
+      }
+    }
+  ]
+}
