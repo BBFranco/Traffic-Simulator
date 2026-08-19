@@ -115,9 +115,13 @@ files from disk — one source of truth for both the browser and Node.
 - **left-hand traffic** (South Africa): for a heading, the lanes carrying it and
   its signal head are on the left of the centreline
 
-> The block distances in the default config are the spec's estimates, not
-> measured. Replace them with Google Maps distances at build step 15 — they change
-> the green-wave timing, not just the picture.
+**Default scenario geometry.** Cross-streets west to east along Pretorius
+(inbound/eastbound) are **Jan Shoba, Grosvenor, Hilda, Festival**, a uniform
+**245 m** apart; Francis Baard runs the same block sequence in reverse, being
+outbound/westbound. Because every block is the same length, the green-wave offset
+chain is a constant step — 245 m ÷ 13.89 m/s ≈ **17.6 s per intersection** at the
+50 km/h target speed — which makes the progression band unusually easy to verify
+by hand at build step 14.
 
 ---
 

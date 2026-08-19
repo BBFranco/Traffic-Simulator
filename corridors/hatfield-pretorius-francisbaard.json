@@ -2,11 +2,12 @@
   "id": "hatfield-pretorius-francisbaard",
   "sortOrder": 1,
   "name": "Hatfield Pretorius / Francis Baard Grid",
-  "description": "Default scenario: two parallel one-way arterials into Hatfield, Pretoria, each with 4 signalised intersections, linked by 4 signalised two-way cross-streets.",
+  "description": "Default scenario: two parallel one-way arterials into Hatfield, Pretoria, each with 4 signalised intersections, linked by 4 signalised two-way cross-streets 245 m apart.",
   "meta": {
     "geometryUnits": "metres",
     "axes": "x increases east, y increases south (screen convention)",
-    "distanceSource": "PLACEHOLDER - block distances are the spec's estimates. Replace with measured Google Maps distances at build step 15; the green-wave offset chain reads distanceToNextM directly, so these numbers change the timing, not just the drawing."
+    "crossStreetOrder": "West to east along Pretorius (inbound/eastbound): Jan Shoba, Grosvenor, Hilda, Festival. Francis Baard runs the same block sequence in reverse, being outbound/westbound.",
+    "distanceSource": "Uniform 245 m block spacing, as specified. Because every block is the same length, the green wave offset chain is a constant step: 245 m / 13.89 m/s = 17.6 s per intersection at the 50 km/h target speed."
   },
   "defaults": {
     "laneWidthM": 3.5,
@@ -26,7 +27,7 @@
       "lanes": 4,
       "targetSpeedKph": 50,
       "mode": "fixed",
-      "origin": { "xM": 890, "yM": 0 },
+      "origin": { "xM": 735, "yM": 0 },
       "approachLengthM": 220,
       "exitLengthM": 220,
       "demand": {
@@ -34,10 +35,10 @@
         "saturationFlowPerLanePerHour": 1900
       },
       "intersections": [
-        { "id": "fb_1", "name": "Francis Baard & Festival", "distanceToNextM": 310 },
-        { "id": "fb_2", "name": "Francis Baard & Duncan", "distanceToNextM": 280 },
-        { "id": "fb_3", "name": "Francis Baard & Grosvenor", "distanceToNextM": 300 },
-        { "id": "fb_4", "name": "Francis Baard & Hilda", "distanceToNextM": null }
+        { "id": "fb_1", "name": "Francis Baard & Festival", "distanceToNextM": 245 },
+        { "id": "fb_2", "name": "Francis Baard & Hilda", "distanceToNextM": 245 },
+        { "id": "fb_3", "name": "Francis Baard & Grosvenor", "distanceToNextM": 245 },
+        { "id": "fb_4", "name": "Francis Baard & Jan Shoba", "distanceToNextM": null }
       ]
     },
     {
@@ -57,17 +58,17 @@
         "saturationFlowPerLanePerHour": 1900
       },
       "intersections": [
-        { "id": "pt_1", "name": "Pretorius & Hilda", "distanceToNextM": 300 },
-        { "id": "pt_2", "name": "Pretorius & Grosvenor", "distanceToNextM": 280 },
-        { "id": "pt_3", "name": "Pretorius & Duncan", "distanceToNextM": 310 },
+        { "id": "pt_1", "name": "Pretorius & Jan Shoba", "distanceToNextM": 245 },
+        { "id": "pt_2", "name": "Pretorius & Grosvenor", "distanceToNextM": 245 },
+        { "id": "pt_3", "name": "Pretorius & Hilda", "distanceToNextM": 245 },
         { "id": "pt_4", "name": "Pretorius & Festival", "distanceToNextM": null }
       ]
     }
   ],
   "connectors": [
     {
-      "id": "conn_hilda",
-      "name": "Hilda St",
+      "id": "conn_jan_shoba",
+      "name": "Jan Shoba St",
       "lanes": 2,
       "twoWay": true,
       "linksArterialNodes": ["pt_1", "fb_4"],
@@ -92,8 +93,8 @@
       }
     },
     {
-      "id": "conn_duncan",
-      "name": "Duncan St",
+      "id": "conn_hilda",
+      "name": "Hilda St",
       "lanes": 2,
       "twoWay": true,
       "linksArterialNodes": ["pt_3", "fb_2"],
