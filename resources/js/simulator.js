@@ -84,6 +84,8 @@ const el = {
     corridorSelect: document.getElementById('corridor-select'),
     corridorDescription: document.getElementById('corridor-description'),
     corridorFacts: document.getElementById('corridor-facts'),
+    corridorError: document.getElementById('corridor-error'),
+    corridorErrorMessage: document.getElementById('corridor-error-message'),
     seedInput: document.getElementById('seed-input'),
     seedRandomise: document.getElementById('seed-randomise'),
     arterialModeControls: document.getElementById('arterial-mode-controls'),
@@ -181,6 +183,7 @@ async function loadCorridor(id, { config = null } = {}) {
         state.demand[connector.id] = connector.demand.spawnRatePerLanePerMin;
     }
 
+    clearCorridorError();
     renderer.setLayout(layout);
     renderCorridorSummary();
     buildArterialModeControls();
@@ -475,14 +478,29 @@ new ResizeObserver(() => renderer.resize()).observe(el.canvasWrap);
 /* ----------------------------------------------------------- other controls */
 
 el.corridorSelect.addEventListener('change', async () => {
+    const requested = el.corridorSelect.value;
     try {
-        await loadCorridor(el.corridorSelect.value);
+        await loadCorridor(requested);
     } catch (error) {
         // eslint-disable-next-line no-console
         console.error(error);
-        logChange('corridor', `FAILED to load ${el.corridorSelect.value}`);
+        showCorridorError(error.message);
+        // Put the picker back on whatever is actually drawn, so the control does
+        // not claim to be showing a corridor that failed to load.
+        el.corridorSelect.value = state.corridorId;
+        logChange('corridor', `FAILED to load ${requested}: ${error.message}`);
     }
 });
+
+function showCorridorError(message) {
+    if (!el.corridorError) return;
+    el.corridorErrorMessage.textContent = message;
+    el.corridorError.classList.remove('hidden');
+}
+
+function clearCorridorError() {
+    el.corridorError?.classList.add('hidden');
+}
 
 el.seedInput.addEventListener('change', () => {
     state.seed = Number(el.seedInput.value);
@@ -656,7 +674,7 @@ function buildFooterChart() {
     } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Corridor failed to load', error);
-        el.corridorDescription.textContent = `Corridor failed to load: ${error.message}`;
+        showCorridorError(error.message);
     }
 
     renderPowerPill();

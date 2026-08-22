@@ -52,6 +52,17 @@
                     </select>
                     <p id="corridor-description" class="mt-2 text-[11px] leading-relaxed text-slate-500"></p>
                     <dl id="corridor-facts" class="mt-2 grid grid-cols-3 gap-1 text-center"></dl>
+
+                    {{-- A config the loader rejects has to say so here. Failing only
+                         to the console reads as "the picker is broken". --}}
+                    <div id="corridor-error"
+                         class="mt-2 hidden rounded-md border border-rose-300 bg-rose-50 p-2.5 dark:border-rose-500/40 dark:bg-rose-500/10">
+                        <p class="text-[11px] font-semibold text-rose-800 dark:text-rose-300">Corridor failed to load</p>
+                        <p id="corridor-error-message" class="mt-1 font-mono text-[10px] leading-relaxed text-rose-700 dark:text-rose-200/90"></p>
+                        <p class="mt-1.5 text-[10px] leading-relaxed text-rose-700/80 dark:text-rose-200/70">
+                            The previously loaded corridor is still on the canvas.
+                        </p>
+                    </div>
                 </div>
 
                 <div>

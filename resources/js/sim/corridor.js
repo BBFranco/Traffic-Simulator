@@ -51,7 +51,7 @@ const negate = (h) => ({ x: -h.x, y: -h.y });
  */
 export function buildLayout(config) {
     if (!config || !Array.isArray(config.arterials) || config.arterials.length === 0) {
-        throw new Error('Corridor config must define at least one arterial.');
+        throw new Error(describeMissingArterials(config));
     }
 
     const defaults = { ...DEFAULTS, ...(config.defaults ?? {}) };
@@ -99,6 +99,39 @@ export function buildLayout(config) {
     layout.bounds = computeBounds(layout);
 
     return layout;
+}
+
+/**
+ * A config with no `arterials` is usually not a typo - it is a file written
+ * against a different schema. Name the mismatch instead of saying "invalid".
+ */
+function describeMissingArterials(config) {
+    if (!config || typeof config !== 'object') {
+        return 'Corridor config is empty or not an object.';
+    }
+
+    const foreign = ['roads', 'collectors', 'ramps', 'links', 'streets'].filter((key) =>
+        Array.isArray(config[key])
+    );
+
+    if (foreign.length > 0) {
+        return (
+            `Corridor config has no "arterials" array. It defines ${foreign.map((k) => `"${k}"`).join(', ')}` +
+            `${Array.isArray(config.intersections) ? ' plus a top-level "intersections" array' : ''}, ` +
+            `which is a different schema than this loader reads. Expected: "arterials" (each with an ` +
+            `"origin", a "direction", and its own "intersections" chain carrying "distanceToNextM") ` +
+            `plus "connectors". See corridors/hatfield-pretorius-francisbaard.json for the shape.`
+        );
+    }
+
+    if (Array.isArray(config.intersections)) {
+        return (
+            'Corridor config defines a top-level "intersections" array, but this loader expects ' +
+            'intersections nested inside each entry of "arterials".'
+        );
+    }
+
+    return 'Corridor config must define at least one arterial (an "arterials" array).';
 }
 
 function buildArterial(raw, laneWidthM) {

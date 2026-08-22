@@ -45,8 +45,12 @@ const PALETTES = {
         centreLine: '#b45309',
         stopLine: 'rgba(30, 41, 59, 0.75)',
         arrow: 'rgba(51, 65, 85, 0.45)',
-        signalHousing: '#475569',
-        signalUnlit: '#cbd5e1',
+        // A real signal housing is dark in any light, so it stays dark in both
+        // themes and only its outline changes to hold the edge against the
+        // background.
+        signalHousing: '#334155',
+        signalHousingEdge: 'rgba(255, 255, 255, 0.5)',
+        signalLensOff: ['#7f2d33', '#7d6220', '#256b47'],
         label: '#0f172a',
         labelMuted: '#64748b',
         labelBg: 'rgba(255, 255, 255, 0.86)',
@@ -68,7 +72,8 @@ const PALETTES = {
         stopLine: 'rgba(241, 245, 249, 0.9)',
         arrow: 'rgba(226, 232, 240, 0.42)',
         signalHousing: '#0b1220',
-        signalUnlit: '#39445a',
+        signalHousingEdge: 'rgba(226, 232, 240, 0.24)',
+        signalLensOff: ['#6d262d', '#6b531b', '#1d5c3c'],
         label: '#e2e8f0',
         labelMuted: '#94a3b8',
         labelBg: 'rgba(8, 13, 22, 0.78)',
@@ -586,37 +591,67 @@ export class LayoutRenderer {
      * Signal heads, drawn UNLIT in Phase 1 - the visual language is in place but
      * there is no controller to light them. Build step 7 lights the arterial
      * phases; step 10 goes dark on a power cut.
+     *
+     * These are MAP SYMBOLS, not world-scale objects. A real signal lens is about
+     * 0.3 m across, which is sub-pixel at any zoom you would actually watch the
+     * whole corridor at, so the head is drawn at a near-constant screen size that
+     * grows only gently with zoom - the same treatment a map pin gets. Without
+     * that floor they are invisible until you are zoomed right in.
+     *
+     * The three lenses carry dim red/amber/green rather than uniform grey so the
+     * object is recognisable as a traffic light at a glance. All three are equally
+     * dim, which is how an unpowered head actually looks - it cannot be mistaken
+     * for a phase, because no single lens is brighter than the others.
      */
     drawSignalHeads() {
         const { ctx } = this;
         const { scale } = this.camera;
-        if (scale < 1.4) return;
+        // Low enough that heads are already visible in the default fit view.
+        if (scale < 0.4) return;
 
-        const r = Math.min(5.5, Math.max(1.4, scale * 0.5));
-        const gap = r * 2.3;
+        // Screen-space floor of 3.1 px per lens, ceiling so it stops growing once
+        // it reads clearly; the world scale only nudges it in between.
+        const r = Math.min(6.5, Math.max(3.1, scale * 0.62));
+        const gap = r * 2.2;
+        const housingW = r * 3.1;
+        const housingH = gap * 3 + r * 1.2;
+        const radius = Math.min(3.5, r * 0.7);
+        const lensR = r * 0.74;
+
+        ctx.save();
+        ctx.lineWidth = 1;
 
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
                 for (const approach of node.approaches) {
                     const p = this.camera.toScreen(approach.signalHead);
-                    const housingW = r * 3.2;
-                    const housingH = gap * 3 + r * 1.4;
+                    // Cheap cull: skip heads that are off screen entirely.
+                    if (
+                        p.x < -housingW ||
+                        p.y < -housingH ||
+                        p.x > this.camera.viewport.width + housingW ||
+                        p.y > this.camera.viewport.height + housingH
+                    ) {
+                        continue;
+                    }
 
-                    ctx.save();
                     ctx.fillStyle = PALETTE.signalHousing;
-                    roundRect(ctx, p.x - housingW / 2, p.y - housingH / 2, housingW, housingH, Math.min(3, r));
+                    ctx.strokeStyle = PALETTE.signalHousingEdge;
+                    roundRect(ctx, p.x - housingW / 2, p.y - housingH / 2, housingW, housingH, radius);
                     ctx.fill();
+                    ctx.stroke();
 
-                    ctx.fillStyle = PALETTE.signalUnlit;
                     for (let i = 0; i < 3; i += 1) {
+                        ctx.fillStyle = PALETTE.signalLensOff[i];
                         ctx.beginPath();
-                        ctx.arc(p.x, p.y - gap + i * gap, r * 0.72, 0, Math.PI * 2);
+                        ctx.arc(p.x, p.y - gap + i * gap, lensR, 0, Math.PI * 2);
                         ctx.fill();
                     }
-                    ctx.restore();
                 }
             }
         }
+
+        ctx.restore();
     }
 
     /**
