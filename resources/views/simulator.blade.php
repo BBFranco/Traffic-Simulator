@@ -172,6 +172,10 @@
                             class="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
                         Step
                     </button>
+                    <button type="button" id="run-to-time-button" title="Run at maximum catch-up speed until the sim clock reaches t=1000s, then pause"
+                            class="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+                        Run to t=1000s
+                    </button>
                     <button type="button" id="reset-button"
                             class="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
                         Reset
@@ -316,14 +320,14 @@
                     <dd class="font-mono text-base leading-tight text-sky-700 dark:text-sky-300" data-stat="clearedWithoutStop">—</dd>
                 </div>
                 <div class="col-span-3">
-                    <dt class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Queue per intersection</dt>
-                    <dd class="flex flex-wrap gap-1" data-queue-chips></dd>
+                    <dt class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Vehicles cleared by road section</dt>
+                    <dd class="flex flex-wrap gap-1" data-cleared-chips></dd>
                 </div>
             </dl>
         </div>
     </template>
 
-    <template id="queue-chip-template">
+    <template id="cleared-chip-template">
         <span class="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-1 dark:border-slate-800 dark:bg-slate-950/60">
             <span class="text-[9px] uppercase tracking-wide text-slate-500" data-chip-label></span>
             <span class="font-mono text-[11px] text-slate-800 dark:text-slate-200" data-chip-value>—</span>

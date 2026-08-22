@@ -181,7 +181,12 @@ export class SimulationEngine {
                     timerS: 0,
                     nextArrivalS: this._sampleArrival(this._liveSpawnRate(arterial.demand, spawnRatePerLanePerMin)),
                 })),
-                stats: { clearedTotal: 0, clearedWithoutStopTotal: 0, recentClears: [] },
+                stats: {
+                    clearedTotal: 0,
+                    clearedWithoutStopTotal: 0,
+                    recentClears: [],
+                    clearedByNode: Object.fromEntries(arterial.intersections.map((node) => [node.id, 0])),
+                },
                 chartSamples: [],
                 chartAccumS: 0,
             });
@@ -400,6 +405,7 @@ export class SimulationEngine {
                     ? (state.stats.clearedWithoutStopTotal / state.stats.clearedTotal) * 100
                     : null,
                 queues,
+                clearedByNode: state.stats.clearedByNode,
                 chartSamples: state.chartSamples,
             };
         }
@@ -623,6 +629,7 @@ export class SimulationEngine {
                 const ahead = nearestAhead(realAhead, signalAhead);
                 stepCar(car, ahead, dt, this.layout.carLengthM);
                 this._trackAllWayStopDwell(car, ahead, dt);
+                this._recordNodeClears(state, nodeInfos, car);
             }
 
             while (lane.cars.length && lane.cars[0].distanceM > arterial.centrelineLengthM) {
@@ -981,6 +988,22 @@ export class SimulationEngine {
         }
 
         return 'n/a';
+    }
+
+    /**
+     * Per-node throughput, distinct from `_recordClear()`'s whole-arterial
+     * count: a car that crosses an intersection's stop line has cleared that
+     * road section even if it later turns off the arterial at a later node
+     * (or never reaches the end). `nodeInfos` is ordered along the arterial,
+     * so a car only ever needs to check its next unpassed node, not all of
+     * them, and a car diverted onto a connector before reaching a stop line
+     * (see `_maybeCrossRoute`) never gets counted for that node.
+     */
+    _recordNodeClears(state, nodeInfos, car) {
+        while (car.nextNodeIndex < nodeInfos.length && car.distanceM >= nodeInfos[car.nextNodeIndex].stopLineDistanceM) {
+            state.stats.clearedByNode[nodeInfos[car.nextNodeIndex].node.id] += 1;
+            car.nextNodeIndex += 1;
+        }
     }
 
     _recordClear(arterial, car) {

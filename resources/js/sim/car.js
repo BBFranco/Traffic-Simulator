@@ -79,6 +79,9 @@ export class Car {
         // doesn't re-roll every tick while sitting in the decision window.
         this.crossRollNodeId = null;
 
+        /** Index into this arterial's ordered node list of the next stop line this car hasn't crossed yet - see SimulationEngine#_recordNodeClears(). */
+        this.nextNodeIndex = 0;
+
         // All-way-stop bookkeeping only (controllers/allWayStop.js, build step 6):
         // how long this car has been continuously stopped at the front of its
         // queue, and which node id (if any) the engine has released it past.

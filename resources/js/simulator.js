@@ -26,6 +26,9 @@ import { onThemeChange } from './theme.js';
 /** Physics timestep - decoupled from render framerate so batch mode (build step 13) reuses the same engine unmodified. */
 const FIXED_DT_S = 0.1;
 
+/** Sentinel node id for the arterial-wide "Total" chip appended to the per-intersection cleared-by-road-section chips. */
+const ARTERIAL_TOTAL_CHIP_ID = 'arterial-total';
+
 const boot = JSON.parse(document.getElementById('sim-boot').textContent);
 
 const MODE_LABELS = {
@@ -88,6 +91,10 @@ let lastChartSampleCount = 0;
 let accumulatorS = 0;
 let lastFrameMs = null;
 let rafId = null;
+/** Sim-clock target (seconds) for the "Run to t=1000s" button - set while catching up, null under normal Run/Pause control. */
+let runUntilS = null;
+/** Wall-clock budget per animation frame while catching up, so a long run-to-time still leaves the tab responsive instead of freezing it. */
+const RUN_TO_TIME_FRAME_BUDGET_MS = 40;
 
 const el = {
     canvasWrap: document.getElementById('canvas-wrap'),
@@ -107,6 +114,7 @@ const el = {
     statsColumns: document.getElementById('stats-columns'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
+    runToTimeButton: document.getElementById('run-to-time-button'),
     resetButton: document.getElementById('reset-button'),
     loadSheddingToggle: document.getElementById('load-shedding-toggle'),
     runStatePill: document.getElementById('run-state-pill'),
@@ -397,14 +405,18 @@ function buildStatsColumns() {
         column.querySelector('[data-accent-dot]').style.backgroundColor = accentFor(index);
         column.querySelector('[data-arterial-name]').textContent = arterial.shortName;
 
-        const chips = column.querySelector('[data-queue-chips]');
+        const chips = column.querySelector('[data-cleared-chips]');
+        const arterialTotalChip = cloneTemplate('cleared-chip-template');
+        arterialTotalChip.querySelector('[data-chip-label]').textContent = 'Total';
+        arterialTotalChip.dataset.nodeId = ARTERIAL_TOTAL_CHIP_ID;
         chips.replaceChildren(
             ...arterial.intersections.map((node) => {
-                const chip = cloneTemplate('queue-chip-template');
+                const chip = cloneTemplate('cleared-chip-template');
                 chip.querySelector('[data-chip-label]').textContent = shortNodeLabel(node);
                 chip.dataset.nodeId = node.id;
                 return chip;
-            })
+            }),
+            arterialTotalChip
         );
 
         return column;
@@ -667,6 +679,7 @@ el.loadSheddingToggle.addEventListener('click', () => {
 });
 
 el.runToggle.addEventListener('click', () => {
+    runUntilS = null;
     state.running = !state.running;
     applyToggleFaces(el.runToggle, state.running);
     renderRunPill();
@@ -674,12 +687,25 @@ el.runToggle.addEventListener('click', () => {
 });
 
 el.stepButton.addEventListener('click', () => {
+    runUntilS = null;
     engine.tick(FIXED_DT_S);
     renderFrame(engine.snapshot());
     logChange('step', `advanced ${FIXED_DT_S}s`);
 });
 
+const RUN_TO_TIME_TARGET_S = 1000;
+
+el.runToTimeButton.addEventListener('click', () => {
+    if (engine.simTimeS >= RUN_TO_TIME_TARGET_S) return;
+    runUntilS = RUN_TO_TIME_TARGET_S;
+    state.running = true;
+    applyToggleFaces(el.runToggle, true);
+    renderRunPill();
+    logChange('running', `catching up to t=${RUN_TO_TIME_TARGET_S}s`);
+});
+
 el.resetButton.addEventListener('click', () => {
+    runUntilS = null;
     state.running = false;
     applyToggleFaces(el.runToggle, false);
     restartEngine();
@@ -767,9 +793,14 @@ function buildFooterChart() {
         type: 'line',
         data: {
             labels: [],
-            datasets: (layout?.arterials ?? []).map((arterial, index) =>
-                lineDataset({ label: arterial.shortName, data: [], colour: accentFor(index) })
-            ),
+            datasets: [
+                ...(layout?.arterials ?? []).map((arterial, index) =>
+                    lineDataset({ label: arterial.shortName, data: [], colour: accentFor(index) })
+                ),
+                // All arterials summed - appended last so appendChartSampleIfNeeded()
+                // can find it by index without a label lookup.
+                lineDataset({ label: 'Total', data: [], colour: INK.muted }),
+            ],
         },
         options,
     });
@@ -791,11 +822,15 @@ function appendChartSampleIfNeeded(snapshot) {
     // Labelled in elapsed seconds, not sample index - the sample count keeps
     // growing for the life of the run, so a raw index reads as if the chart
     // had stalled once autoSkip starts hiding most of the ticks.
-    const first = snapshot.stats[layout.arterials[0]?.id]?.chartSamples ?? [];
+    const perArterialSamples = layout.arterials.map((a) => snapshot.stats[a.id]?.chartSamples ?? []);
+    const first = perArterialSamples[0] ?? [];
     footerChart.data.labels = first.map((_, i) => `${i * CHART_SAMPLE_INTERVAL_S}`);
     footerChart.data.datasets.forEach((dataset, index) => {
-        const arterial = layout.arterials[index];
-        dataset.data = (snapshot.stats[arterial.id]?.chartSamples ?? []).slice();
+        // The 'Total' dataset is appended after one per arterial - see buildFooterChart().
+        dataset.data =
+            index < perArterialSamples.length
+                ? perArterialSamples[index].slice()
+                : first.map((_, i) => perArterialSamples.reduce((sum, samples) => sum + (samples[i] ?? 0), 0));
     });
     footerChart.update('none');
     el.statsChartEmpty?.classList.toggle('hidden', totalSamples > 0);
@@ -834,13 +869,15 @@ function updateStatsFooter(snapshot) {
             stats.clearedWithoutStopPct == null ? '—' : `${Math.round(stats.clearedWithoutStopPct)}%`
         );
 
-        // Queue chips double as the sensor readout: blank them (rather than show
-        // ground truth the sensor could not actually see) while the current
-        // sensor mode is dark from a power cut.
-        column.querySelectorAll('[data-queue-chips] > [data-node-id]').forEach((chipEl) => {
+        // Precise cumulative counts straight from the engine's own bookkeeping,
+        // not a sensor reading - unlike the queue chips these used to be, power
+        // cuts never blank these. The arterial's own "Total" chip is the whole
+        // road's clear count (clearedTotal), not a per-intersection section.
+        column.querySelectorAll('[data-cleared-chips] > [data-node-id]').forEach((chipEl) => {
             const valueEl = chipEl.querySelector('[data-chip-value]');
             if (!valueEl) return;
-            const value = snapshot.sensorAvailable ? stats.queues[chipEl.dataset.nodeId] : null;
+            const nodeId = chipEl.dataset.nodeId;
+            const value = nodeId === ARTERIAL_TOTAL_CHIP_ID ? stats.clearedTotal : stats.clearedByNode[nodeId];
             valueEl.textContent = value == null ? '—' : String(value);
         });
     });
@@ -875,7 +912,19 @@ function animate(nowMs) {
     const realDtS = Math.min((nowMs - lastFrameMs) / 1000, 0.25);
     lastFrameMs = nowMs;
 
-    if (state.running) {
+    if (state.running && runUntilS !== null) {
+        const frameDeadlineMs = nowMs + RUN_TO_TIME_FRAME_BUDGET_MS;
+        while (engine.simTimeS < runUntilS && performance.now() < frameDeadlineMs) {
+            engine.tick(FIXED_DT_S);
+        }
+        if (engine.simTimeS >= runUntilS) {
+            runUntilS = null;
+            state.running = false;
+            applyToggleFaces(el.runToggle, false);
+            renderRunPill();
+            logChange('running', false);
+        }
+    } else if (state.running) {
         accumulatorS += realDtS * state.speed;
         let steps = 0;
         while (accumulatorS >= FIXED_DT_S && steps < 50) {
