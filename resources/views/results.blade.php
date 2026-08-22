@@ -17,9 +17,16 @@
         'magnetometer' => 'Magnetometer',
     ];
 
-    $byKey = [];
-    foreach ($aggregates as $row) {
-        $byKey["{$row['controller_mode']}|{$row['power_state']}"] = $row;
+    // Data-table breakdown: fixed-time and green-wave collapse to one row apiece (see
+    // ResultsController::aggregatesBySensor()'s docblock), adaptive gets one row per sensor mode.
+    $sensorOrder = ['inductive_loop', 'radar', 'camera', 'magnetometer'];
+    $byKeyBySensor = [];
+    foreach ($aggregatesBySensor as $row) {
+        $byKeyBySensor["{$row['controller_mode']}|{$row['power_state']}"][] = $row;
+    }
+    foreach ($byKeyBySensor as $key => $rows) {
+        usort($rows, fn ($a, $b) => array_search($a['sensor_mode'], $sensorOrder, true) <=> array_search($b['sensor_mode'], $sensorOrder, true));
+        $byKeyBySensor[$key] = $rows;
     }
 
     $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
@@ -207,6 +214,7 @@
                         <tr>
                             <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
                             <th scope="col" class="px-4 py-2 font-semibold">Power state</th>
+                            <th scope="col" class="px-4 py-2 font-semibold">Sensor</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Runs</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s)</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min)</th>
@@ -217,14 +225,17 @@
                     <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
                         @foreach ($powerStates as $power)
                             @foreach ($controllerModes as $mode)
-                                @php $row = $byKey["{$mode}|{$power}"] ?? null; @endphp
-                                @if ($row)
+                                @php $rows = $byKeyBySensor["{$mode}|{$power}"] ?? []; @endphp
+                                @foreach ($rows as $row)
                                     <tr class="text-slate-700 dark:text-slate-300">
                                         <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
                                             <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
                                             {{ $modeLabels[$mode] }}
                                         </th>
                                         <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">{{ $powerLabels[$power] }}</td>
+                                        <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">
+                                            {{ $row['sensor_mode'] === null ? '—' : $sensorLabels[$row['sensor_mode']] }}
+                                        </td>
                                         <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
                                         <td class="px-4 py-2 text-right">{{ number_format($row['avg_wait_time'], 1) }}</td>
                                         <td class="px-4 py-2 text-right">{{ number_format($row['throughput_per_min'], 1) }}</td>
@@ -233,7 +244,7 @@
                                             {{ $row['time_to_recovery_seconds'] === null ? '—' : number_format($row['time_to_recovery_seconds'], 1) }}
                                         </td>
                                     </tr>
-                                @endif
+                                @endforeach
                             @endforeach
                         @endforeach
                     </tbody>

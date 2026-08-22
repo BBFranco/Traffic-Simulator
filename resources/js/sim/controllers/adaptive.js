@@ -3,13 +3,15 @@
  *
  * Same two-phase structure as the fixed-time controller, but phase length is
  * not pre-computed: each green holds for at least the minimum, then extends
- * for as long as `equations.js:shouldExtendGreen()` says the sensed queue
- * still justifies it, capped at a maximum. It also won't switch to a phase
- * whose sensed demand doesn't clear `equations.js:hasSufficientCall()` - it
- * keeps resting on green instead, same as a real actuated controller with no
- * (or no significant) call on the other phase.
+ * on a gap timer - `equations.js:shouldExtendGreen()` keeps it open as long
+ * as a vehicle has actuated the stop-line detector within the last `gapOutS`
+ * seconds, capped at a maximum. It also won't switch to a phase whose call
+ * isn't sufficient yet - engine.js decides what "sufficient" means (a big
+ * enough sensed queue, or a call that's simply persisted long enough, for
+ * sensors too narrow to count depth - see its `_isOtherCallSufficient()`) and
+ * hands this controller a plain boolean, so it stays sensor-agnostic.
  */
-import { ADAPTIVE_DEFAULTS, hasSufficientCall, shouldExtendGreen } from '../equations.js';
+import { ADAPTIVE_DEFAULTS, shouldExtendGreen } from '../equations.js';
 
 const YELLOW_S = 3;
 const ALL_RED_S = 1;
@@ -20,6 +22,7 @@ export class AdaptiveController {
         this.phase = 0; // 0 = arterial, 1 = cross
         this.phaseState = 'green';
         this.phaseElapsed = 0;
+        this.secondsSinceLastDetection = 0; // gap timer for the current green's stop-line detector
     }
 
     isArterialGreen() {
@@ -31,25 +34,23 @@ export class AdaptiveController {
     }
 
     /**
-     * sensedQueueForCurrentPhase: reading from sensors.js for whichever approach currently has green.
-     * sensedQueueForOtherPhase: same, for the approach that would receive the next green.
+     * vehicleDetectedThisTick: did a vehicle actuate the stop-line detector on the currently
+     * green approach this tick (sensors.js's `detectPresenceAtStopLine()`) - resets the gap timer.
+     * otherCallSufficient: is the approach that would receive the next green already worth taking
+     * green away for, as engine.js has decided it (sensor-mode aware) - false means keep resting.
      *
-     * `maxGreen` only exists to bound how long an actual waiting call can be kept waiting - with
-     * literally no one there, there is nothing for it to protect against, so a truly empty other
-     * phase always keeps resting on green; a small (sub-`minCallToSwitch`) call is bounded by
-     * maxGreen so it isn't left waiting forever; a call at/above `minCallToSwitch` competes on the
-     * current phase's own gap-out via shouldExtendGreen(), same as before.
+     * Resting on green and gap-extension both still bow out at `maxGreen` - it's a hard cap on
+     * every branch, not just the gap-extension one.
      */
-    tick(dt, sensedQueueForCurrentPhase, sensedQueueForOtherPhase = Infinity) {
+    tick(dt, vehicleDetectedThisTick, otherCallSufficient = false) {
         this.phaseElapsed += dt;
 
         if (this.phaseState === 'green') {
-            const otherHasNoCall = sensedQueueForOtherPhase === 0;
-            const otherCallInsufficient = !otherHasNoCall && !hasSufficientCall(sensedQueueForOtherPhase, this.params);
+            this.secondsSinceLastDetection = vehicleDetectedThisTick ? 0 : this.secondsSinceLastDetection + dt;
+
             const extend =
-                shouldExtendGreen(sensedQueueForCurrentPhase, this.phaseElapsed, this.params) ||
-                otherHasNoCall ||
-                (otherCallInsufficient && this.phaseElapsed < this.params.maxGreen);
+                this.phaseElapsed < this.params.maxGreen &&
+                (shouldExtendGreen(this.secondsSinceLastDetection, this.phaseElapsed, this.params) || !otherCallSufficient);
             if (!extend) {
                 this.phaseState = 'yellow';
                 this.phaseElapsed = 0;
@@ -61,6 +62,7 @@ export class AdaptiveController {
             this.phase = 1 - this.phase;
             this.phaseState = 'green';
             this.phaseElapsed = 0;
+            this.secondsSinceLastDetection = 0;
         }
     }
 }

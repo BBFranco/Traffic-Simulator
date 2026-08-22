@@ -9,12 +9,12 @@
  */
 import { SeededRandom } from './rng.js';
 import { Car, stepCar, resetCarIdCounter, carWorldPoint, carRenderPoint, carRenderHeading } from './car.js';
-import { nextPoissonArrival, fluctuatingDemand } from './equations.js';
+import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
 import { AdaptiveController } from './controllers/adaptive.js';
 import { AllWayStopController, MIN_STOP_DWELL_S } from './controllers/allWayStop.js';
 import { buildGreenWaveControllers } from './controllers/greenWave.js';
-import { readQueueLength, sensorAvailable } from './sensors.js';
+import { readQueueLength, detectPresenceAtStopLine, sensorAvailable } from './sensors.js';
 
 /** Upstream window counted as "queued" for the stats-footer chips. */
 const QUEUE_WINDOW_M = 150;
@@ -79,6 +79,9 @@ export class SimulationEngine {
                     stopLineDistanceM: distanceFromStartM - arterialApproach.setbackM,
                     controller: null,
                     controllerType: null,
+                    // Per-phase "how long has this approach had an uninterrupted call" - only
+                    // consumed by _isOtherCallSufficient() under a narrow-window sensor mode.
+                    callPersistenceS: [0, 0],
                 };
                 this.nodesInfo.set(node.id, info);
                 infos.push(info);
@@ -303,9 +306,9 @@ export class SimulationEngine {
 
         for (const info of this.nodesInfo.values()) {
             if (info.controllerType === 'adaptive') {
-                const sensed = this._sensedQueueForApproach(info, info.controller.phase);
-                const opposing = this._sensedQueueForApproach(info, 1 - info.controller.phase);
-                info.controller.tick(dt, sensed, opposing);
+                const detected = this._vehicleDetectedAtStopLine(info, info.controller.phase);
+                const otherCallSufficient = this._isOtherCallSufficient(info, info.controller.phase, dt);
+                info.controller.tick(dt, detected, otherCallSufficient);
             } else if (info.controllerType === 'greenWave') {
                 info.controller.tick(dt, this.simTimeS);
             } else {
@@ -547,6 +550,7 @@ export class SimulationEngine {
         } else if (arterialState.mode === 'adaptive') {
             info.controllerType = 'adaptive';
             info.controller = new AdaptiveController();
+            info.callPersistenceS = [0, 0];
         } else {
             // Defensive fallback only - green_wave is intercepted one level up in
             // _rebuildControllersForArterial and never reaches here while power is
@@ -872,6 +876,37 @@ export class SimulationEngine {
         return true;
     }
 
+    /** Stop-line detector for gap-out timing - independent of `sensorMode`, see sensors.js's detectPresenceAtStopLine(). */
+    _vehicleDetectedAtStopLine(info, phase) {
+        if (phase === 0) {
+            const cars = this.arterialState.get(info.arterial.id).lanes.flatMap((l) => l.cars);
+            return detectPresenceAtStopLine(cars, info.stopLineDistanceM);
+        }
+        const approaches = this._connectorApproach(info.node);
+        if (!approaches) return false;
+        return approaches.some((a) => detectPresenceAtStopLine(a.cars, a.gateDistanceM));
+    }
+
+    /**
+     * Is the phase that would receive the next green already worth taking green away for?
+     * `inductive_loop`/`magnetometer` have detection windows too short to ever count up to
+     * `minCallToSwitch` real vehicles (8m/15m holds maybe 1-3 car lengths) - counting is simply
+     * not a capability those sensors have, so instead of a threshold that can never trip, a call
+     * just has to persist for `callDebounceS` uninterrupted seconds to count as sufficient. Wider
+     * sensors (radar/camera) keep the original queue-depth threshold, which they can actually see.
+     */
+    _isOtherCallSufficient(info, currentPhase, dt) {
+        const otherPhase = 1 - currentPhase;
+        if (this.sensorMode === 'inductive_loop' || this.sensorMode === 'magnetometer') {
+            info.callPersistenceS[currentPhase] = 0; // never "waiting" on itself while it holds green
+            const present = this._sensedQueueForApproach(info, otherPhase) > 0;
+            info.callPersistenceS[otherPhase] = present ? info.callPersistenceS[otherPhase] + dt : 0;
+            return info.callPersistenceS[otherPhase] >= info.controller.params.callDebounceS;
+        }
+        const queue = this._sensedQueueForApproach(info, otherPhase);
+        return hasSufficientCall(queue, info.controller.params);
+    }
+
     _sensedQueueForApproach(info, phase) {
         if (phase === 0) {
             const cars = this.arterialState.get(info.arterial.id).lanes.flatMap((l) => l.cars);
@@ -974,16 +1009,22 @@ export class SimulationEngine {
         }
 
         if (info.controllerType === 'adaptive') {
-            const { minGreen, maxGreen, extendThreshold, minCallToSwitch } = controller.params;
-            const ownQueue = phase === 0 ? arterialQueue : crossQueue;
-            const otherQueue = phase === 0 ? crossQueue : arterialQueue;
+            const { minGreen, maxGreen, gapOutS, minCallToSwitch, callDebounceS } = controller.params;
+            const otherQueue = phase === 0 ? crossQueue : arterialQueue; // ground truth, for the human reading this
             const otherName = phase === 0 ? 'cross street' : 'arterial';
+            const usesNarrowSensor = this.sensorMode === 'inductive_loop' || this.sensorMode === 'magnetometer';
+            const gapRemaining = gapOutS - controller.secondsSinceLastDetection;
 
             if (phaseElapsed < minGreen) return `≥ ${(minGreen - phaseElapsed).toFixed(1)}s (holding minimum green)`;
             if (otherQueue === 0) return `resting - no call on ${otherName}`;
-            if (otherQueue < minCallToSwitch)
+            if (usesNarrowSensor) {
+                const persistedS = info.callPersistenceS[1 - phase];
+                if (persistedS < callDebounceS)
+                    return `≤ ${(maxGreen - phaseElapsed).toFixed(1)}s (call on ${otherName} too new to trust - can't count depth on this sensor, capped by max green)`;
+            } else if (otherQueue < minCallToSwitch) {
                 return `≤ ${(maxGreen - phaseElapsed).toFixed(1)}s (small call on ${otherName}, capped by max green)`;
-            if (ownQueue > extendThreshold) return `extending - own queue (${ownQueue}) above ${extendThreshold}`;
+            }
+            if (gapRemaining > 0) return `extending - vehicle detected ${controller.secondsSinceLastDetection.toFixed(1)}s ago (gaps out at ${gapOutS}s)`;
             return 'ending imminently';
         }
 

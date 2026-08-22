@@ -73,6 +73,7 @@ class ResultsController extends Controller
         }
 
         $aggregates = $this->aggregates((clone $query));
+        $aggregatesBySensor = $this->aggregatesBySensor((clone $query));
         $recentRuns = (clone $query)->latest('created_at')->limit(10)->get()
             ->map(fn (SimulationRun $run) => [
                 'id' => $run->id,
@@ -89,6 +90,7 @@ class ResultsController extends Controller
 
         return [
             'aggregates' => $aggregates,
+            'aggregatesBySensor' => $aggregatesBySensor,
             'pairedComparisons' => $this->pairedComparisons($aggregates),
             'recoveryTimeline' => $this->csvRecoveryTimeline(),
             'recentRuns' => $recentRuns,
@@ -118,6 +120,45 @@ class ResultsController extends Controller
             ->map(fn ($row) => [
                 'controller_mode' => $row->controller_mode,
                 'power_state' => $row->power_state,
+                'runs' => (int) $row->runs,
+                'avg_wait_time' => round((float) $row->avg_wait_time, 1),
+                'throughput_per_min' => round((float) $row->throughput_per_min, 1),
+                'pct_cleared_without_stop' => round((float) $row->pct_cleared_without_stop, 1),
+                'time_to_recovery_seconds' => $row->time_to_recovery_seconds === null
+                    ? null
+                    : round((float) $row->time_to_recovery_seconds, 1),
+            ])
+            ->all();
+    }
+
+    /**
+     * Same shape as aggregates(), but also split by sensor_mode - fixed-time never reads one
+     * (always null) and green-wave always uses the matrix's fixed 'inductive_loop' placeholder
+     * (see experimentalMatrix.js's comment on why it's tested against only one), so both still
+     * collapse to a single row; only adaptive actually varies here, into up to 4 rows. Kept
+     * separate from aggregates() - which stays mode+power only - so the "does ITS beat fixed-time"
+     * cards and the bar-chart trio keep showing one overall adaptive number apiece, not one per
+     * sensor; only the data table underneath the bar-chart trio consumes this finer breakdown.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    /** @param  Builder<SimulationRun>  $query */
+    private function aggregatesBySensor(Builder $query): array
+    {
+        return $query
+            ->selectRaw(
+                'controller_mode, power_state, sensor_mode, count(*) as runs, '.
+                'avg(avg_wait_time) as avg_wait_time, '.
+                'avg(throughput_per_min) as throughput_per_min, '.
+                'avg(pct_cleared_without_stop) as pct_cleared_without_stop, '.
+                'avg(time_to_recovery_seconds) as time_to_recovery_seconds'
+            )
+            ->groupBy('controller_mode', 'power_state', 'sensor_mode')
+            ->get()
+            ->map(fn ($row) => [
+                'controller_mode' => $row->controller_mode,
+                'power_state' => $row->power_state,
+                'sensor_mode' => $row->sensor_mode,
                 'runs' => (int) $row->runs,
                 'avg_wait_time' => round((float) $row->avg_wait_time, 1),
                 'throughput_per_min' => round((float) $row->throughput_per_min, 1),

@@ -43,6 +43,25 @@ export function readQueueLength(groundTruthCars, stopLineDistanceM, mode, rng) {
     return inWindow.length;
 }
 
+/**
+ * Stop-line presence detector for gap-out timing - the small loop right at
+ * the line that a real actuated signal always has regardless of whatever
+ * advance/system detection (`mode` above) it also uses for queue estimates.
+ * Unlike `readQueueLength`, this is NOT filtered to `stoppedNow`: a car
+ * rolling through on green still actuates it, which is what a gap timer
+ * needs (a discharging queue must keep "counting" as present).
+ *
+ * @param groundTruthCars   live Car[] on this approach's lane(s)
+ * @param stopLineDistanceM distance-along-arterial of the stop line
+ * @param windowM           detector zone length immediately upstream of the line
+ * @returns boolean - is any vehicle occupying the detector right now
+ */
+export function detectPresenceAtStopLine(groundTruthCars, stopLineDistanceM, windowM = 8) {
+    return groundTruthCars.some(
+        (c) => stopLineDistanceM - c.distanceM <= windowM && stopLineDistanceM - c.distanceM >= 0
+    );
+}
+
 export function sensorAvailable(mode, powerState, batteryBackedSensors) {
     if (powerState !== 'load_shedding') return true;
     // Cameras and radar are too power-hungry to battery-back; they always drop

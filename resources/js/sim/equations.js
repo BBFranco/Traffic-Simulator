@@ -113,14 +113,21 @@ export function nextPoissonArrival(lambdaPerSecond, rng) {
 // used is in the same reviewable place as the cited formulas, not buried in
 // a controller file.
 //
-// queueLength   : vehicles currently queued on the approach with the green
-// greenElapsed  : seconds the current phase has already been green
-// params        : { extendThreshold, maxGreen, minGreen }
-export function shouldExtendGreen(queueLength, greenElapsed, params = ADAPTIVE_DEFAULTS) {
-    const { extendThreshold, maxGreen, minGreen } = params;
+// secondsSinceLastDetection : time since a vehicle last actuated the green
+//                             approach's stop-line detector (sensors.js's
+//                             `detectPresenceAtStopLine()`) - NOT a queue
+//                             count. A discharging queue keeps re-actuating
+//                             the detector as each car rolls through, so this
+//                             stays near zero for as long as vehicles keep
+//                             arriving at the line, whether they're stopped
+//                             or already moving.
+// greenElapsed              : seconds the current phase has already been green
+// params                    : { gapOutS, maxGreen, minGreen }
+export function shouldExtendGreen(secondsSinceLastDetection, greenElapsed, params = ADAPTIVE_DEFAULTS) {
+    const { gapOutS, maxGreen, minGreen } = params;
     if (greenElapsed < minGreen) return true;
     if (greenElapsed >= maxGreen) return false;
-    return queueLength > extendThreshold;
+    return secondsSinceLastDetection < gapOutS;
 }
 
 /**
@@ -135,10 +142,11 @@ export function hasSufficientCall(waitingQueueLength, params = ADAPTIVE_DEFAULTS
 }
 
 export const ADAPTIVE_DEFAULTS = {
-    extendThreshold: 2, // vehicles - extend green if more than this still queued
+    gapOutS: 3, // seconds - end the phase once no vehicle has actuated the stop-line detector for this long
     minGreen: 8, // seconds - never cut a phase shorter than this
     maxGreen: 45, // seconds - hard cap regardless of queue
-    minCallToSwitch: 5, // vehicles - the other phase needs at least this many queued before it's worth switching to (ignored once maxGreen is hit)
+    minCallToSwitch: 5, // vehicles - the other phase needs at least this many queued before it's worth switching to (wide-window sensors only, see engine.js's _isOtherCallSufficient() - ignored once maxGreen is hit)
+    callDebounceS: 3, // seconds - narrow-window sensors (inductive_loop, magnetometer) can't count queue depth, so instead the other phase's call must simply persist this long before it's worth switching to
 };
 
 // ---------------------------------------------------------------------
