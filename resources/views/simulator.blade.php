@@ -81,20 +81,9 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Signal control" subtitle="Each arterial runs its own mode, so one can be coordinated while the other is not and the footer compares them live.">
+            <x-control-section title="Signal control" subtitle="Each arterial runs its own mode, so one can be coordinated while the other is not and the footer compares them live. Every intersection on an arterial - including its cross-street - follows that arterial's mode.">
                 {{-- Populated from the loaded corridor: one row per arterial. --}}
                 <div id="arterial-mode-controls" class="space-y-3"></div>
-
-                <div class="{{ $inset }} p-3">
-                    <div class="flex items-baseline justify-between gap-2">
-                        <span class="text-xs font-medium text-slate-700 dark:text-slate-300">Cross-streets</span>
-                        <span class="text-[10px] text-slate-500">never wave-coordinated</span>
-                    </div>
-                    <p class="mb-2 mt-1 text-[10px] leading-relaxed text-slate-500">
-                        Two-way, so a single-direction progression band cannot coordinate both directions.
-                    </p>
-                    <x-segmented control="connectorMode" size="sm" value="fixed" :options="['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive']" />
-                </div>
             </x-control-section>
 
             <x-control-section title="Sensing" subtitle="A sensor mode is modelled as what the controller is allowed to see, not as hardware.">
@@ -156,12 +145,6 @@
             </x-control-section>
 
             <div class="space-y-3 px-4 py-4">
-                <p class="rounded-md border border-amber-300 bg-amber-50 p-3 text-[10px] leading-relaxed text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/80">
-                    <strong class="font-semibold">Phase 1.</strong>
-                    Controls hold and display their own state and log to the console. No car, controller,
-                    sensor or load-shedding logic is attached yet — that is Phase 2, build steps 6–14.
-                </p>
-
                 <details class="{{ $inset }}">
                     <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
                         Control state log
@@ -275,10 +258,10 @@
 
                     <div class="border-slate-200 px-4 py-3 lg:border-l dark:border-slate-800">
                         <div class="flex items-baseline justify-between">
-                            <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Average wait over time</span>
-                            <span class="text-[10px] text-slate-500">s / vehicle</span>
+                            <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Vehicles cleared over time</span>
+                            <span class="text-[10px] text-slate-500">cumulative count</span>
                         </div>
-                        <div class="relative mt-2 h-[110px]">
+                        <div class="relative mt-2 h-[200px]">
                             <canvas id="stats-chart"></canvas>
                             <div id="stats-chart-empty"
                                  class="absolute inset-0 flex items-center justify-center rounded bg-slate-50/60 text-[10px] text-slate-500 dark:bg-slate-950/40">
@@ -369,6 +352,32 @@
             <input type="range" min="0" max="30" step="1"
                    class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500"
                    data-demand-input>
+        </div>
+    </template>
+
+    {{-- Same panel, for an arterial/connector whose corridor config gives it a fluctuation range instead of one flat number (see corridor.js's buildDemand()) - two handles plus a live "now" readout of where the sinusoid actually is. --}}
+    <template id="demand-row-fluctuating-template">
+        <div data-demand-row class="space-y-1.5">
+            <div class="mb-1 flex items-baseline justify-between gap-2">
+                <span class="truncate text-xs text-slate-700 dark:text-slate-300" data-demand-name></span>
+                <span class="shrink-0 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                    now <span data-demand-now>—</span> <span class="text-slate-400 dark:text-slate-600">veh/lane/min</span>
+                </span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="w-7 shrink-0 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-600">min</span>
+                <input type="range" min="0" max="30" step="1"
+                       class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500"
+                       data-demand-min-input>
+                <span class="w-6 shrink-0 text-right font-mono text-[11px] text-slate-600 dark:text-slate-400" data-demand-min-value></span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="w-7 shrink-0 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-600">max</span>
+                <input type="range" min="0" max="30" step="1"
+                       class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500"
+                       data-demand-max-input>
+                <span class="w-6 shrink-0 text-right font-mono text-[11px] text-slate-600 dark:text-slate-400" data-demand-max-value></span>
+            </div>
         </div>
     </template>
 

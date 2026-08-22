@@ -36,47 +36,65 @@
                     Aggregates across {{ number_format($totalRuns) }} batch runs · 30 seeded reps per condition
                 </p>
             </div>
-            @if ($isFakeData)
-                <span class="inline-flex items-center gap-2 rounded-md border border-amber-400 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+            <div class="flex flex-wrap items-center gap-3">
+                <span id="fake-data-badge" class="inline-flex items-center gap-2 rounded-md border border-amber-400 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-800 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
                     <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
-                    Phase 1 · placeholder data
+                    No data yet
                 </span>
-            @endif
+
+                <span id="batch-running-badge" class="hidden inline-flex items-center gap-2 rounded-md border border-sky-400 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-800 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300">
+                    <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                    Running
+                </span>
+
+                <button type="button" id="batch-run-button"
+                        class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
+                    Generate dataset (360 runs)
+                </button>
+            </div>
         </div>
     </x-slot>
 
-    @if ($isFakeData)
-        <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
-            <strong class="font-semibold">Nothing below is measured yet.</strong>
-            Every figure on this page is a hardcoded placeholder shaped like the real aggregate, so the
-            comparison design can be reviewed before there is data to review. Build steps 17–21 generate
-            the real dataset with the headless batch runner; step 22 points these charts at
-            <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>.
+    <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
+        <strong class="font-semibold">Nothing below is measured yet.</strong>
+        Click <strong>Generate dataset</strong> to run the full 12-condition x 30-rep experimental matrix
+        (360 headless runs) in this browser tab and populate
+        <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
+        while it runs - the tab is not frozen, just busy.
+    </div>
+
+    <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
+        <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">
+            <span id="batch-progress-label" class="font-semibold">Starting...</span>
+            <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
         </div>
-    @endif
+        <div class="h-2.5 w-full overflow-hidden rounded-full bg-sky-200/70 dark:bg-sky-900/60">
+            <div id="batch-progress-bar" class="h-full w-0 rounded-full bg-sky-600 transition-[width] duration-150 dark:bg-sky-400"></div>
+        </div>
+    </div>
 
     {{-- ONE filter row, scoping everything below it. --}}
     <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
         <div>
             <label for="filter-corridor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Corridor</label>
             <select id="filter-corridor" class="{{ $select }}">
+                <option value="" {{ request('corridor') ? '' : 'selected' }}>All corridors</option>
                 @foreach ($corridors as $corridor)
-                    <option value="{{ $corridor['id'] }}">{{ $corridor['name'] }}</option>
+                    <option value="{{ $corridor['id'] }}" {{ request('corridor') === $corridor['id'] ? 'selected' : '' }}>{{ $corridor['name'] }}</option>
                 @endforeach
             </select>
         </div>
         <div>
             <label for="filter-sensor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Sensor mode</label>
             <select id="filter-sensor" class="{{ $select }}">
-                <option value="all">All sensor modes</option>
+                <option value="all" {{ request('sensor', 'all') === 'all' ? 'selected' : '' }}>All sensor modes</option>
                 @foreach ($sensorLabels as $key => $label)
-                    <option value="{{ $key }}">{{ $label }}</option>
+                    <option value="{{ $key }}" {{ request('sensor') === $key ? 'selected' : '' }}>{{ $label }}</option>
                 @endforeach
             </select>
         </div>
         <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
-            Filters are inert in Phase 1. In Phase 2 they scope every chart and table on this page
-            through the same query.
+            Filters scope every chart, table, and the batch-run corridor on this page.
         </p>
     </div>
 
@@ -315,6 +333,9 @@
             'controllerModes' => $controllerModes,
             'powerStates' => $powerStates,
             'recoveryTimeline' => $recoveryTimeline,
+            'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
+            'resultsDataUrl' => route('results.data'),
+            'defaultCorridorId' => $corridors[0]['id'] ?? null,
         ];
     @endphp
     <script type="application/json" id="results-data">@json($chartPayload)</script>

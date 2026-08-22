@@ -54,7 +54,6 @@ class NavigationTest extends TestCase
             ->assertSee('id="corridor-select"', false)
             ->assertSee('id="seed-input"', false)
             // Controller mode, sensing, power, run controls.
-            ->assertSee('data-segmented="connectorMode"', false)
             ->assertSee('name="sensorMode"', false)
             ->assertSee('id="load-shedding-toggle"', false)
             ->assertSee('id="scheduled-outages"', false)
@@ -107,7 +106,7 @@ class NavigationTest extends TestCase
         $response = $this->actingAs(User::factory()->create())->get('/results');
 
         $response->assertOk()
-            ->assertSee('Phase 1 · placeholder data')
+            ->assertSee('No data yet')
             ->assertSee('Does ITS beat the fixed-time baseline?')
             // One canvas per chart.
             ->assertSee('id="chart-wait"', false)

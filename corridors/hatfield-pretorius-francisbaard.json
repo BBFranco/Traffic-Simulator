@@ -2,12 +2,13 @@
   "id": "hatfield-pretorius-francisbaard",
   "sortOrder": 1,
   "name": "Hatfield Pretorius / Francis Baard Grid",
-  "description": "Default scenario: two parallel one-way arterials into Hatfield, Pretoria, each with 4 signalised intersections, linked by 4 signalised two-way cross-streets 245 m apart.",
+  "description": "Default scenario: two parallel one-way arterials into Hatfield, Pretoria, each with 4 signalised intersections, linked by 4 signalised two-way cross-streets 245 m apart. Demand oscillates sinusoidally between a min and max over a 300 s period rather than holding constant (equations.js's fluctuatingDemand()) - fixed-time/green-wave time their Webster plan once to the range's midpoint (a stand-in for a historical traffic count) and never re-tune as the live rate wanders away from it, while adaptive/actuated modes keep sensing the live queue as usual.",
   "meta": {
     "geometryUnits": "metres",
     "axes": "x increases east, y increases south (screen convention)",
     "crossStreetOrder": "West to east along Pretorius (inbound/eastbound): Jan Shoba, Grosvenor, Hilda, Festival. Francis Baard runs the same block sequence in reverse, being outbound/westbound.",
-    "distanceSource": "Uniform 245 m block spacing, as specified. Because every block is the same length, the green wave offset chain is a constant step: 245 m / 13.89 m/s = 17.6 s per intersection at the 50 km/h target speed."
+    "distanceSource": "Uniform 245 m block spacing, as specified. Because every block is the same length, the green wave offset chain is a constant step: 245 m / 13.89 m/s = 17.6 s per intersection at the 50 km/h target speed.",
+    "demandSource": "Sinusoidal fluctuation between min and max, 300 s period, midpoint equal to the flat demand this scenario used before fluctuation was added."
   },
   "defaults": {
     "laneWidthM": 3.5,
@@ -28,10 +29,12 @@
       "targetSpeedKph": 50,
       "mode": "fixed",
       "origin": { "xM": 735, "yM": 0 },
-      "approachLengthM": 220,
+      "approachLengthM": 300,
       "exitLengthM": 220,
       "demand": {
-        "spawnRatePerLanePerMin": 9,
+        "spawnRatePerLanePerMinMin": 3,
+        "spawnRatePerLanePerMinMax": 15,
+        "fluctuationPeriodS": 300,
         "saturationFlowPerLanePerHour": 1900
       },
       "intersections": [
@@ -50,11 +53,13 @@
       "lanes": 4,
       "targetSpeedKph": 50,
       "mode": "fixed",
-      "origin": { "xM": 0, "yM": 130 },
-      "approachLengthM": 220,
+      "origin": { "xM": 0, "yM": 164 },
+      "approachLengthM": 300,
       "exitLengthM": 220,
       "demand": {
-        "spawnRatePerLanePerMin": 9,
+        "spawnRatePerLanePerMinMin": 3,
+        "spawnRatePerLanePerMinMax": 15,
+        "fluctuationPeriodS": 300,
         "saturationFlowPerLanePerHour": 1900
       },
       "intersections": [
@@ -72,10 +77,12 @@
       "lanes": 2,
       "twoWay": true,
       "linksArterialNodes": ["pt_1", "fb_4"],
-      "crossChance": 0.15,
+      "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
-        "spawnRatePerLanePerMin": 4,
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
         "saturationFlowPerLanePerHour": 1800
       }
     },
@@ -85,10 +92,12 @@
       "lanes": 2,
       "twoWay": true,
       "linksArterialNodes": ["pt_2", "fb_3"],
-      "crossChance": 0.15,
+      "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
-        "spawnRatePerLanePerMin": 4,
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
         "saturationFlowPerLanePerHour": 1800
       }
     },
@@ -98,10 +107,12 @@
       "lanes": 2,
       "twoWay": true,
       "linksArterialNodes": ["pt_3", "fb_2"],
-      "crossChance": 0.15,
+      "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
-        "spawnRatePerLanePerMin": 4,
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
         "saturationFlowPerLanePerHour": 1800
       }
     },
@@ -111,10 +122,12 @@
       "lanes": 2,
       "twoWay": true,
       "linksArterialNodes": ["pt_4", "fb_1"],
-      "crossChance": 0.15,
+      "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
-        "spawnRatePerLanePerMin": 4,
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
         "saturationFlowPerLanePerHour": 1800
       }
     }

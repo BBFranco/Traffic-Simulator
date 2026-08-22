@@ -18,6 +18,9 @@
 /public/fonts-manifest.dev.json
 /public/hot
 /public/storage
+# Generated batch-run output (build step 13/17) - reproducible from {seed, config}, not source.
+/results/*
+!/results/README.md
 /storage/*.key
 /storage/pail
 /vendor

@@ -58,6 +58,14 @@ const PALETTES = {
         highlight: '#b45309',
         hud: 'rgba(30, 41, 59, 0.75)',
         junctionInner: 'rgba(15, 23, 42, 0.08)',
+        // Sprite variety (build step 11): a handful of body colours cars are
+        // drawn from, picked per-car by the seeded PRNG so the road doesn't
+        // read as a line of identical clones. Brake lights (carStopped) always
+        // override this - the stop/go signal has to stay legible regardless of
+        // which body colour a given car happens to be.
+        carPalette: ['#1e293b', '#334155', '#3f3527', '#1f3a4d'],
+        carStopped: '#dc2626',
+        carEdge: 'rgba(255, 255, 255, 0.65)',
     },
     dark: {
         void: '#080d16',
@@ -81,8 +89,14 @@ const PALETTES = {
         highlight: '#facc15',
         hud: 'rgba(226, 232, 240, 0.7)',
         junctionInner: 'rgba(226, 232, 240, 0.10)',
+        carPalette: ['#e2e8f0', '#cbd5e1', '#e8dcc8', '#c9dcea'],
+        carStopped: '#f87171',
+        carEdge: 'rgba(8, 13, 22, 0.65)',
     },
 };
+
+/** Bright lit-lens colours - universal traffic-light hues, not theme-dependent. */
+const LIT_LENS_COLOURS = ['#ef4444', '#f59e0b', '#22c55e'];
 
 /**
  * Active palette. Reassigning this module-level binding re-themes every draw
@@ -186,6 +200,8 @@ export class LayoutRenderer {
         this.layout = null;
         this.dpr = 1;
         this.hoverNodeId = null;
+        /** Per-frame simulation state (build step 2+): live cars and signal phases, set by simulator.js each frame. */
+        this.dynamic = { cars: [], signals: new Map() };
         this.options = {
             showLabels: true,
             showLaneMarkings: true,
@@ -203,6 +219,11 @@ export class LayoutRenderer {
 
     setOptions(partial) {
         Object.assign(this.options, partial);
+    }
+
+    /** `{ cars: [{point, stopped, heading}], signals: Map<nodeId, {dark, arterialGreen, arterialYellow, crossGreen, crossYellow}> }` */
+    setDynamicState(dynamic) {
+        this.dynamic = dynamic;
     }
 
     /** Swap the map palette and repaint. Called on every theme toggle. */
@@ -287,6 +308,7 @@ export class LayoutRenderer {
         if (this.options.showLaneMarkings) this.drawRoadMarkings();
         this.drawJunctions();
         this.drawStopLines();
+        this.drawCars();
         if (this.options.showSignalHeads) this.drawSignalHeads();
         if (this.options.showDistances) this.drawDistanceAnnotations();
         if (this.options.showLabels) this.drawLabels();
@@ -588,20 +610,63 @@ export class LayoutRenderer {
     }
 
     /**
-     * Signal heads, drawn UNLIT in Phase 1 - the visual language is in place but
-     * there is no controller to light them. Build step 7 lights the arterial
-     * phases; step 10 goes dark on a power cut.
+     * Cars, drawn as small rotated rounded rectangles oriented along their
+     * arterial's heading. Drawn after the road/junction surfaces and before the
+     * signal heads/labels, so vehicles sit "on" the asphalt but furniture and
+     * text stay legible on top.
+     */
+    drawCars() {
+        const cars = this.dynamic.cars;
+        if (!cars?.length) return;
+
+        const { ctx } = this;
+        const { scale, viewport } = this.camera;
+        const lengthM = this.layout.carLengthM ?? 4.5;
+        const widthM = Math.min(2.0, this.layout.laneWidthM * 0.55);
+        // Same screen-space floor/ceiling treatment as the signal heads
+        // (drawSignalHeads, below): a real 4.5m car is a couple of px at the
+        // network-overview zoom, which reads as noise rather than a vehicle.
+        // Floor keeps it visible zoomed out; ceiling stops it overgrowing a
+        // lane once zoomed in close.
+        const lengthPx = Math.min(22, Math.max(6, lengthM * scale));
+        const widthPx = Math.min(10, Math.max(3.5, widthM * scale));
+        const cornerPx = Math.min(2, widthPx / 3);
+
+        ctx.save();
+        ctx.strokeStyle = PALETTE.carEdge;
+        ctx.lineWidth = 1;
+
+        for (const car of cars) {
+            const p = this.camera.toScreen(car.point);
+            if (p.x < -20 || p.y < -20 || p.x > viewport.width + 20 || p.y > viewport.height + 20) continue;
+
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(Math.atan2(car.heading.y, car.heading.x));
+            ctx.fillStyle = car.stopped
+                ? PALETTE.carStopped
+                : PALETTE.carPalette[(car.colourIndex ?? 0) % PALETTE.carPalette.length];
+            roundRect(ctx, -lengthPx / 2, -widthPx / 2, lengthPx, widthPx, cornerPx);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        ctx.restore();
+    }
+
+    /**
+     * Signal heads. Unlit (all three lenses equally dim) when there is no
+     * dynamic state yet, or when `signals.get(node.id).dark` is true (load
+     * shedding, build step 6) - that dimness is deliberate, it is how an
+     * unpowered head actually looks and cannot be mistaken for a phase, since
+     * no single lens is brighter than the others.
      *
      * These are MAP SYMBOLS, not world-scale objects. A real signal lens is about
      * 0.3 m across, which is sub-pixel at any zoom you would actually watch the
      * whole corridor at, so the head is drawn at a near-constant screen size that
      * grows only gently with zoom - the same treatment a map pin gets. Without
      * that floor they are invisible until you are zoomed right in.
-     *
-     * The three lenses carry dim red/amber/green rather than uniform grey so the
-     * object is recognisable as a traffic light at a glance. All three are equally
-     * dim, which is how an unpowered head actually looks - it cannot be mistaken
-     * for a phase, because no single lens is brighter than the others.
      */
     drawSignalHeads() {
         const { ctx } = this;
@@ -623,6 +688,8 @@ export class LayoutRenderer {
 
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
+                const signal = this.dynamic.signals.get(node.id) ?? null;
+
                 for (const approach of node.approaches) {
                     const p = this.camera.toScreen(approach.signalHead);
                     // Cheap cull: skip heads that are off screen entirely.
@@ -641,8 +708,9 @@ export class LayoutRenderer {
                     ctx.fill();
                     ctx.stroke();
 
+                    const litIndex = litLensIndexFor(approach, signal);
                     for (let i = 0; i < 3; i += 1) {
-                        ctx.fillStyle = PALETTE.signalLensOff[i];
+                        ctx.fillStyle = i === litIndex ? LIT_LENS_COLOURS[i] : PALETTE.signalLensOff[i];
                         ctx.beginPath();
                         ctx.arc(p.x, p.y - gap + i * gap, lensR, 0, Math.PI * 2);
                         ctx.fill();
@@ -905,6 +973,16 @@ function laneCentreOffsetsFor(roadWidthM, lanes, twoWay) {
         offsets.push(roadWidthM / 2 - (i + 0.5) * laneWidthM);
     }
     return offsets;
+}
+
+/** Lens index (0 red, 1 amber, 2 green) that should be lit for this approach, or -1 for unlit/dark. */
+function litLensIndexFor(approach, signal) {
+    if (!signal || signal.dark) return -1;
+    const green = approach.kind === 'arterial' ? signal.arterialGreen : signal.crossGreen;
+    const yellow = approach.kind === 'arterial' ? signal.arterialYellow : signal.crossYellow;
+    if (green) return 2;
+    if (yellow) return 1;
+    return 0;
 }
 
 /** Round a raw span up to the nearest 1/2/5 x 10^n, for grid and scale bar. */

@@ -43,6 +43,42 @@ const rightNormal = (h) => ({ x: -h.y, y: h.x });
 const leftNormal = (h) => ({ x: h.y, y: -h.x });
 const negate = (h) => ({ x: -h.x, y: -h.y });
 
+/**
+ * A `demand` block is either a flat `spawnRatePerLanePerMin`, or a
+ * `spawnRatePerLanePerMinMin`/`Max` pair (+ optional `fluctuationPeriodS`)
+ * for demand that oscillates over the run - see equations.js's
+ * `fluctuatingDemand()`. Either way this returns a `spawnRatePerLanePerMin`
+ * ("design flow"): the flat value as given, or the range's midpoint if
+ * fluctuating - what fixedTime.js/greenWave.js time their one-off Webster
+ * plan to, standing in for a historical traffic count. `fluctuation` is null
+ * unless a range was given; when set, engine.js's `_liveSpawnRate()` uses it
+ * instead of the design flow to actually draw car arrivals.
+ */
+function buildDemand(raw, id, defaultSpawnRatePerLanePerMin, defaultSaturationFlowPerLanePerHour) {
+    const saturationFlowPerLanePerHour = raw?.saturationFlowPerLanePerHour ?? defaultSaturationFlowPerLanePerHour;
+    const min = raw?.spawnRatePerLanePerMinMin;
+    const max = raw?.spawnRatePerLanePerMinMax;
+
+    if (min == null && max == null) {
+        return {
+            spawnRatePerLanePerMin: raw?.spawnRatePerLanePerMin ?? defaultSpawnRatePerLanePerMin,
+            saturationFlowPerLanePerHour,
+            fluctuation: null,
+        };
+    }
+    if (min == null || max == null) {
+        throw new Error(`"${id}"'s fluctuating demand needs both spawnRatePerLanePerMinMin and spawnRatePerLanePerMinMax.`);
+    }
+    if (min < 0 || max < min) {
+        throw new Error(`"${id}"'s fluctuating demand range is invalid: min=${min}, max=${max}.`);
+    }
+    return {
+        spawnRatePerLanePerMin: (min + max) / 2,
+        saturationFlowPerLanePerHour,
+        fluctuation: { minPerLanePerMin: min, maxPerLanePerMin: max, periodS: raw?.fluctuationPeriodS ?? 300 },
+    };
+}
+
 /* ------------------------------------------------------------------- loader */
 
 /**
@@ -197,10 +233,7 @@ function buildArterial(raw, laneWidthM) {
         targetSpeedKph: raw.targetSpeedKph ?? 50,
         /** Initial controller mode from config; the UI overrides this per arterial at runtime. */
         mode: raw.mode ?? 'fixed',
-        demand: {
-            spawnRatePerLanePerMin: raw.demand?.spawnRatePerLanePerMin ?? 8,
-            saturationFlowPerLanePerHour: raw.demand?.saturationFlowPerLanePerHour ?? 1900,
-        },
+        demand: buildDemand(raw.demand, raw.id, 8, 1900),
         origin,
         approachLengthM,
         exitLengthM,
@@ -250,10 +283,7 @@ function buildConnector(raw, nodesById, defaults, laneWidthM) {
         crossChance: raw.crossChance ?? 0,
         /** Connectors are never wave-coordinated - two-way streets have no single progression band. */
         mode: raw.mode ?? defaults.connectorMode,
-        demand: {
-            spawnRatePerLanePerMin: raw.demand?.spawnRatePerLanePerMin ?? 4,
-            saturationFlowPerLanePerHour: raw.demand?.saturationFlowPerLanePerHour ?? 1800,
-        },
+        demand: buildDemand(raw.demand, raw.id, 4, 1800),
         nodeIds: [a.id, b.id],
         heading,
         spanM: span,

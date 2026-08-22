@@ -9,9 +9,6 @@
                             {{ config('app.name') }}
                         </span>
                     </a>
-                    <span class="hidden lg:inline-flex items-center rounded-full border border-amber-500/40 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                        Phase 1 · shell
-                    </span>
                 </div>
 
                 <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">

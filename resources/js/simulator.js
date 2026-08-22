@@ -1,5 +1,5 @@
 /**
- * /simulator page script - PHASE 1.
+ * /simulator page script - PHASE 2 (build steps 2-6: single-intersection engine).
  *
  * What this file does:
  *   - loads a corridor layout config and draws it (corridor.js -> renderer.js)
@@ -7,17 +7,24 @@
  *   - builds the controls that depend on the loaded corridor (per-arterial mode
  *     selectors, demand sliders, stats-footer columns)
  *   - holds the control state, reflects it in the UI, and logs every change
+ *   - owns the fixed-timestep animation loop and drives `engine.js` from it:
+ *     `Run`/`Pause` gate whether ticks advance, `Step` advances exactly one
+ *     tick, `Reset` restarts the engine at t=0 with the current seed/config.
  *
- * What this file deliberately does NOT do: step time. There is no
- * requestAnimationFrame loop, no timer and no simulation state. `Run` flips a UI
- * flag and nothing else. Build steps 6-14 attach the real engine behind these
- * same controls; this file's job is to prove the surface is right first.
+ * Corridor-wide coordination (connectors carrying traffic, cross-routing,
+ * green wave) is not here yet - that is build steps 7-14. This file already
+ * drives the engine generically per-arterial/per-node so those steps extend
+ * it rather than rewrite it.
  */
 
 import { buildLayout } from './sim/corridor.js';
 import { LayoutRenderer, ARTERIAL_ACCENTS } from './sim/renderer.js';
+import { SimulationEngine, CHART_SAMPLE_INTERVAL_S } from './sim/engine.js';
 import { Chart, INK, applyChartTheme, baseOptions, lineDataset } from './charts/theme.js';
 import { onThemeChange } from './theme.js';
+
+/** Physics timestep - decoupled from render framerate so batch mode (build step 13) reuses the same engine unmodified. */
+const FIXED_DT_S = 0.1;
 
 const boot = JSON.parse(document.getElementById('sim-boot').textContent);
 
@@ -62,7 +69,6 @@ const state = {
     speed: 1,
     /** Per arterial id -> 'fixed' | 'adaptive' | 'green_wave'. */
     arterialModes: {},
-    connectorMode: 'fixed',
     sensorMode: 'inductive_loop',
     batteryBackedSensors: true,
     power: {
@@ -76,9 +82,17 @@ const state = {
 };
 
 let layout = null;
+let engine = null;
+let footerChart = null;
+let lastChartSampleCount = 0;
+let accumulatorS = 0;
+let lastFrameMs = null;
+let rafId = null;
 
 const el = {
     canvasWrap: document.getElementById('canvas-wrap'),
+    simClock: document.getElementById('sim-clock'),
+    statsChartEmpty: document.getElementById('stats-chart-empty'),
     canvas: document.getElementById('sim-canvas'),
     tooltip: document.getElementById('node-tooltip'),
     corridorSelect: document.getElementById('corridor-select'),
@@ -158,11 +172,6 @@ segmentedHandlers.set('speed', (value) => {
     logChange('speed', `${state.speed}x`);
 });
 
-segmentedHandlers.set('connectorMode', (value) => {
-    state.connectorMode = value;
-    logChange('connectorMode', value);
-});
-
 /* -------------------------------------------------------- corridor loading */
 
 async function loadCorridor(id, { config = null } = {}) {
@@ -190,9 +199,29 @@ async function loadCorridor(id, { config = null } = {}) {
     buildDemandControls();
     buildStatsColumns();
     buildFooterChart();
+
+    // A different corridor means different nodes/arterials, so the engine
+    // (which precomputes stop-line distances per node at construction time)
+    // has to be rebuilt from scratch, not just reset.
+    engine = new SimulationEngine(layout);
+    engine.reset(engineResetOptions());
+    accumulatorS = 0;
+
     resetRunState();
 
     logChange('corridor', `${id} (${layout.arterials.length} arterials, ${layout.connectors.length} connectors)`);
+}
+
+/** Current control-panel state, in the shape `SimulationEngine.reset()` expects. */
+function engineResetOptions() {
+    return {
+        seed: state.seed,
+        arterialModes: { ...state.arterialModes },
+        demand: { ...state.demand },
+        sensorMode: state.sensorMode,
+        batteryBackedSensors: state.batteryBackedSensors,
+        power: { ...state.power },
+    };
 }
 
 async function fetchCorridor(id) {
@@ -256,6 +285,7 @@ function buildArterialModeControls() {
 
         segmentedHandlers.set(control, (value) => {
             state.arterialModes[arterial.id] = value;
+            engine.setArterialMode(arterial.id, value);
             updateStatsModeLabels();
             logChange(control, value);
         });
@@ -288,31 +318,76 @@ function cloneSegmented(control, value) {
 
 function buildDemandControls() {
     const entries = [
-        ...layout.arterials.map((a) => ({ id: a.id, name: a.shortName })),
-        ...layout.connectors.map((c) => ({ id: c.id, name: c.name })),
+        ...layout.arterials.map((a) => ({ id: a.id, name: a.shortName, demand: a.demand })),
+        ...layout.connectors.map((c) => ({ id: c.id, name: c.name, demand: c.demand })),
     ];
 
-    const rows = entries.map((entry) => {
-        const row = cloneTemplate('demand-row-template');
-        row.querySelector('[data-demand-name]').textContent = entry.name;
-
-        const input = row.querySelector('[data-demand-input]');
-        const readout = row.querySelector('[data-demand-value]');
-        input.value = state.demand[entry.id];
-        readout.textContent = state.demand[entry.id];
-
-        input.addEventListener('input', () => {
-            state.demand[entry.id] = Number(input.value);
-            readout.textContent = input.value;
-        });
-        input.addEventListener('change', () => {
-            logChange(`demand:${entry.id}`, `${input.value} veh/lane/min`);
-        });
-
-        return row;
-    });
+    const rows = entries.map((entry) => (entry.demand.fluctuation ? buildFluctuatingDemandRow(entry) : buildFlatDemandRow(entry)));
 
     el.demandControls.replaceChildren(...rows);
+}
+
+function buildFlatDemandRow(entry) {
+    const row = cloneTemplate('demand-row-template');
+    row.querySelector('[data-demand-name]').textContent = entry.name;
+
+    const input = row.querySelector('[data-demand-input]');
+    const readout = row.querySelector('[data-demand-value]');
+    input.value = state.demand[entry.id];
+    readout.textContent = state.demand[entry.id];
+
+    input.addEventListener('input', () => {
+        state.demand[entry.id] = Number(input.value);
+        readout.textContent = input.value;
+        engine.setDemand(entry.id, state.demand[entry.id]);
+    });
+    input.addEventListener('change', () => {
+        logChange(`demand:${entry.id}`, `${input.value} veh/lane/min`);
+    });
+
+    return row;
+}
+
+/** For an id whose corridor config gave it a fluctuation range (corridor.js's buildDemand()) - two handles instead of one, plus a live readout of where the sinusoid actually is right now. */
+function buildFluctuatingDemandRow(entry) {
+    const row = cloneTemplate('demand-row-fluctuating-template');
+    row.querySelector('[data-demand-name]').textContent = entry.name;
+    row.dataset.demandId = entry.id;
+
+    const minInput = row.querySelector('[data-demand-min-input]');
+    const maxInput = row.querySelector('[data-demand-max-input]');
+    const minReadout = row.querySelector('[data-demand-min-value]');
+    const maxReadout = row.querySelector('[data-demand-max-value]');
+
+    minInput.value = entry.demand.fluctuation.minPerLanePerMin;
+    maxInput.value = entry.demand.fluctuation.maxPerLanePerMin;
+    minReadout.textContent = entry.demand.fluctuation.minPerLanePerMin;
+    maxReadout.textContent = entry.demand.fluctuation.maxPerLanePerMin;
+
+    const commit = () => {
+        const min = Math.min(Number(minInput.value), Number(maxInput.value));
+        const max = Math.max(Number(minInput.value), Number(maxInput.value));
+        minReadout.textContent = min;
+        maxReadout.textContent = max;
+        engine.setDemandRange(entry.id, min, max);
+    };
+    minInput.addEventListener('input', commit);
+    maxInput.addEventListener('input', commit);
+    minInput.addEventListener('change', () => logChange(`demand:${entry.id}`, `range ${minInput.value}-${maxInput.value} veh/lane/min`));
+    maxInput.addEventListener('change', () => logChange(`demand:${entry.id}`, `range ${minInput.value}-${maxInput.value} veh/lane/min`));
+
+    return row;
+}
+
+/** Per-frame: the fluctuating rows' "now" readout - purely cosmetic, engine.liveSpawnRate() never touches rng so polling it every frame is safe. */
+function updateDemandReadouts() {
+    if (!engine) return;
+    el.demandControls.querySelectorAll('[data-demand-id]').forEach((row) => {
+        const nowEl = row.querySelector('[data-demand-now]');
+        if (!nowEl) return;
+        const rate = engine.liveSpawnRate(row.dataset.demandId);
+        nowEl.textContent = rate == null ? '—' : rate.toFixed(1);
+    });
 }
 
 function buildStatsColumns() {
@@ -428,16 +503,31 @@ function updateHover(event) {
     }
 
     const arterial = layout.arterials.find((a) => a.id === node.arterialId);
+    const debug = engine?.signalDebugInfo(node.id);
     const v = 'text-slate-800 dark:text-slate-200';
+    const row = (label, value, valueClass = v) =>
+        `<div class="flex justify-between gap-3"><dt>${label}</dt><dd class="${valueClass}">${value}</dd></div>`;
+
     el.tooltip.innerHTML = `
         <div class="font-semibold text-slate-900 dark:text-slate-100">${escapeHtml(node.name)}</div>
         <dl class="mt-1.5 space-y-0.5 text-slate-500 dark:text-slate-400">
-            <div class="flex justify-between gap-3"><dt>Arterial</dt><dd class="${v}">${escapeHtml(arterial.shortName)}</dd></div>
-            <div class="flex justify-between gap-3"><dt>Mode</dt><dd class="${v}">${escapeHtml(MODE_LABELS[state.arterialModes[node.arterialId]])}</dd></div>
-            <div class="flex justify-between gap-3"><dt>Cross street</dt><dd class="${v}">${escapeHtml(node.crossStreetName)}</dd></div>
-            <div class="flex justify-between gap-3"><dt>Approaches</dt><dd class="${v}">${node.approaches.length}</dd></div>
-            <div class="flex justify-between gap-3"><dt>To next signal</dt><dd class="${v}">${node.distanceToNextM ? `${node.distanceToNextM} m` : 'end of arterial'}</dd></div>
-            <div class="flex justify-between gap-3"><dt>Node id</dt><dd class="font-mono text-slate-400 dark:text-slate-500">${escapeHtml(node.id)}</dd></div>
+            ${row('Arterial', escapeHtml(arterial.shortName))}
+            ${row('Mode', escapeHtml(MODE_LABELS[state.arterialModes[node.arterialId]]))}
+            ${row('Cross street', escapeHtml(node.crossStreetName))}
+            ${row('Approaches', node.approaches.length)}
+            ${row('To next signal', node.distanceToNextM ? `${node.distanceToNextM} m` : 'end of arterial')}
+            ${row('Node id', escapeHtml(node.id), 'font-mono text-slate-400 dark:text-slate-500')}
+            ${
+                debug
+                    ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 space-y-0.5">
+                        ${row('Signal', escapeHtml(debug.phaseLabel))}
+                        ${debug.elapsedS != null ? row('Time in phase', `${debug.elapsedS.toFixed(1)}s`) : ''}
+                        ${row('Arterial queue', `${debug.arterialQueue} car${debug.arterialQueue === 1 ? '' : 's'}`)}
+                        ${row('Cross queue', `${debug.crossQueue} car${debug.crossQueue === 1 ? '' : 's'}`)}
+                        ${row('Next change', escapeHtml(debug.etaLabel))}
+                    </div>`
+                    : ''
+            }
         </dl>`;
     el.tooltip.classList.remove('hidden');
 
@@ -502,16 +592,27 @@ function clearCorridorError() {
     el.corridorError?.classList.add('hidden');
 }
 
+/** Full restart at t=0 with the current seed/config - shared by Reset, seed change and seed randomise. */
+function restartEngine() {
+    engine.reset(engineResetOptions());
+    accumulatorS = 0;
+    lastFrameMs = null;
+    buildFooterChart();
+    resetRunState();
+}
+
 el.seedInput.addEventListener('change', () => {
     state.seed = Number(el.seedInput.value);
+    restartEngine();
     logChange('seed', state.seed);
 });
 
 el.seedRandomise.addEventListener('click', () => {
-    // Phase 1 only: picking a seed is not itself stochastic simulation input, and
-    // build step 16 replaces every in-sim Math.random() call with the seeded PRNG.
+    // Picking a seed is not itself stochastic simulation input - every in-sim
+    // draw (spawn timing, cross-routing, sprite pick) goes through rng.js.
     state.seed = Math.floor(Math.random() * 2 ** 31);
     el.seedInput.value = state.seed;
+    restartEngine();
     logChange('seed', state.seed);
 });
 
@@ -519,6 +620,7 @@ document.querySelectorAll('input[name="sensorMode"]').forEach((radio) => {
     radio.addEventListener('change', () => {
         if (!radio.checked) return;
         state.sensorMode = radio.value;
+        engine.setSensorMode(radio.value);
         el.sensorPillLabel.textContent = SENSOR_LABELS[radio.value];
         logChange('sensorMode', radio.value);
     });
@@ -526,28 +628,41 @@ document.querySelectorAll('input[name="sensorMode"]').forEach((radio) => {
 
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {
     state.batteryBackedSensors = event.target.checked;
+    engine.setBatteryBackedSensors(event.target.checked);
     logChange('batteryBackedSensors', state.batteryBackedSensors);
 });
 
+function syncPowerSchedule() {
+    engine.setPowerSchedule({
+        scheduledOutages: state.power.scheduledOutages,
+        offMinutes: state.power.offMinutes,
+        periodMinutes: state.power.periodMinutes,
+    });
+}
+
 document.getElementById('scheduled-outages').addEventListener('change', (event) => {
     state.power.scheduledOutages = event.target.checked;
+    syncPowerSchedule();
     logChange('power.scheduledOutages', state.power.scheduledOutages);
 });
 
 document.getElementById('outage-off-minutes').addEventListener('change', (event) => {
     state.power.offMinutes = Number(event.target.value);
+    syncPowerSchedule();
     logChange('power.offMinutes', state.power.offMinutes);
 });
 
 document.getElementById('outage-period-minutes').addEventListener('change', (event) => {
     state.power.periodMinutes = Number(event.target.value);
+    syncPowerSchedule();
     logChange('power.periodMinutes', state.power.periodMinutes);
 });
 
 el.loadSheddingToggle.addEventListener('click', () => {
     state.power.loadShedding = !state.power.loadShedding;
     applyToggleFaces(el.loadSheddingToggle, state.power.loadShedding);
-    renderPowerPill();
+    engine.setManualLoadShedding(state.power.loadShedding);
+    renderPowerPill(state.power.loadShedding);
     logChange('power.loadShedding', state.power.loadShedding);
 });
 
@@ -558,12 +673,16 @@ el.runToggle.addEventListener('click', () => {
     logChange('running', state.running);
 });
 
-el.stepButton.addEventListener('click', () => logChange('step', 'requested (no engine attached)'));
+el.stepButton.addEventListener('click', () => {
+    engine.tick(FIXED_DT_S);
+    renderFrame(engine.snapshot());
+    logChange('step', `advanced ${FIXED_DT_S}s`);
+});
 
 el.resetButton.addEventListener('click', () => {
     state.running = false;
     applyToggleFaces(el.runToggle, false);
-    resetRunState();
+    restartEngine();
     renderer.fit();
     logChange('reset', 'scenario reset');
 });
@@ -580,19 +699,25 @@ function renderRunPill() {
     const tone = state.running ? 'emerald' : 'neutral';
     el.runStatePill.className = PILL_TONES[tone];
     el.runStatePill.querySelector('span').className = DOT_TONES[tone];
-    el.runStateLabel.textContent = state.running ? 'Running · Phase 1 stub' : 'Idle';
+    el.runStateLabel.textContent = state.running ? 'Running' : 'Idle';
 }
 
-function renderPowerPill() {
-    const tone = state.power.loadShedding ? 'rose' : 'emerald';
+/**
+ * `effectiveLoadShedding` is the engine's actual power state, not the manual
+ * toggle's own on/off - a scheduled rotating outage can put the network into
+ * load shedding even while the manual button still reads "off", so this pill
+ * has to reflect what is really happening, not just what was clicked.
+ */
+function renderPowerPill(effectiveLoadShedding) {
+    const tone = effectiveLoadShedding ? 'rose' : 'emerald';
     el.powerPill.className = PILL_TONES[tone];
     el.powerPill.querySelector('span').className = DOT_TONES[tone];
-    el.powerLabel.textContent = state.power.loadShedding ? 'Load shedding' : 'Power normal';
+    el.powerLabel.textContent = effectiveLoadShedding ? 'Load shedding' : 'Power normal';
 }
 
 /** Clears every stat readout back to the em-dash placeholder. */
 function resetRunState() {
-    document.getElementById('sim-clock').textContent = '00:00.0';
+    el.simClock.textContent = '00:00.0';
     el.statsColumns.querySelectorAll('[data-stat]').forEach((node) => {
         if (node.dataset.stat !== 'mode') node.textContent = '—';
     });
@@ -605,12 +730,10 @@ function resetRunState() {
 
 /* ------------------------------------------------------------- footer chart */
 
-let footerChart = null;
-
 /**
- * The live divergence chart. Created empty in Phase 1: the axes, series and
- * legend exist so the layout is real, but there is nothing to plot until the
- * engine lands and starts pushing samples in build step 8.
+ * The live throughput chart. `appendChartSampleIfNeeded()` below feeds it a
+ * point per arterial every 0.5 sim-seconds from `engine.js`'s cumulative
+ * cleared-vehicle count, so the line's slope reads as throughput.
  *
  * Rebuilt whenever the corridor changes - the series are the arterials, so a
  * different corridor means a different legend.
@@ -622,12 +745,11 @@ function buildFooterChart() {
         footerChart = null;
     }
     const options = baseOptions({
-        tickFormat: (v) => `${v}s`,
+        tickFormat: (v) => `${v}`,
         xTitle: '',
     });
     options.layout.padding.top = 10;
     options.scales.y.suggestedMin = 0;
-    options.scales.y.suggestedMax = 60;
     options.plugins.legend = {
         display: true,
         position: 'bottom',
@@ -652,7 +774,118 @@ function buildFooterChart() {
         options,
     });
 
+    lastChartSampleCount = 0;
+    el.statsChartEmpty?.classList.remove('hidden');
+
     return footerChart;
+}
+
+/** Pushes fresh chart points only when the engine actually produced new samples this frame. */
+function appendChartSampleIfNeeded(snapshot) {
+    if (!footerChart || !layout) return;
+
+    const totalSamples = layout.arterials.reduce((n, a) => n + (snapshot.stats[a.id]?.chartSamples.length ?? 0), 0);
+    if (totalSamples === lastChartSampleCount) return;
+    lastChartSampleCount = totalSamples;
+
+    // Labelled in elapsed seconds, not sample index - the sample count keeps
+    // growing for the life of the run, so a raw index reads as if the chart
+    // had stalled once autoSkip starts hiding most of the ticks.
+    const first = snapshot.stats[layout.arterials[0]?.id]?.chartSamples ?? [];
+    footerChart.data.labels = first.map((_, i) => `${i * CHART_SAMPLE_INTERVAL_S}`);
+    footerChart.data.datasets.forEach((dataset, index) => {
+        const arterial = layout.arterials[index];
+        dataset.data = (snapshot.stats[arterial.id]?.chartSamples ?? []).slice();
+    });
+    footerChart.update('none');
+    el.statsChartEmpty?.classList.toggle('hidden', totalSamples > 0);
+}
+
+/* -------------------------------------------------------------- render loop */
+
+const fmtSeconds = (s) => `${s.toFixed(1)}s`;
+
+function updateSimClock(simTimeS) {
+    const totalTenths = Math.floor(simTimeS * 10);
+    const mm = Math.floor(totalTenths / 600);
+    const ss = Math.floor((totalTenths % 600) / 10);
+    const tenths = totalTenths % 10;
+    el.simClock.textContent = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${tenths}`;
+}
+
+function setStat(column, name, text) {
+    const node = column.querySelector(`[data-stat="${name}"]`);
+    if (node) node.textContent = text;
+}
+
+function updateStatsFooter(snapshot) {
+    el.statsColumns.querySelectorAll('[data-stats-column]').forEach((column) => {
+        const arterialId = column.dataset.arterialId;
+        const stats = snapshot.stats[arterialId];
+        if (!stats) return;
+
+        setStat(column, 'avgWaitNow', fmtSeconds(stats.avgWaitNow));
+        setStat(column, 'avgWaitRolling', fmtSeconds(stats.avgWaitRolling));
+        setStat(column, 'throughput', String(stats.throughputPerMin));
+        setStat(column, 'onRoad', String(stats.onRoad));
+        setStat(
+            column,
+            'clearedWithoutStop',
+            stats.clearedWithoutStopPct == null ? '—' : `${Math.round(stats.clearedWithoutStopPct)}%`
+        );
+
+        // Queue chips double as the sensor readout: blank them (rather than show
+        // ground truth the sensor could not actually see) while the current
+        // sensor mode is dark from a power cut.
+        column.querySelectorAll('[data-queue-chips] > [data-node-id]').forEach((chipEl) => {
+            const valueEl = chipEl.querySelector('[data-chip-value]');
+            if (!valueEl) return;
+            const value = snapshot.sensorAvailable ? stats.queues[chipEl.dataset.nodeId] : null;
+            valueEl.textContent = value == null ? '—' : String(value);
+        });
+    });
+}
+
+/** One frame: push the engine's latest state into the canvas, footer stats and chart. */
+function renderFrame(snapshot) {
+    renderer.setDynamicState({ cars: snapshot.cars, signals: snapshot.signals });
+    renderer.draw();
+    updateStatsFooter(snapshot);
+    updateSimClock(snapshot.simTimeS);
+    renderPowerPill(snapshot.powerState === 'load_shedding');
+    appendChartSampleIfNeeded(snapshot);
+    updateDemandReadouts();
+}
+
+/**
+ * Fixed-timestep accumulator: physics always advances in FIXED_DT_S chunks
+ * regardless of the browser's actual frame rate, so the same engine (build
+ * step 13's headless runner included) behaves identically no matter how fast
+ * it is drawn. `state.speed` scales how much sim time one real second buys.
+ */
+function animate(nowMs) {
+    rafId = requestAnimationFrame(animate);
+
+    if (lastFrameMs === null) {
+        lastFrameMs = nowMs;
+        renderFrame(engine.snapshot());
+        return;
+    }
+
+    const realDtS = Math.min((nowMs - lastFrameMs) / 1000, 0.25);
+    lastFrameMs = nowMs;
+
+    if (state.running) {
+        accumulatorS += realDtS * state.speed;
+        let steps = 0;
+        while (accumulatorS >= FIXED_DT_S && steps < 50) {
+            engine.tick(FIXED_DT_S);
+            accumulatorS -= FIXED_DT_S;
+            steps += 1;
+        }
+    }
+
+    renderFrame(engine.snapshot());
 }
 
 /* --------------------------------------------------------------------- boot */
@@ -677,6 +910,6 @@ function buildFooterChart() {
         showCorridorError(error.message);
     }
 
-    renderPowerPill();
     renderRunPill();
+    rafId = requestAnimationFrame(animate);
 })();
