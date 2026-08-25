@@ -21,7 +21,11 @@
         'rose' => 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300',
     ];
 
-    $controllerModeOptions = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+    // 'none' (free flow) isn't a mode a user picks from the panel - it's only ever set by a
+    // corridor config (a highway backbone has no signal at all, see corridor.js's mode:"none"
+    // support) - included here just so that arterial's mode toggle shows a selected button
+    // instead of none highlighted.
+    $controllerModeOptions = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave', 'none' => 'Free flow'];
 
     // Shared class fragments, so an inset panel or a small input looks the same
     // everywhere and only has to be re-themed in one place.
@@ -268,11 +272,17 @@
                     <span class="text-[10px] text-slate-500">One column per arterial · updates every 0.5&nbsp;s once the engine is wired</span>
                 </div>
 
-                <div class="grid gap-0 lg:grid-cols-[1fr_1fr_320px]">
+                {{-- A fixed max-height + internal scroll on the arterial-column grid, not the
+                     whole footer - a corridor with many arterials (metro-interchange has 6,
+                     Hatfield has 2) must not keep growing the footer until it eats the map
+                     canvas's space. The chart lives in its own fixed-width sidebar outside
+                     that grid so it always keeps a stable width/position regardless of how
+                     many stats-column rows are scrolled underneath it. --}}
+                <div class="flex max-h-[280px] items-stretch">
                     {{-- One stats column per arterial, built from the loaded corridor. --}}
-                    <div id="stats-columns" class="contents"></div>
+                    <div id="stats-columns" class="grid min-w-0 flex-1 auto-rows-min grid-cols-1 gap-0 overflow-y-auto sm:grid-cols-2"></div>
 
-                    <div class="border-slate-200 px-4 py-3 lg:border-l dark:border-slate-800">
+                    <div class="w-[280px] shrink-0 overflow-y-auto border-slate-200 px-4 py-3 lg:border-l dark:border-slate-800">
                         <div class="flex items-baseline justify-between">
                             <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Vehicles cleared over time</span>
                             <span class="text-[10px] text-slate-500">cumulative count</span>
@@ -300,7 +310,7 @@
     </template>
 
     <template id="stats-column-template">
-        <div class="border-slate-200 px-4 py-3 [&:not(:first-child)]:lg:border-l dark:border-slate-800" data-stats-column>
+        <div class="border-b border-slate-200 px-4 py-3 [&:nth-child(even)]:sm:border-l dark:border-slate-800" data-stats-column>
             <div class="flex items-center gap-2">
                 <span class="h-2.5 w-2.5 shrink-0 rounded-full" data-accent-dot></span>
                 <span class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100" data-arterial-name></span>

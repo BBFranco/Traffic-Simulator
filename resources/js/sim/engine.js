@@ -162,6 +162,10 @@ export class SimulationEngine {
                         roadWidthM: connector.roadWidthM,
                         lanes: perSide,
                         laneWidthM: connector.laneWidthM,
+                        // Set only for a curved connector (a ramp) - see corridor.js's
+                        // roadPointAt(), the seam that makes car.js/this file's own
+                        // distanceM/speedMps-only physics agnostic to curve vs. straight.
+                        curve: connector.curve,
                     },
                     nearGateNode: nodeA,
                     nearGateDistanceM: connector.stubLengthM - nodeAStopSetbackM,
@@ -175,6 +179,7 @@ export class SimulationEngine {
                         roadWidthM: connector.roadWidthM,
                         lanes: connector.twoWay ? perSide : 0,
                         laneWidthM: connector.laneWidthM,
+                        curve: connector.curveReversed,
                     },
                     nearGateNode: nodeB,
                     nearGateDistanceM: connector.stubLengthM - nodeBStopSetbackM,
@@ -215,6 +220,11 @@ export class SimulationEngine {
                     roadWidthM: arterial.roadWidthM,
                     lanes: arterial.lanes,
                     laneWidthM: arterial.laneWidthM,
+                    // Set only for a curved arterial - see corridor.js's roadPointAt().
+                    // curveOffsetM lines up this road's distanceM=0 (the approach
+                    // lead-in's spawn point) with the curve's own t=0 (the first node).
+                    curve: arterial.curve,
+                    curveOffsetM: arterial.approachLengthM,
                 },
                 lanes: Array.from({ length: arterial.lanes }, () => ({
                     cars: [],
@@ -394,9 +404,9 @@ export class SimulationEngine {
             for (const lane of this.arterialState.get(arterial.id).lanes) {
                 for (const car of lane.cars) {
                     cars.push({
-                        point: carWorldPoint(car),
+                        point: carRenderPoint(car),
                         stopped: car.stoppedNow,
-                        heading: car.road.heading,
+                        heading: carRenderHeading(car),
                         colourIndex: car.colourIndex,
                         vehicleType: car.vehicleType,
                         lengthM: car.lengthM,
@@ -434,6 +444,11 @@ export class SimulationEngine {
                 arterialYellow: isYellow && info.controller.phase === 0,
                 crossGreen: !dark && info.controller.isCrossGreen(),
                 crossYellow: isYellow && info.controller.phase === 1,
+                // A highway merge point (an arterial with mode:"none") has no
+                // signal at all, not just an unlit one - the renderer skips
+                // drawing its stop lines/housings entirely instead of showing
+                // a dark head, which would read as a broken light.
+                freeFlow: info.controllerType === 'none',
             });
         }
 

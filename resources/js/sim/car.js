@@ -7,7 +7,7 @@
  * `equations.js:idmAcceleration()`. This is deliberate: it means "braking
  * for a red light" is never a second, hand-rolled formula.
  */
-import { leftNormal, addVector } from './corridor.js';
+import { leftNormal, addVector, roadPointAt } from './corridor.js';
 import { IDM_DEFAULTS, idmAcceleration, MOBIL_DEFAULTS } from './equations.js';
 
 /** Speed below which a car counts as "stopped" for wait-time/queue stats. */
@@ -228,11 +228,12 @@ export function carRenderPoint(car) {
     };
 }
 
-/** Heading to draw `car` with this frame - mid-sweep during a turn, otherwise its road's own heading. */
+/** Heading to draw `car` with this frame - mid-sweep during a turn, otherwise its road's own (possibly curved) heading at its current position. */
 export function carRenderHeading(car) {
-    if (!car.turnAnim) return car.road.heading;
+    const heading = roadPointAt(car.road, car.distanceM).heading;
+    if (!car.turnAnim) return heading;
     const t = easeInOut(Math.min(1, car.turnAnim.elapsedS / TURN_ANIM_DURATION_S));
-    return lerpHeading(car.turnAnim.fromHeading, car.road.heading, t);
+    return lerpHeading(car.turnAnim.fromHeading, heading, t);
 }
 
 /** Resets the id counter - call between headless batch runs so ids stay small and stable. */
@@ -252,8 +253,8 @@ export function laneOffsetsFor(roadWidthM, lanes, laneWidthM) {
 export function carWorldPoint(car) {
     const { road } = car;
     const offsets = laneOffsetsFor(road.roadWidthM, road.lanes, road.laneWidthM);
-    const normal = leftNormal(road.heading);
-    const base = addVector(road.startPoint, road.heading, car.distanceM);
+    const { point: base, heading } = roadPointAt(road, car.distanceM);
+    const normal = leftNormal(heading);
 
     let lateralOffsetM = offsets[car.lane];
     if (car.laneChangeAnim) {

@@ -35,6 +35,8 @@ const MODE_LABELS = {
     fixed: 'Fixed-time',
     adaptive: 'Adaptive',
     green_wave: 'Green wave',
+    /** Not a mode a user picks - set by a corridor config for a highway backbone (mode:"none" in corridor.js). */
+    none: 'Free flow',
 };
 
 const SENSOR_LABELS = {

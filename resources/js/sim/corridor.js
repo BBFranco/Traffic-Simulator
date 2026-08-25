@@ -43,6 +43,158 @@ const rightNormal = (h) => ({ x: -h.y, y: h.x });
 const leftNormal = (h) => ({ x: h.y, y: -h.x });
 const negate = (h) => ({ x: -h.x, y: -h.y });
 
+/* -------------------------------------------------------------- curves */
+
+const CURVE_SAMPLES_PER_SEGMENT = 40;
+
+/** Renormalised lerp of a unit heading vector - same treatment car.js's turnAnim uses for its cosmetic sweep. */
+function lerpUnit(a, b, t) {
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    const len = Math.hypot(x, y) || 1;
+    return { x: x / len, y: y / len };
+}
+
+function quadPoint(seg, t) {
+    const u = 1 - t;
+    return {
+        x: u * u * seg.p0.x + 2 * u * t * seg.c.x + t * t * seg.p1.x,
+        y: u * u * seg.p0.y + 2 * u * t * seg.c.y + t * t * seg.p1.y,
+    };
+}
+
+function quadTangent(seg, t) {
+    const u = 1 - t;
+    const x = 2 * u * (seg.c.x - seg.p0.x) + 2 * t * (seg.p1.x - seg.c.x);
+    const y = 2 * u * (seg.c.y - seg.p0.y) + 2 * t * (seg.p1.y - seg.c.y);
+    const len = Math.hypot(x, y) || 1;
+    return { x: x / len, y: y / len };
+}
+
+/** A sampler over a dense arc-length table - shared by buildCurve() and its reversed() counterpart. */
+function samplerFrom(samples) {
+    const lengthM = samples[samples.length - 1].cumulativeM;
+
+    /**
+     * Position + heading at `distanceM` along the curve. Beyond [0, lengthM]
+     * this extrapolates linearly along the boundary sample's own tangent
+     * (straight, not a continuation of the underlying Bezier maths) - good
+     * enough for an arterial's approach/exit lead-in, which only needs
+     * *some* straight run-up before/after the curved section a driver would
+     * actually be on, not a further bend.
+     */
+    function sampleAt(distanceM) {
+        if (distanceM < 0) {
+            const first = samples[0];
+            return {
+                point: { x: first.point.x + first.heading.x * distanceM, y: first.point.y + first.heading.y * distanceM },
+                heading: first.heading,
+            };
+        }
+        if (distanceM > lengthM) {
+            const last = samples[samples.length - 1];
+            const over = distanceM - lengthM;
+            return {
+                point: { x: last.point.x + last.heading.x * over, y: last.point.y + last.heading.y * over },
+                heading: last.heading,
+            };
+        }
+        const d = distanceM;
+        let lo = 0;
+        let hi = samples.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (samples[mid].cumulativeM < d) lo = mid + 1;
+            else hi = mid;
+        }
+        const b = samples[lo];
+        const a = samples[Math.max(0, lo - 1)];
+        const span = b.cumulativeM - a.cumulativeM;
+        const t = span > 1e-6 ? (d - a.cumulativeM) / span : 0;
+        return {
+            point: {
+                x: a.point.x + (b.point.x - a.point.x) * t,
+                y: a.point.y + (b.point.y - a.point.y) * t,
+            },
+            heading: lerpUnit(a.heading, b.heading, t),
+        };
+    }
+
+    return {
+        lengthM,
+        points: samples.map((s) => s.point),
+        sampleAt,
+        reversed: () =>
+            samplerFrom(
+                [...samples].reverse().map((s) => ({
+                    point: s.point,
+                    heading: { x: -s.heading.x, y: -s.heading.y },
+                    cumulativeM: lengthM - s.cumulativeM,
+                }))
+            ),
+    };
+}
+
+/**
+ * A curve for a connector's centreline: a chain of quadratic Beziers,
+ * authored as an odd-length list of alternating anchor/control world points
+ * (`[P0, C1, P1, C2, P2, ...]`) - the same one-control-point sweep car.js's
+ * `turnAnim` already draws for a cosmetic turn, just chained so a loop ramp
+ * (~180 degrees or more) is reachable with a few segments instead of one.
+ * Densely sampled once at load into an arc-length table so `distanceM` along
+ * a curved road means the same real driven metres it always has - see
+ * `roadPointAt()` below, the one seam that lets car.js/engine.js treat a
+ * curved and a straight road identically.
+ */
+function buildCurve(rawPoints, id) {
+    if (!Array.isArray(rawPoints) || rawPoints.length < 3 || rawPoints.length % 2 === 0) {
+        throw new Error(
+            `Curve for "${id}" needs an odd number of points >= 3 (anchor, control, anchor, ...), got ${rawPoints?.length ?? 0}.`
+        );
+    }
+    const pts = rawPoints.map((p) => ({ x: p.xM, y: p.yM }));
+    const segments = [];
+    for (let i = 0; i + 2 < pts.length; i += 2) {
+        segments.push({ p0: pts[i], c: pts[i + 1], p1: pts[i + 2] });
+    }
+
+    const samples = [];
+    let cumulative = 0;
+    let prevPoint = null;
+    for (const seg of segments) {
+        for (let i = 0; i <= CURVE_SAMPLES_PER_SEGMENT; i += 1) {
+            if (i === 0 && prevPoint) continue; // shared anchor with the previous segment's last sample
+            const t = i / CURVE_SAMPLES_PER_SEGMENT;
+            const point = quadPoint(seg, t);
+            if (prevPoint) cumulative += Math.hypot(point.x - prevPoint.x, point.y - prevPoint.y);
+            samples.push({ point, heading: quadTangent(seg, t), cumulativeM: cumulative });
+            prevPoint = point;
+        }
+    }
+
+    return samplerFrom(samples);
+}
+
+/**
+ * Position + heading `distanceM` along `road` - the one seam that makes a
+ * curved connector/arterial (`road.curve` set, see `buildConnector()`/
+ * `buildArterial()`) and an ordinary straight road interchangeable
+ * everywhere downstream (car.js, engine.js). `road.curveOffsetM` (default 0)
+ * is how far the curve's OWN t=0 sits past this road's distanceM=0: for a
+ * connector that's 0 (distanceM=0 is the connector's own start, same as the
+ * curve's t=0), but for an arterial distanceM=0 is the approach lead-in's
+ * spawn point, `approachLengthM` before the curve's own first-node t=0 - so
+ * an arterial's road descriptor sets `curveOffsetM: approachLengthM` to line
+ * the two up (see engine.js's arterial `road` construction). IDM/MOBIL
+ * physics never touch heading, only
+ * distanceM/speedMps, so this is the only place curve-vs-straight has to be
+ * known at all.
+ */
+export function roadPointAt(road, distanceM) {
+    if (road.curve) return road.curve.sampleAt(distanceM - (road.curveOffsetM ?? 0));
+    return { point: add(road.startPoint, road.heading, distanceM), heading: road.heading };
+}
+
 /**
  * A `demand` block is either a flat `spawnRatePerLanePerMin`, or a
  * `spawnRatePerLanePerMinMin`/`Max` pair (+ optional `fluctuationPeriodS`)
@@ -187,11 +339,24 @@ function buildArterial(raw, laneWidthM) {
     const exitLengthM = raw.exitLengthM ?? 200;
     const lanes = raw.lanes ?? 1;
     const roadWidthM = lanes * laneWidthM;
+    /**
+     * Optional curved centreline (same odd-length alternating anchor/control
+     * point format as a connector's `curve` - see buildCurve()). `direction`
+     * is still required even for a curved arterial: it is this road's
+     * nominal travel direction (a highway that bends still runs broadly
+     * eastbound), used for `DIRECTION_VECTORS`/origin bookkeeping and as the
+     * straight-line fallback when there's no curve. The curve, when given,
+     * overrides *where* each node/approach actually sits - see
+     * `node.arterialHeading` below, which becomes the LOCAL tangent instead
+     * of this one constant `heading` once a curve is present.
+     */
+    const curve = raw.curve ? buildCurve(raw.curve, raw.id) : null;
 
     // Walk the intersection chain from the origin, accumulating distanceToNextM.
     let travelled = 0;
     const intersections = raw.intersections.map((node, index) => {
         const distanceToNextM = node.distanceToNextM ?? null;
+        const at = curve ? curve.sampleAt(travelled) : { point: add(origin, heading, travelled), heading };
         const built = {
             id: node.id,
             name: node.name,
@@ -199,14 +364,15 @@ function buildArterial(raw, laneWidthM) {
             index,
             /** metres along the arterial centreline, measured from `origin`. */
             sAlongM: travelled,
-            point: add(origin, heading, travelled),
+            point: at.point,
             distanceToNextM,
             distanceFromPreviousM: index === 0 ? null : raw.intersections[index - 1].distanceToNextM ?? null,
             crossStreetName: node.crossStreetName ?? null,
             crossStreetLanes: node.crossStreetLanes ?? null,
             arterialLanes: lanes,
             arterialRoadWidthM: roadWidthM,
-            arterialHeading: heading,
+            /** LOCAL tangent at this node - the curved-arterial generalisation of the old constant `heading`. Everything downstream (cross-street axis, approach/stop-line geometry, junction box orientation) reads this per node, not the arterial's own nominal `heading`. */
+            arterialHeading: at.heading,
             connectorId: null,
             crossAxis: null,
             crossLanes: null,
@@ -237,9 +403,11 @@ function buildArterial(raw, laneWidthM) {
         origin,
         approachLengthM,
         exitLengthM,
-        /** Drawn/driveable extent, including the spawn lead-in and the run-out. */
-        startPoint: add(origin, heading, -approachLengthM),
-        endPoint: add(last.point, heading, exitLengthM),
+        /** Set only for a curved arterial - see roadPointAt() and car.js, which read this exactly like a curved connector's `road.curve`. */
+        curve,
+        /** Drawn/driveable extent, including the spawn lead-in and the run-out - extrapolated past the curve's own ends (sampleAt()) when curved. */
+        startPoint: curve ? curve.sampleAt(-approachLengthM).point : add(origin, heading, -approachLengthM),
+        endPoint: curve ? curve.sampleAt(last.sAlongM + exitLengthM).point : add(last.point, heading, exitLengthM),
         centrelineLengthM: approachLengthM + last.sAlongM + exitLengthM,
         intersections,
     };
@@ -269,11 +437,12 @@ function buildConnector(raw, nodesById, defaults, laneWidthM) {
                 `check the arterial origins and distanceToNextM chain.`
         );
     }
-    const heading = { x: dx / span, y: dy / span };
+    const straightHeading = { x: dx / span, y: dy / span };
     const stub = raw.stubLengthM ?? defaults.crossStreetStubLengthM;
     const lanes = raw.lanes ?? 2;
+    const curve = raw.curve ? buildCurve(raw.curve, raw.id) : null;
 
-    return {
+    const connector = {
         id: raw.id,
         name: raw.name,
         lanes,
@@ -285,13 +454,30 @@ function buildConnector(raw, nodesById, defaults, laneWidthM) {
         mode: raw.mode ?? defaults.connectorMode,
         demand: buildDemand(raw.demand, raw.id, 4, 1800),
         nodeIds: [a.id, b.id],
-        heading,
-        spanM: span,
-        stubLengthM: stub,
-        // Poke past both arterials so it reads as a through street, not a stub.
-        startPoint: add(a.point, heading, -stub),
-        endPoint: add(b.point, heading, stub),
+        /** Set only for a curved connector (a ramp) - see roadPointAt() and its reversed() counterpart for the 'rev' direction. */
+        curve,
+        curveReversed: curve ? curve.reversed() : null,
     };
+
+    if (curve) {
+        // A curved ramp's own endpoints are where it starts/ends - unlike a
+        // straight through-street, there's no "stub" reading beyond the
+        // linked intersections.
+        connector.heading = curve.sampleAt(0).heading;
+        connector.spanM = curve.lengthM;
+        connector.stubLengthM = 0;
+        connector.startPoint = curve.points[0];
+        connector.endPoint = curve.points[curve.points.length - 1];
+    } else {
+        connector.heading = straightHeading;
+        connector.spanM = span;
+        connector.stubLengthM = stub;
+        // Poke past both arterials so it reads as a through street, not a stub.
+        connector.startPoint = add(a.point, straightHeading, -stub);
+        connector.endPoint = add(b.point, straightHeading, stub);
+    }
+
+    return connector;
 }
 
 function resolveCrossStreet(node, arterial, connectors, defaults, laneWidthM) {
@@ -304,7 +490,7 @@ function resolveCrossStreet(node, arterial, connectors, defaults, laneWidthM) {
         node.crossLanes = connector.lanes;
         node.crossTwoWay = connector.twoWay;
     } else {
-        node.crossAxis = rightNormal(arterial.heading);
+        node.crossAxis = rightNormal(node.arterialHeading);
         node.crossLanes = node.crossStreetLanes ?? 2;
         node.crossStreetName = node.crossStreetName ?? 'Cross St';
         node.crossTwoWay = true;
@@ -337,7 +523,7 @@ function buildApproaches(node, arterial, laneWidthM) {
             kind: 'arterial',
             label: arterial.shortName,
             node,
-            heading: arterial.heading,
+            heading: node.arterialHeading,
             lanes: arterial.lanes,
             roadWidthM: arterial.roadWidthM,
             // Stop line sits at the edge of the junction box, half a cross-road back.
@@ -430,6 +616,9 @@ function computeBounds(layout) {
         const pad = arterial.roadWidthM / 2;
         include(arterial.startPoint, pad);
         include(arterial.endPoint, pad);
+        if (arterial.curve) {
+            for (const p of arterial.curve.points) include(p, pad);
+        }
         for (const node of arterial.intersections) {
             include(node.point, Math.max(node.crossRoadWidthM, node.arterialRoadWidthM));
             if (node.crossStub) {
@@ -441,8 +630,15 @@ function computeBounds(layout) {
 
     for (const connector of layout.connectors) {
         const pad = connector.roadWidthM / 2;
-        include(connector.startPoint, pad);
-        include(connector.endPoint, pad);
+        if (connector.curve) {
+            // A bulging loop ramp can swing well outside the straight line
+            // between its two endpoints - pad every sample point, not just
+            // the ends, so the initial camera fit never clips it.
+            for (const p of connector.curve.points) include(p, pad);
+        } else {
+            include(connector.startPoint, pad);
+            include(connector.endPoint, pad);
+        }
     }
 
     return { minX, minY, maxX, maxY, widthM: maxX - minX, heightM: maxY - minY };

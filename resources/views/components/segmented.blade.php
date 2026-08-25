@@ -18,7 +18,7 @@
                 data-value="{{ $optionValue }}"
                 data-active="{{ $optionValue === $value ? 'true' : 'false' }}"
                 aria-pressed="{{ $optionValue === $value ? 'true' : 'false' }}"
-                class="flex-1 whitespace-nowrap rounded font-medium transition {{ $pad }}
+                class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded font-medium transition {{ $pad }}
                        text-slate-500 hover:text-slate-900
                        data-[active=true]:bg-sky-600 data-[active=true]:text-white data-[active=true]:shadow-sm
                        dark:text-slate-400 dark:hover:text-slate-200

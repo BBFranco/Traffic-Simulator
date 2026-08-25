@@ -370,6 +370,12 @@ export class LayoutRenderer {
                 lanes: arterial.lanes,
                 twoWay: false,
                 heading: arterial.heading,
+                // Set only for a curved arterial. The curve's own sample points cover
+                // [0, lengthM] (first to last intersection); the extrapolated
+                // startPoint/endPoint (corridor.js's sampleAt() beyond that range)
+                // extend it to the full approach/exit lead-in, same as the drawn
+                // extent of a straight arterial.
+                curvePoints: arterial.curve ? [arterial.startPoint, ...arterial.curve.points, arterial.endPoint] : null,
                 ref: arterial,
                 kind: 'arterial',
             });
@@ -382,6 +388,9 @@ export class LayoutRenderer {
                 lanes: connector.lanes,
                 twoWay: connector.twoWay,
                 heading: connector.heading,
+                // Set only for a curved connector (a ramp) - drawing code below
+                // strokes a polyline through these instead of one straight line.
+                curvePoints: connector.curve ? connector.curve.points : null,
                 ref: connector,
                 kind: 'connector',
             });
@@ -407,25 +416,53 @@ export class LayoutRenderer {
         const { ctx } = this;
         const { scale } = this.camera;
 
-        this.eachRoad(({ from, to, widthM }) => {
-            const a = this.camera.toScreen(from);
-            const b = this.camera.toScreen(to);
+        this.eachRoad(({ from, to, widthM, curvePoints }) => {
             const w = Math.max(2, widthM * scale);
+            ctx.lineCap = 'butt';
+            ctx.lineJoin = 'round';
 
             ctx.strokeStyle = PALETTE.asphaltEdge;
             ctx.lineWidth = w + Math.min(3, Math.max(1, scale * 0.5));
-            ctx.lineCap = 'butt';
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
+            this.pathRoad(from, to, curvePoints);
             ctx.stroke();
 
             ctx.strokeStyle = PALETTE.asphalt;
             ctx.lineWidth = w;
-            ctx.beginPath();
+            this.pathRoad(from, to, curvePoints);
+            ctx.stroke();
+        });
+    }
+
+    /** Traces a straight `from`->`to` line, or a polyline through `curvePoints` (a curved ramp) when given - both in screen space. */
+    pathRoad(from, to, curvePoints) {
+        const { ctx } = this;
+        ctx.beginPath();
+        if (curvePoints) {
+            const first = this.camera.toScreen(curvePoints[0]);
+            ctx.moveTo(first.x, first.y);
+            for (let i = 1; i < curvePoints.length; i += 1) {
+                const p = this.camera.toScreen(curvePoints[i]);
+                ctx.lineTo(p.x, p.y);
+            }
+        } else {
+            const a = this.camera.toScreen(from);
+            const b = this.camera.toScreen(to);
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
-            ctx.stroke();
+        }
+    }
+
+    /** `curvePoints`, each shifted `offsetM` along its own local normal (secant tangent between neighbours) - the curved-road analogue of a single constant-normal offset. */
+    offsetPolyline(curvePoints, offsetM) {
+        return curvePoints.map((p, i) => {
+            const prev = curvePoints[Math.max(0, i - 1)];
+            const next = curvePoints[Math.min(curvePoints.length - 1, i + 1)];
+            const dx = next.x - prev.x;
+            const dy = next.y - prev.y;
+            const len = Math.hypot(dx, dy) || 1;
+            // Same { -h.y, h.x } convention drawRoadMarkings() already uses for a straight road's normal.
+            const normal = { x: -dy / len, y: dx / len };
+            return { x: p.x + normal.x * offsetM, y: p.y + normal.y * offsetM };
         });
     }
 
@@ -433,7 +470,7 @@ export class LayoutRenderer {
         const { scale } = this.camera;
         if (scale < 0.7) return; // markings would be sub-pixel mush
 
-        this.eachRoad(({ from, to, widthM, lanes, twoWay, heading }) => {
+        this.eachRoad(({ from, to, widthM, lanes, twoWay, heading, curvePoints }) => {
             const normal = { x: -heading.y, y: heading.x };
             const half = widthM / 2;
             const laneWidthM = widthM / lanes;
@@ -441,24 +478,24 @@ export class LayoutRenderer {
             // Edge lines always; anything drawn between lanes only once a lane is
             // wide enough on screen to read as a lane rather than as noise.
             for (const off of [-half, half]) {
-                this.strokeOffsetLine(from, to, normal, off, PALETTE.edgeLine, 1, null);
+                this.strokeOffsetLine(from, to, normal, off, PALETTE.edgeLine, 1, null, curvePoints);
             }
             if (laneWidthM * scale < 7) return;
 
             if (twoWay) {
                 // Solid centreline separating the two directions of travel.
-                this.strokeOffsetLine(from, to, normal, 0, PALETTE.centreLine, 1.6, null);
+                this.strokeOffsetLine(from, to, normal, 0, PALETTE.centreLine, 1.6, null, curvePoints);
                 // Interior lane divisions within each direction.
                 const perSide = lanes / 2;
                 for (let i = 1; i < perSide; i += 1) {
                     const off = i * laneWidthM;
-                    this.strokeOffsetLine(from, to, normal, off, PALETTE.laneDash, 1.2, [7, 9]);
-                    this.strokeOffsetLine(from, to, normal, -off, PALETTE.laneDash, 1.2, [7, 9]);
+                    this.strokeOffsetLine(from, to, normal, off, PALETTE.laneDash, 1.2, [7, 9], curvePoints);
+                    this.strokeOffsetLine(from, to, normal, -off, PALETTE.laneDash, 1.2, [7, 9], curvePoints);
                 }
             } else {
                 for (let i = 1; i < lanes; i += 1) {
                     const off = -half + i * laneWidthM;
-                    this.strokeOffsetLine(from, to, normal, off, PALETTE.laneDash, 1.2, [7, 9]);
+                    this.strokeOffsetLine(from, to, normal, off, PALETTE.laneDash, 1.2, [7, 9], curvePoints);
                 }
             }
         });
@@ -466,17 +503,28 @@ export class LayoutRenderer {
         if (scale >= 2.2) this.drawDirectionArrows();
     }
 
-    strokeOffsetLine(from, to, normal, offsetM, colour, lineWidth, dash) {
+    strokeOffsetLine(from, to, normal, offsetM, colour, lineWidth, dash, curvePoints = null) {
         const { ctx } = this;
-        const a = this.camera.toScreen({ x: from.x + normal.x * offsetM, y: from.y + normal.y * offsetM });
-        const b = this.camera.toScreen({ x: to.x + normal.x * offsetM, y: to.y + normal.y * offsetM });
         ctx.save();
         ctx.strokeStyle = colour;
         ctx.lineWidth = lineWidth;
+        ctx.lineJoin = 'round';
         if (dash) ctx.setLineDash(dash);
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        if (curvePoints) {
+            const offsetPts = this.offsetPolyline(curvePoints, offsetM);
+            const first = this.camera.toScreen(offsetPts[0]);
+            ctx.moveTo(first.x, first.y);
+            for (let i = 1; i < offsetPts.length; i += 1) {
+                const p = this.camera.toScreen(offsetPts[i]);
+                ctx.lineTo(p.x, p.y);
+            }
+        } else {
+            const a = this.camera.toScreen({ x: from.x + normal.x * offsetM, y: from.y + normal.y * offsetM });
+            const b = this.camera.toScreen({ x: to.x + normal.x * offsetM, y: to.y + normal.y * offsetM });
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+        }
         ctx.stroke();
         ctx.restore();
     }
@@ -486,10 +534,12 @@ export class LayoutRenderer {
         const spacingM = niceStep(140 / scale);
 
         for (const arterial of this.layout.arterials) {
+            if (arterial.curve) continue; // curved-road arrow placement is a follow-up polish, not load-bearing - see the matching connector skip below
             const offsets = laneCentreOffsetsFor(arterial.roadWidthM, arterial.lanes, false);
             this.arrowsAlong(arterial.startPoint, arterial.centrelineLengthM, arterial.heading, offsets, spacingM);
         }
         for (const connector of this.layout.connectors) {
+            if (connector.curve) continue; // curved-ramp arrow placement is a follow-up polish, not load-bearing
             const perSide = Math.max(1, Math.floor(connector.lanes / 2));
             const offsets = laneCentreOffsetsFor(connector.roadWidthM, connector.lanes, true).slice(0, perSide);
             const length = connector.spanM + connector.stubLengthM * 2;
@@ -548,7 +598,7 @@ export class LayoutRenderer {
                 // Union of two rectangles - one aligned to the arterial, one to the
                 // cross street - so a skewed connector is still covered.
                 const rects = [
-                    { axis: arterial.heading, along: node.crossRoadWidthM, across: node.arterialRoadWidthM },
+                    { axis: node.arterialHeading, along: node.crossRoadWidthM, across: node.arterialRoadWidthM },
                     { axis: node.crossAxis, along: node.arterialRoadWidthM, across: node.crossRoadWidthM },
                 ];
                 for (const rect of rects) {
@@ -565,7 +615,7 @@ export class LayoutRenderer {
                     ctx.save();
                     ctx.strokeStyle = PALETTE.junctionInner;
                     ctx.lineWidth = 1;
-                    this.pathRotatedRect(node.point, arterial.heading, node.crossRoadWidthM, node.arterialRoadWidthM);
+                    this.pathRotatedRect(node.point, node.arterialHeading, node.crossRoadWidthM, node.arterialRoadWidthM);
                     ctx.stroke();
                     ctx.restore();
                 }
@@ -603,6 +653,8 @@ export class LayoutRenderer {
         ctx.beginPath();
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
+                // A highway merge point (mode:"none") has no stop line at all.
+                if (this.dynamic.signals.get(node.id)?.freeFlow) continue;
                 for (const approach of node.approaches) {
                     const a = this.camera.toScreen(approach.stopLine.a);
                     const b = this.camera.toScreen(approach.stopLine.b);
@@ -698,6 +750,7 @@ export class LayoutRenderer {
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
                 const signal = this.dynamic.signals.get(node.id) ?? null;
+                if (signal?.freeFlow) continue; // highway merge point - no signal housing to draw
 
                 for (const approach of node.approaches) {
                     const p = this.camera.toScreen(approach.signalHead);
@@ -747,13 +800,15 @@ export class LayoutRenderer {
         ctx.textBaseline = 'middle';
 
         for (const arterial of this.layout.arterials) {
-            const normal = { x: -arterial.heading.y, y: arterial.heading.x };
             const offsetM = arterial.roadWidthM / 2 + 9;
 
             for (let i = 0; i < arterial.intersections.length - 1; i += 1) {
                 const node = arterial.intersections[i];
                 const next = arterial.intersections[i + 1];
                 if (!node.distanceToNextM) continue;
+                // Per-segment normal (node's own local tangent), not one constant for
+                // the whole arterial - matters once the arterial can curve.
+                const normal = { x: -node.arterialHeading.y, y: node.arterialHeading.x };
 
                 const mid = {
                     x: (node.point.x + next.point.x) / 2 + normal.x * offsetM,
@@ -821,11 +876,13 @@ export class LayoutRenderer {
             ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
             this.layout.arterials.forEach((arterial, ai) => {
                 const accent = ARTERIAL_ACCENTS[ai % ARTERIAL_ACCENTS.length];
-                const normal = { x: -arterial.heading.y, y: arterial.heading.x };
                 const side = this.outwardSide(arterial);
                 const offM = arterial.roadWidthM / 2 + 26;
 
                 for (const node of arterial.intersections) {
+                    // Per-node local tangent, not one constant normal for the whole
+                    // arterial - matters once the arterial can curve.
+                    const normal = { x: -node.arterialHeading.y, y: node.arterialHeading.x };
                     const world = {
                         x: node.point.x + normal.x * offM * side,
                         y: node.point.y + normal.y * offM * side,
@@ -842,12 +899,16 @@ export class LayoutRenderer {
         ctx.font = '600 12px ui-sans-serif, system-ui, sans-serif';
         this.layout.arterials.forEach((arterial, ai) => {
             const accent = ARTERIAL_ACCENTS[ai % ARTERIAL_ACCENTS.length];
-            const normal = { x: -arterial.heading.y, y: arterial.heading.x };
+            // The local tangent at the very start of the drawn road - the curve's own
+            // start heading when curved (sampleAt(0) is where the approach lead-in's
+            // extrapolation is anchored from), otherwise the arterial's one constant heading.
+            const startHeading = arterial.curve ? arterial.curve.sampleAt(0).heading : arterial.heading;
+            const normal = { x: -startHeading.y, y: startHeading.x };
             const side = this.outwardSide(arterial);
             const offM = arterial.roadWidthM / 2 + 52;
             const world = {
-                x: arterial.startPoint.x + arterial.heading.x * 30 + normal.x * offM * side,
-                y: arterial.startPoint.y + arterial.heading.y * 30 + normal.y * offM * side,
+                x: arterial.startPoint.x + startHeading.x * 30 + normal.x * offM * side,
+                y: arterial.startPoint.y + startHeading.y * 30 + normal.y * offM * side,
             };
             const p = this.camera.toScreen(world);
             // Clamp horizontally so a long banner is never cut off, but let it drop
