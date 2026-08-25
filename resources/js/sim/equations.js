@@ -70,6 +70,47 @@ export function websterGreenSplit(cycleLength, L, flowRatios) {
 }
 
 // ---------------------------------------------------------------------
+// MOBIL lane-changing model
+// Kesting, A., Treiber, M. & Helbing, D., 2007. General Lane-Changing Model
+// MOBIL for Car-Following Models. Transportation Research Record, 1999(1),
+// pp. 86-94.
+//
+// Safety criterion - a lane change may never force the new follower to brake
+// harder than it can safely manage:
+//   accNewFollowerAfter >= -bSafe
+//
+// Incentive criterion (symmetric form - this network has no signed
+// "slower traffic keep left/right" convention to add a bias term for):
+//   (accSelfAfter - accSelfBefore)
+//     + p * [ (accNewFollowerAfter - accNewFollowerBefore)
+//           + (accOldFollowerAfter - accOldFollowerBefore) ]
+//     > aThr
+//
+// Each acc* is an IDM acceleration (car.js's carAcceleration()) evaluated
+// against a specific leader - "before" the leader each car actually has now,
+// "after" whatever it would have once the lane change happens. p (politeness)
+// weights how much a driver cares about the two cars they affect, not just
+// their own gain.
+export function mobilShouldChangeLane(
+    { accSelfBefore, accSelfAfter, accNewFollowerBefore, accNewFollowerAfter, accOldFollowerBefore, accOldFollowerAfter },
+    params = MOBIL_DEFAULTS
+) {
+    if (accNewFollowerAfter < -params.maxSafeDecelMps2) return false; // safety criterion
+
+    const incentive =
+        accSelfAfter -
+        accSelfBefore +
+        params.politeness * (accNewFollowerAfter - accNewFollowerBefore + (accOldFollowerAfter - accOldFollowerBefore));
+    return incentive > params.changeThresholdMps2;
+}
+
+export const MOBIL_DEFAULTS = {
+    politeness: 0.15, // 0 = purely selfish, 1 = fully considerate of the two cars a change affects
+    changeThresholdMps2: 0.2, // minimum acceleration gain worth bothering to change lanes for, m/s^2
+    maxSafeDecelMps2: 4.0, // hardest braking a lane change may impose on the new follower, m/s^2
+};
+
+// ---------------------------------------------------------------------
 // Green wave / progression-band offset
 // Roess, R. P., Prassas, E. S. & McShane, W. R., 2004. Traffic Engineering.
 // 3rd ed. Upper Saddle River: Pearson Prentice Hall.

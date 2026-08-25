@@ -144,6 +144,18 @@
                 <div id="demand-controls" class="space-y-3"></div>
             </x-control-section>
 
+            <x-control-section title="Vehicles" subtitle="Trucks drive slower and brake harder than cars (small/medium/large rig), which is what makes cars change lanes around them.">
+                <div>
+                    <div class="mb-1 flex items-baseline justify-between gap-2">
+                        <label for="truck-ratio-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">Truck mix</label>
+                        <span class="font-mono text-[11px] text-slate-600 dark:text-slate-400"><span id="truck-ratio-value">0</span>%</span>
+                    </div>
+                    <input type="range" id="truck-ratio-input" min="0" max="50" step="1" value="0"
+                           class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500">
+                    <p class="mt-1.5 text-[10px] leading-relaxed text-slate-500">Share of newly spawned vehicles that are trucks, split evenly across the three sizes.</p>
+                </div>
+            </x-control-section>
+
             <div class="space-y-3 px-4 py-4">
                 <details class="{{ $inset }}">
                     <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">

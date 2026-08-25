@@ -82,6 +82,8 @@ const state = {
     },
     /** Per arterial/connector id -> vehicles per lane per minute. */
     demand: {},
+    /** Fraction (0-1) of newly-spawned vehicles that are trucks - see engine.js's setTruckRatio(). */
+    truckRatio: 0,
 };
 
 let layout = null;
@@ -111,6 +113,8 @@ const el = {
     seedRandomise: document.getElementById('seed-randomise'),
     arterialModeControls: document.getElementById('arterial-mode-controls'),
     demandControls: document.getElementById('demand-controls'),
+    truckRatioInput: document.getElementById('truck-ratio-input'),
+    truckRatioValue: document.getElementById('truck-ratio-value'),
     statsColumns: document.getElementById('stats-columns'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
@@ -229,6 +233,7 @@ function engineResetOptions() {
         sensorMode: state.sensorMode,
         batteryBackedSensors: state.batteryBackedSensors,
         power: { ...state.power },
+        truckRatio: state.truckRatio,
     };
 }
 
@@ -636,6 +641,15 @@ document.querySelectorAll('input[name="sensorMode"]').forEach((radio) => {
         el.sensorPillLabel.textContent = SENSOR_LABELS[radio.value];
         logChange('sensorMode', radio.value);
     });
+});
+
+el.truckRatioInput.addEventListener('input', () => {
+    state.truckRatio = Number(el.truckRatioInput.value) / 100;
+    el.truckRatioValue.textContent = el.truckRatioInput.value;
+    engine.setTruckRatio(state.truckRatio);
+});
+el.truckRatioInput.addEventListener('change', () => {
+    logChange('truckRatio', `${el.truckRatioInput.value}%`);
 });
 
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {

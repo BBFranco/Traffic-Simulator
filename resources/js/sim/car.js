@@ -8,7 +8,7 @@
  * for a red light" is never a second, hand-rolled formula.
  */
 import { leftNormal, addVector } from './corridor.js';
-import { IDM_DEFAULTS, idmAcceleration } from './equations.js';
+import { IDM_DEFAULTS, idmAcceleration, MOBIL_DEFAULTS } from './equations.js';
 
 /** Speed below which a car counts as "stopped" for wait-time/queue stats. */
 export const STOPPED_SPEED_MPS = 0.3;
@@ -30,6 +30,70 @@ const MAX_DECEL_MPS2 = 9;
 /** How long a cross-routing turn (build step 9) takes to visually sweep from the old heading/position to the new one. */
 const TURN_ANIM_DURATION_S = 1.2;
 
+/** How long a MOBIL lane change (engine.js) takes to visually glide sideways from the old lane offset to the new one - physics/collision uses the new lane immediately, only the render position eases, same split as TURN_ANIM_DURATION_S above. */
+const LANE_CHANGE_ANIM_DURATION_S = 0.8;
+
+/**
+ * Vehicle mix: cars plus three truck sizes. Trucks are not a second driving
+ * model - they reuse the same cited IDM (equations.js) with a heavier
+ * vehicle's parameters: a fully-loaded rigid/articulated truck's engine and
+ * air brakes genuinely produce lower peak accel/decel than a car's, so this
+ * is a parameter choice (Treiber et al.'s `a`/`b` per §2's discussion of
+ * typical ranges for different vehicle classes), not an invented formula.
+ * `lengthM`/`widthM` drive both the physics gap calculation (car.js/engine.js)
+ * and the renderer's sprite size - one source for both.
+ *
+ * `a`/`b` are deliberately only mildly reduced from IDM_DEFAULTS, not
+ * dramatically. IDM's desired-gap term sStar = s0 + v*T + v*dv/(2*sqrt(a*b))
+ * grows sharply as a*b shrinks *while a vehicle is still closing on whatever
+ * is ahead* (dv > 0) - it's what makes a car brake progressively rather than
+ * slamming on at the last metre. A big a/b cut for trucks is realistic in
+ * spirit (heavier vehicles need more stopping distance) but was overshooting
+ * it in practice: it inflated the desired gap during every approach to a
+ * queue, not just at genuine full stops, reading as "trucks leave far too
+ * much space" rather than "trucks brake more gently." These values keep
+ * trucks measurably heavier/slower without that runaway approach-gap effect;
+ * the standstill gap itself (sStar -> s0 as v,dv -> 0) is unaffected by a/b
+ * either way and stays identical to a car's.
+ *
+ * `mobilOverrides` makes trucks noticeably more reluctant to change lanes
+ * than cars (equations.js's MOBIL model), same spirit as a real truck
+ * driver's more conservative lane discipline - worse mirrors/blind spots,
+ * a much longer stopping distance if they misjudge a gap, and simply more
+ * to lose from a marginal manoeuvre. `changeThresholdMps2` raised means a
+ * truck only bothers for a bigger acceleration payoff; `politeness` raised
+ * means it weighs the cost to the vehicle it would cut in front of/pull
+ * ahead of more heavily; `maxSafeDecelMps2` lowered means it demands an
+ * easier (lower-forced-braking) gap in the target lane before committing.
+ */
+export const VEHICLE_TYPES = {
+    car: { lengthM: 4.5, widthM: 1.9, desiredSpeedFactor: 1.0, idmOverrides: {}, mobilOverrides: {} },
+    truck_small: {
+        lengthM: 7.5,
+        widthM: 2.3,
+        desiredSpeedFactor: 0.93,
+        idmOverrides: { a: 1.2, b: 1.9 },
+        mobilOverrides: { politeness: 0.25, changeThresholdMps2: 0.4, maxSafeDecelMps2: 3.2 },
+    },
+    truck_medium: {
+        lengthM: 10.5,
+        widthM: 2.45,
+        desiredSpeedFactor: 0.87,
+        idmOverrides: { a: 1.0, b: 1.7 },
+        mobilOverrides: { politeness: 0.3, changeThresholdMps2: 0.5, maxSafeDecelMps2: 3.0 },
+    },
+    truck_large: {
+        lengthM: 14.5,
+        widthM: 2.55,
+        desiredSpeedFactor: 0.8,
+        idmOverrides: { a: 0.8, b: 1.5 },
+        mobilOverrides: { politeness: 0.35, changeThresholdMps2: 0.6, maxSafeDecelMps2: 2.8 },
+    },
+};
+
+/** Truck size keys in small-to-large order - what the truck-mix slider rolls between and what renderer.js's truck palette is indexed by. */
+export const TRUCK_VEHICLE_TYPES = ['truck_small', 'truck_medium', 'truck_large'];
+
 let nextCarId = 1;
 
 export class Car {
@@ -49,6 +113,7 @@ export class Car {
         colourIndex = 0,
         turnAnim = null,
         startupDelayS = 0,
+        vehicleType = 'car',
     }) {
         this.id = nextCarId++;
         this.road = road;
@@ -56,8 +121,33 @@ export class Car {
         this.distanceM = distanceM;
         this.speedMps = speedMps;
         this.desiredSpeedMps = desiredSpeedMps;
-        /** Sprite variety (build step 11) - which body colour in the renderer's palette this car uses. */
+        /** Sprite variety (build step 11) - which body colour in the renderer's palette this car uses. Ignored for trucks, which colour by size instead - see renderer.js. */
         this.colourIndex = colourIndex;
+
+        /** 'car' | 'truck_small' | 'truck_medium' | 'truck_large' - see VEHICLE_TYPES above. */
+        this.vehicleType = vehicleType;
+        const spec = VEHICLE_TYPES[vehicleType] ?? VEHICLE_TYPES.car;
+        this.lengthM = spec.lengthM;
+        this.widthM = spec.widthM;
+        /** This car's own IDM parameter set (equations.js) - a heavier vehicle type overrides a/b, everything else comes from IDM_DEFAULTS. */
+        this.idmParams = { ...IDM_DEFAULTS, ...spec.idmOverrides };
+        /** This car's own MOBIL lane-change parameter set (equations.js) - see engine.js's _tryChangeLane(). */
+        this.mobilParams = { ...MOBIL_DEFAULTS, ...spec.mobilOverrides };
+
+        /** Seconds left before this car is allowed to evaluate another MOBIL lane change - see engine.js's _tryChangeLane(). Stops unrealistic tick-by-tick weaving. */
+        this.laneChangeCooldownS = 0;
+
+        /**
+         * Cosmetic-only sideways glide for a MOBIL lane change (engine.js),
+         * same split as `turnAnim` below: `car.lane`/`car.distanceM` switch to
+         * the new lane instantly for physics purposes (there's no reason to
+         * delay the gap/collision logic), but rendering that raw lateral
+         * offset is a sideways teleport. `{ fromLane, elapsedS }` - the lane
+         * index the car was actually in when the change started - is enough
+         * for carWorldPoint() to blend from that lane's offset to the new
+         * one; see LANE_CHANGE_ANIM_DURATION_S above.
+         */
+        this.laneChangeAnim = null;
 
         /**
          * Driver reaction lag (seconds) before pulling away once free to move
@@ -164,7 +254,56 @@ export function carWorldPoint(car) {
     const offsets = laneOffsetsFor(road.roadWidthM, road.lanes, road.laneWidthM);
     const normal = leftNormal(road.heading);
     const base = addVector(road.startPoint, road.heading, car.distanceM);
-    return addVector(base, normal, offsets[car.lane]);
+
+    let lateralOffsetM = offsets[car.lane];
+    if (car.laneChangeAnim) {
+        // Glide the RENDERED lateral offset from the old lane to the new one -
+        // car.lane already switched the instant the change was decided
+        // (engine.js's _tryChangeLane()), so physics/collision never waits on
+        // this, only the drawn position eases sideways instead of teleporting.
+        const t = easeInOut(Math.min(1, car.laneChangeAnim.elapsedS / LANE_CHANGE_ANIM_DURATION_S));
+        const fromOffsetM = offsets[car.laneChangeAnim.fromLane];
+        lateralOffsetM = fromOffsetM + (lateralOffsetM - fromOffsetM) * t;
+    }
+
+    return addVector(base, normal, lateralOffsetM);
+}
+
+/**
+ * IDM acceleration (equations.js) `car` would have right now against `ahead`
+ * - a real leading vehicle, a virtual stationary signal obstacle, or null for
+ * free flow. Pure/side-effect-free, so both `stepCar()` below and engine.js's
+ * MOBIL lane-change evaluation (which has to compare "what would my
+ * acceleration be in this lane vs. that one" without actually moving anyone)
+ * share this one formula site rather than each hand-rolling the gap maths.
+ *
+ * `car.distanceM`/`ahead.distanceM` are each vehicle's CENTRE along the road
+ * (carWorldPoint() below draws a car centred on its `distanceM`), so the true
+ * bumper-to-bumper gap is the centre-to-centre distance minus HALF of each
+ * vehicle's own length - `ahead`'s half because that's how much of it sticks
+ * out toward `car`, and `car`'s own half for the same reason in reverse. Both
+ * halves matter once vehicles can be different lengths: crediting only the
+ * leader's length (as if every vehicle were the same size) makes a car
+ * following a much longer truck sit with an artificially huge gap, since the
+ * truck's full length was being charged against a following car that isn't
+ * that long itself. A virtual signal/stop-line obstacle has no length of its
+ * own (`ahead.lengthM` is undefined), which this handles for free: only
+ * `car`'s own half remains, so its FRONT bumper - not its centre - is what
+ * settles near the line.
+ */
+export function carAcceleration(car, ahead) {
+    const v = car.speedMps;
+    const params = car.idmParams;
+
+    if (!ahead) {
+        // No leader: IDM's free-flow term only (the (sStar/s)^2 interaction term
+        // vanishes as the gap goes to infinity).
+        return params.a * (1 - Math.pow(v / car.desiredSpeedMps, params.delta));
+    }
+    const occupiedLengthM = ((ahead.lengthM ?? 0) + car.lengthM) / 2;
+    const gap = Math.max(ahead.distanceM - occupiedLengthM - car.distanceM, 0.1);
+    const dv = v - ahead.speedMps;
+    return idmAcceleration(v, car.desiredSpeedMps, dv, gap, params);
 }
 
 /**
@@ -173,19 +312,9 @@ export function carWorldPoint(car) {
  * @param ahead    { distanceM, speedMps, isSignal } of whatever is in front
  *                 in this lane, or null for free flow (no leader at all).
  */
-export function stepCar(car, ahead, dt, carLengthM, params = IDM_DEFAULTS) {
+export function stepCar(car, ahead, dt) {
     const v = car.speedMps;
-    let accel;
-
-    if (!ahead) {
-        // No leader: IDM's free-flow term only (the (sStar/s)^2 interaction term
-        // vanishes as the gap goes to infinity).
-        accel = params.a * (1 - Math.pow(v / car.desiredSpeedMps, params.delta));
-    } else {
-        const gap = Math.max(ahead.distanceM - carLengthM - car.distanceM, 0.1);
-        const dv = v - ahead.speedMps;
-        accel = idmAcceleration(v, car.desiredSpeedMps, dv, gap, params);
-    }
+    let accel = carAcceleration(car, ahead);
     accel = Math.max(accel, -MAX_DECEL_MPS2);
 
     // Reaction-lag gate: a stationary car that's just become free to move
@@ -227,6 +356,11 @@ export function stepCar(car, ahead, dt, carLengthM, params = IDM_DEFAULTS) {
     if (car.turnAnim) {
         car.turnAnim.elapsedS += dt;
         if (car.turnAnim.elapsedS >= TURN_ANIM_DURATION_S) car.turnAnim = null;
+    }
+
+    if (car.laneChangeAnim) {
+        car.laneChangeAnim.elapsedS += dt;
+        if (car.laneChangeAnim.elapsedS >= LANE_CHANGE_ANIM_DURATION_S) car.laneChangeAnim = null;
     }
 
     return car;

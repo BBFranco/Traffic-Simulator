@@ -8,8 +8,18 @@
  * entire reason this file does not know the canvas exists.
  */
 import { SeededRandom } from './rng.js';
-import { Car, stepCar, resetCarIdCounter, carWorldPoint, carRenderPoint, carRenderHeading } from './car.js';
-import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall } from './equations.js';
+import {
+    Car,
+    stepCar,
+    resetCarIdCounter,
+    carWorldPoint,
+    carRenderPoint,
+    carRenderHeading,
+    carAcceleration,
+    VEHICLE_TYPES,
+    TRUCK_VEHICLE_TYPES,
+} from './car.js';
+import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall, mobilShouldChangeLane } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
 import { AdaptiveController } from './controllers/adaptive.js';
 import { AllWayStopController, MIN_STOP_DWELL_S } from './controllers/allWayStop.js';
@@ -37,6 +47,15 @@ const MAX_STARTUP_DELAY_S = 0.8;
 /** Per-car desired-speed jitter, as a fraction either side of the road's target speed - real drivers don't all pick the exact same cruising speed. */
 const DESIRED_SPEED_JITTER = 0.08;
 
+/** MOBIL (equations.js) is suppressed within this many metres of a car's own spawn point, so it doesn't immediately dart across lanes before it has settled into traffic. */
+const LANE_CHANGE_MIN_DISTANCE_M = 15;
+/** ...and within this many metres of the next stop line, so a car isn't still weaving lanes right as _maybeCrossRoute()'s "only the kerb lane can turn" decision window opens. */
+const LANE_CHANGE_STOPLINE_EXCLUSION_M = 20;
+/** Minimum physical bumper-to-bumper clearance a lane change may leave, on top of MOBIL's own acceleration-based safety criterion - stops a change from ever visually overlapping two cars. */
+const MIN_LANE_CHANGE_GAP_M = 2;
+/** Seconds a car commits to a lane after changing before it's allowed to evaluate another one - stops unrealistic tick-by-tick weaving. */
+const LANE_CHANGE_COOLDOWN_S = 4;
+
 function jitteredDesiredSpeed(v0, rng) {
     return v0 * (1 - DESIRED_SPEED_JITTER + 2 * DESIRED_SPEED_JITTER * rng.next());
 }
@@ -49,6 +68,21 @@ function nearestAhead(a, b) {
 
 function negateHeading(h) {
     return { x: -h.x, y: -h.y };
+}
+
+/** `car`'s nearest leader/follower within `carsSortedDesc` (front-first, as every lane array is kept sorted) - excludes `car` itself so this is safe to call whether or not `car` is currently a member. */
+function neighborsInLane(carsSortedDesc, car) {
+    let leader = null;
+    let follower = null;
+    for (const c of carsSortedDesc) {
+        if (c === car) continue;
+        if (c.distanceM > car.distanceM) leader = c;
+        else if (follower === null) {
+            follower = c;
+            break;
+        }
+    }
+    return { leader, follower };
 }
 
 export class SimulationEngine {
@@ -66,6 +100,8 @@ export class SimulationEngine {
         this.power = { manual: false, scheduled: false, offMinutes: 2, periodMinutes: 8 };
         this.sensorMode = 'inductive_loop';
         this.batteryBackedSensors = true;
+        /** Fraction (0-1) of newly-spawned vehicles that are trucks, split evenly across TRUCK_VEHICLE_TYPES - see setTruckRatio()/_rollVehicleType(). */
+        this.truckRatio = 0;
         this.accounting = { totalSpawned: 0, totalClearedNetwork: 0 };
 
         for (const arterial of layout.arterials) {
@@ -150,12 +186,13 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0 }) {
         this.rng.reseed(seed);
         resetCarIdCounter();
         this.simTimeS = 0;
         this.sensorMode = sensorMode;
         this.batteryBackedSensors = batteryBackedSensors;
+        this.truckRatio = truckRatio;
         this.power = {
             manual: !!power.loadShedding,
             scheduled: !!power.scheduledOutages,
@@ -287,6 +324,17 @@ export class SimulationEngine {
         this.batteryBackedSensors = !!value;
     }
 
+    /** Takes effect for vehicles spawned from now on - doesn't retroactively change cars already on the road. */
+    setTruckRatio(ratio) {
+        this.truckRatio = Math.min(1, Math.max(0, ratio));
+    }
+
+    /** Which vehicle type a newly-spawned car should be, per the current truck-mix slider - split evenly across TRUCK_VEHICLE_TYPES. */
+    _rollVehicleType() {
+        if (this.rng.next() >= this.truckRatio) return 'car';
+        return TRUCK_VEHICLE_TYPES[Math.floor(this.rng.next() * TRUCK_VEHICLE_TYPES.length)];
+    }
+
     setManualLoadShedding(active) {
         this.power.manual = !!active;
         this._syncPowerState();
@@ -350,6 +398,9 @@ export class SimulationEngine {
                         stopped: car.stoppedNow,
                         heading: car.road.heading,
                         colourIndex: car.colourIndex,
+                        vehicleType: car.vehicleType,
+                        lengthM: car.lengthM,
+                        widthM: car.widthM,
                     });
                 }
             }
@@ -364,6 +415,9 @@ export class SimulationEngine {
                             stopped: car.stoppedNow,
                             heading: carRenderHeading(car),
                             colourIndex: car.colourIndex,
+                            vehicleType: car.vehicleType,
+                            lengthM: car.lengthM,
+                            widthM: car.widthM,
                         });
                     }
                 }
@@ -591,11 +645,12 @@ export class SimulationEngine {
                 (min, c) => (min === null || c.distanceM < min.distanceM ? c : min),
                 null
             );
-            if (nearestToEntry && nearestToEntry.distanceM < this.layout.carLengthM + SPAWN_CLEARANCE_M) {
+            if (nearestToEntry && nearestToEntry.distanceM < nearestToEntry.lengthM + SPAWN_CLEARANCE_M) {
                 return; // no room yet - try again next tick without losing the elapsed timer
             }
 
-            const desiredSpeedMps = jitteredDesiredSpeed(v0, this.rng);
+            const vehicleType = this._rollVehicleType();
+            const desiredSpeedMps = jitteredDesiredSpeed(v0 * VEHICLE_TYPES[vehicleType].desiredSpeedFactor, this.rng);
             lane.cars.push(
                 new Car({
                     road: state.road,
@@ -605,6 +660,7 @@ export class SimulationEngine {
                     desiredSpeedMps,
                     colourIndex: Math.floor(this.rng.next() * CAR_PALETTE_SIZE),
                     startupDelayS: this.rng.next() * MAX_STARTUP_DELAY_S,
+                    vehicleType,
                 })
             );
             this.accounting.totalSpawned += 1;
@@ -625,13 +681,23 @@ export class SimulationEngine {
             // arterial again, so the index-based "car ahead = previous index"
             // lookup below never has to account for a car vanishing mid-loop.
             lane.cars = lane.cars.filter((car) => !this._maybeCrossRoute(arterial, car, nodeInfos));
+        }
+
+        // MOBIL lane changes (equations.js) next, its own pass over the whole
+        // arterial - a car needs visibility into every lane, not just its own,
+        // to compare "what would my acceleration be here vs. next door", so
+        // this can't be folded into the single-lane IDM loop below.
+        if (state.lanes.length > 1) this._performLaneChanges(state, nodeInfos, dt);
+
+        for (const lane of state.lanes) {
+            lane.cars.sort((a, b) => b.distanceM - a.distanceM); // a lane change may have just reordered this lane
 
             for (let i = 0; i < lane.cars.length; i += 1) {
                 const car = lane.cars[i];
                 const realAhead = i > 0 ? lane.cars[i - 1] : null;
                 const signalAhead = this._signalAheadFor(nodeInfos, car);
                 const ahead = nearestAhead(realAhead, signalAhead);
-                stepCar(car, ahead, dt, this.layout.carLengthM);
+                stepCar(car, ahead, dt);
                 this._trackAllWayStopDwell(car, ahead, dt);
                 this._recordNodeClears(state, nodeInfos, car);
             }
@@ -640,6 +706,96 @@ export class SimulationEngine {
                 this._recordClear(arterial, lane.cars.shift());
             }
         }
+    }
+
+    /**
+     * MOBIL lane changes (equations.js's mobilShouldChangeLane()) for one
+     * tick across every lane of `arterial`. Snapshots each lane's car list up
+     * front so every car is evaluated exactly once against the arrangement at
+     * the start of the tick, regardless of what order lanes are visited in or
+     * how many cars have already moved this tick.
+     */
+    _performLaneChanges(state, nodeInfos, dt) {
+        const snapshotByLane = state.lanes.map((lane) => [...lane.cars]);
+
+        for (const laneCars of snapshotByLane) {
+            for (const car of laneCars) {
+                if (car.turnAnim) continue; // mid cross-routing turn - cosmetic-only, not a real lane
+                if (car.laneChangeCooldownS > 0) {
+                    car.laneChangeCooldownS = Math.max(0, car.laneChangeCooldownS - dt);
+                    continue;
+                }
+                this._tryChangeLane(state, nodeInfos, car);
+            }
+        }
+    }
+
+    /**
+     * Evaluate (and, if favourable, perform) a MOBIL lane change for one car
+     * into whichever adjacent lane offers the bigger acceleration gain -
+     * "behind a slow car/truck, and a faster lane is safely available" is
+     * exactly the case this falls out of, without special-casing trucks at
+     * all: a truck's lower desired speed (car.js's VEHICLE_TYPES) is what
+     * makes following it a worse `accSelfBefore` than changing lanes.
+     */
+    _tryChangeLane(state, nodeInfos, car) {
+        if (car.distanceM < LANE_CHANGE_MIN_DISTANCE_M) return;
+        const nearestNode = this._nearestNodeAhead(nodeInfos, car);
+        if (nearestNode && nearestNode.stopLineDistanceM - car.distanceM < LANE_CHANGE_STOPLINE_EXCLUSION_M) return;
+
+        const laneIndex = car.lane;
+        const signalAhead = this._signalAheadFor(nodeInfos, car);
+        const { leader: curLeader, follower: curFollower } = neighborsInLane(state.lanes[laneIndex].cars, car);
+        const curAhead = nearestAhead(curLeader, signalAhead);
+        const accSelfBefore = carAcceleration(car, curAhead);
+
+        let best = null;
+        for (const targetIndex of [laneIndex - 1, laneIndex + 1]) {
+            if (targetIndex < 0 || targetIndex >= state.lanes.length) continue;
+            const targetCars = state.lanes[targetIndex].cars;
+            const { leader: tgtLeader, follower: tgtFollower } = neighborsInLane(targetCars, car);
+
+            // Physical clearance check, on top of MOBIL's own acceleration-based
+            // safety criterion below - stops a change that would leave two cars
+            // visually overlapping even if the accelerations alone would allow it.
+            const gapAheadM = tgtLeader ? tgtLeader.distanceM - tgtLeader.lengthM - car.distanceM : Infinity;
+            const gapBehindM = tgtFollower ? car.distanceM - car.lengthM - tgtFollower.distanceM : Infinity;
+            if (gapAheadM < MIN_LANE_CHANGE_GAP_M || gapBehindM < MIN_LANE_CHANGE_GAP_M) continue;
+
+            const tgtLeaderAhead = nearestAhead(tgtLeader, signalAhead);
+            const accSelfAfter = carAcceleration(car, tgtLeaderAhead);
+            const accNewFollowerBefore = tgtFollower ? carAcceleration(tgtFollower, tgtLeaderAhead) : 0;
+            const accNewFollowerAfter = tgtFollower ? carAcceleration(tgtFollower, car) : 0;
+            const accOldFollowerBefore = curFollower ? carAcceleration(curFollower, car) : 0;
+            const accOldFollowerAfter = curFollower ? carAcceleration(curFollower, curAhead) : 0;
+
+            const shouldChange = mobilShouldChangeLane(
+                {
+                    accSelfBefore,
+                    accSelfAfter,
+                    accNewFollowerBefore,
+                    accNewFollowerAfter,
+                    accOldFollowerBefore,
+                    accOldFollowerAfter,
+                },
+                car.mobilParams
+            );
+            if (!shouldChange) continue;
+
+            const gain = accSelfAfter - accSelfBefore;
+            if (!best || gain > best.gain) best = { targetIndex, gain };
+        }
+
+        if (!best) return;
+
+        const fromCars = state.lanes[laneIndex].cars;
+        fromCars.splice(fromCars.indexOf(car), 1);
+        car.laneChangeAnim = { fromLane: laneIndex, elapsedS: 0 };
+        car.lane = best.targetIndex;
+        car.laneChangeCooldownS = LANE_CHANGE_COOLDOWN_S;
+        const toCars = state.lanes[best.targetIndex].cars;
+        toCars.push(car);
+        toCars.sort((a, b) => b.distanceM - a.distanceM);
     }
 
     /** Native side-street arrivals (build step 9 gap) - separate from _maybeCrossRoute, which only diverts arterial cars onto a connector. */
@@ -660,11 +816,12 @@ export class SimulationEngine {
                     (min, c) => (min === null || c.distanceM < min.distanceM ? c : min),
                     null
                 );
-                if (nearestToEntry && nearestToEntry.distanceM < this.layout.carLengthM + SPAWN_CLEARANCE_M) {
+                if (nearestToEntry && nearestToEntry.distanceM < nearestToEntry.lengthM + SPAWN_CLEARANCE_M) {
                     return;
                 }
 
-                const desiredSpeedMps = jitteredDesiredSpeed(v0, this.rng);
+                const vehicleType = this._rollVehicleType();
+                const desiredSpeedMps = jitteredDesiredSpeed(v0 * VEHICLE_TYPES[vehicleType].desiredSpeedFactor, this.rng);
                 lane.cars.push(
                     new Car({
                         road: dir.road,
@@ -674,6 +831,7 @@ export class SimulationEngine {
                         desiredSpeedMps,
                         colourIndex: Math.floor(this.rng.next() * CAR_PALETTE_SIZE),
                         startupDelayS: this.rng.next() * MAX_STARTUP_DELAY_S,
+                        vehicleType,
                     })
                 );
                 this.accounting.totalSpawned += 1;
@@ -708,7 +866,7 @@ export class SimulationEngine {
                         this._connectorSignalAhead(nearGateInfo, dir.nearGateDistanceM, car) ??
                         this._connectorSignalAhead(farGateInfo, dir.gateDistanceM, car);
                     const ahead = nearestAhead(realAhead, signalAhead);
-                    stepCar(car, ahead, dt, this.layout.carLengthM);
+                    stepCar(car, ahead, dt);
                     this._trackAllWayStopDwell(car, ahead, dt);
                 }
 
@@ -848,7 +1006,7 @@ export class SimulationEngine {
         const laneIndex = Math.floor(this.rng.next() * dir.road.lanes);
         const lane = dirState.lanes[laneIndex];
         const blocked = lane.cars.some(
-            (c) => Math.abs(c.distanceM - entryDistanceM) < this.layout.carLengthM + SPAWN_CLEARANCE_M
+            (c) => Math.abs(c.distanceM - entryDistanceM) < c.lengthM + SPAWN_CLEARANCE_M
         );
         if (blocked) return false; // no gap to turn into - the driver just continues straight
 
@@ -858,9 +1016,13 @@ export class SimulationEngine {
                 lane: laneIndex,
                 distanceM: entryDistanceM,
                 speedMps: car.speedMps, // carries its momentum through the turn
-                desiredSpeedMps: jitteredDesiredSpeed(CONNECTOR_TARGET_SPEED_KPH / 3.6, this.rng),
+                desiredSpeedMps: jitteredDesiredSpeed(
+                    (CONNECTOR_TARGET_SPEED_KPH / 3.6) * VEHICLE_TYPES[car.vehicleType].desiredSpeedFactor,
+                    this.rng
+                ),
                 colourIndex: car.colourIndex,
                 startupDelayS: this.rng.next() * MAX_STARTUP_DELAY_S,
+                vehicleType: car.vehicleType, // a truck turning off the arterial stays a truck
                 // Sweep the render from where the car was on the arterial, bowing
                 // through the actual intersection corner, to its new connector
                 // position/heading - instead of teleporting or cutting a straight

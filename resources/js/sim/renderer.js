@@ -64,6 +64,11 @@ const PALETTES = {
         // override this - the stop/go signal has to stay legible regardless of
         // which body colour a given car happens to be.
         carPalette: ['#1e293b', '#334155', '#3f3527', '#1f3a4d'],
+        // One colour per truck size (small/medium/large, see car.js's
+        // TRUCK_VEHICLE_TYPES) - warm tones deliberately distinct from the cool
+        // car palette above, so a truck reads as a different vehicle class at a
+        // glance, not just a bigger car. Darkens with size.
+        truckPalette: ['#b45309', '#9a3412', '#7c2d12'],
         carStopped: '#dc2626',
         carEdge: 'rgba(255, 255, 255, 0.65)',
     },
@@ -90,6 +95,7 @@ const PALETTES = {
         hud: 'rgba(226, 232, 240, 0.7)',
         junctionInner: 'rgba(226, 232, 240, 0.10)',
         carPalette: ['#e2e8f0', '#cbd5e1', '#e8dcc8', '#c9dcea'],
+        truckPalette: ['#fcd34d', '#fb923c', '#f97316'],
         carStopped: '#f87171',
         carEdge: 'rgba(8, 13, 22, 0.65)',
     },
@@ -621,16 +627,8 @@ export class LayoutRenderer {
 
         const { ctx } = this;
         const { scale, viewport } = this.camera;
-        const lengthM = this.layout.carLengthM ?? 4.5;
-        const widthM = Math.min(2.0, this.layout.laneWidthM * 0.55);
-        // Same screen-space floor/ceiling treatment as the signal heads
-        // (drawSignalHeads, below): a real 4.5m car is a couple of px at the
-        // network-overview zoom, which reads as noise rather than a vehicle.
-        // Floor keeps it visible zoomed out; ceiling stops it overgrowing a
-        // lane once zoomed in close.
-        const lengthPx = Math.min(22, Math.max(6, lengthM * scale));
-        const widthPx = Math.min(10, Math.max(3.5, widthM * scale));
-        const cornerPx = Math.min(2, widthPx / 3);
+        const defaultLengthM = this.layout.carLengthM ?? 4.5;
+        const defaultWidthM = Math.min(2.0, this.layout.laneWidthM * 0.55);
 
         ctx.save();
         ctx.strokeStyle = PALETTE.carEdge;
@@ -640,12 +638,23 @@ export class LayoutRenderer {
             const p = this.camera.toScreen(car.point);
             if (p.x < -20 || p.y < -20 || p.x > viewport.width + 20 || p.y > viewport.height + 20) continue;
 
+            // Same screen-space floor/ceiling treatment as the signal heads
+            // (drawSignalHeads, below): a real 4.5m car is a couple of px at the
+            // network-overview zoom, which reads as noise rather than a vehicle.
+            // Floor keeps it visible zoomed out; ceiling stops it overgrowing a
+            // lane once zoomed in close. Trucks (car.lengthM/widthM from
+            // car.js's VEHICLE_TYPES) get a taller ceiling so a large rig still
+            // reads as visibly longer than a car once zoomed in.
+            const lengthM = car.lengthM ?? defaultLengthM;
+            const widthM = car.widthM ?? defaultWidthM;
+            const lengthPx = Math.min(34, Math.max(6, lengthM * scale));
+            const widthPx = Math.min(13, Math.max(3.5, widthM * scale));
+            const cornerPx = Math.min(2, widthPx / 3);
+
             ctx.save();
             ctx.translate(p.x, p.y);
             ctx.rotate(Math.atan2(car.heading.y, car.heading.x));
-            ctx.fillStyle = car.stopped
-                ? PALETTE.carStopped
-                : PALETTE.carPalette[(car.colourIndex ?? 0) % PALETTE.carPalette.length];
+            ctx.fillStyle = car.stopped ? PALETTE.carStopped : vehicleFillColour(car);
             roundRect(ctx, -lengthPx / 2, -widthPx / 2, lengthPx, widthPx, cornerPx);
             ctx.fill();
             ctx.stroke();
@@ -973,6 +982,16 @@ function laneCentreOffsetsFor(roadWidthM, lanes, twoWay) {
         offsets.push(roadWidthM / 2 - (i + 0.5) * laneWidthM);
     }
     return offsets;
+}
+
+/** Small/medium/large - must match car.js's TRUCK_VEHICLE_TYPES order, which is what PALETTE.truckPalette is indexed by. Kept local rather than imported so this file stays a pure consumer of plain snapshot objects (see the file header). */
+const TRUCK_SIZE_INDEX = { truck_small: 0, truck_medium: 1, truck_large: 2 };
+
+/** Body colour for a moving (non-stopped) vehicle: truck size palette for trucks, the usual per-car sprite-variety palette otherwise. */
+function vehicleFillColour(car) {
+    const truckIndex = TRUCK_SIZE_INDEX[car.vehicleType];
+    if (truckIndex != null) return PALETTE.truckPalette[truckIndex];
+    return PALETTE.carPalette[(car.colourIndex ?? 0) % PALETTE.carPalette.length];
 }
 
 /** Lens index (0 red, 1 amber, 2 green) that should be lit for this approach, or -1 for unlit/dark. */
