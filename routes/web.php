@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BuilderController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\SimulationRunController;
@@ -30,6 +31,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/corridors/{corridor}', [SimulatorController::class, 'corridor'])
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.show');
+
+    Route::get('/builder', [BuilderController::class, 'index'])->name('builder');
 
     Route::get('/results', [ResultsController::class, 'index'])->name('results');
     // JSON refresh for the batch-run button (build step 17) - re-render charts

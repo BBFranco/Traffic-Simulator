@@ -15,6 +15,9 @@
                     <x-nav-link :href="route('simulator')" :active="request()->routeIs('simulator')">
                         {{ __('Simulator') }}
                     </x-nav-link>
+                    <x-nav-link :href="route('builder')" :active="request()->routeIs('builder')">
+                        {{ __('Builder') }}
+                    </x-nav-link>
                     <x-nav-link :href="route('results')" :active="request()->routeIs('results')">
                         {{ __('Results') }}
                     </x-nav-link>
@@ -66,6 +69,9 @@
         <div class="pt-2 pb-3 space-y-1">
             <x-responsive-nav-link :href="route('simulator')" :active="request()->routeIs('simulator')">
                 {{ __('Simulator') }}
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('builder')" :active="request()->routeIs('builder')">
+                {{ __('Builder') }}
             </x-responsive-nav-link>
             <x-responsive-nav-link :href="route('results')" :active="request()->routeIs('results')">
                 {{ __('Results') }}

@@ -12,6 +12,7 @@ export default defineConfig({
                 // ships the canvas code and vice versa.
                 'resources/js/simulator.js',
                 'resources/js/results.js',
+                'resources/js/builder.js',
             ],
             refresh: true,
         }),
