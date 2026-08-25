@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RecoveryTickController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\SimulationRunController;
 use App\Http\Controllers\SimulatorController;
@@ -40,6 +41,11 @@ Route::middleware('auth')->group(function () {
     // batch runner and by the /results page's batch-run button (build step 17).
     Route::post('/api/simulation-runs', [SimulationRunController::class, 'store'])
         ->name('simulation-runs.store');
+
+    // The "Recovery after a power cut" chart's per-tick series (build step 22b) - posted
+    // once per representative condition, replacing that condition's prior series.
+    Route::post('/api/recovery-ticks', [RecoveryTickController::class, 'store'])
+        ->name('recovery-ticks.store');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

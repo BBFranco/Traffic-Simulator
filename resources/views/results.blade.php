@@ -32,6 +32,45 @@
     $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
     $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
     $select = 'rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+
+    // The "vs fixed-time" stat blocks: adaptive isn't one thing, it's whichever sensor is
+    // reading the intersection, so each sensor (plus a blended average) is its own selectable
+    // comparison target alongside green-wave - see ResultsController::pairedComparisons().
+    // A comparison's delta can be null - a group made up entirely of pre-scope-migration
+    // rows (see the scope-columns migration's docblock), or (for recovery) simply not
+    // measured under normal power. Render a neutral placeholder rather than a fabricated number.
+    $fmtDelta = fn (?float $v, string $suffix) => $v === null ? '—' : ($v > 0 ? '+' : '').number_format($v, 1).$suffix;
+
+    $comparisonKey = fn (array $c) => $c['mode'].'|'.($c['sensor_mode'] ?? '');
+    $comparisonLabel = function (array $c) use ($modeLabels, $sensorLabels) {
+        if ($c['mode'] !== 'adaptive') {
+            return $modeLabels[$c['mode']];
+        }
+
+        return $c['sensor_mode'] === 'average'
+            ? 'Adaptive — avg. of sensors'
+            : 'Adaptive — '.$sensorLabels[$c['sensor_mode']];
+    };
+
+    $comparisonOptions = [];
+    foreach ($pairedComparisons as $c) {
+        $key = $comparisonKey($c);
+        if (isset($comparisonOptions[$key])) {
+            continue;
+        }
+        $comparisonOptions[$key] = ['key' => $key, 'label' => $comparisonLabel($c), 'mode' => $c['mode'], 'sensor_mode' => $c['sensor_mode']];
+    }
+    usort($comparisonOptions, function ($a, $b) use ($sensorOrder) {
+        $rank = function ($o) use ($sensorOrder) {
+            if ($o['mode'] === 'adaptive' && $o['sensor_mode'] === 'average') {
+                return -1;
+            }
+
+            return $o['mode'] === 'adaptive' ? array_search($o['sensor_mode'], $sensorOrder, true) : 100;
+        };
+
+        return $rank($a) <=> $rank($b);
+    });
 @endphp
 
 <x-app-layout title="Results" wide>
@@ -105,29 +144,61 @@
         </p>
     </div>
 
-    {{-- ============================================ the research question --}}
-    <section class="mb-8">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
-        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            Paired comparison against Webster-timed fixed-time control on the same seeds. Average wait
-            time is the headline metric; lower is better.
+    {{-- Client-side only, same mechanism as "Compare against fixed-time" below - every chart
+         already carries all three scopes' numbers, so switching this never refetches. --}}
+    <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
+        <div>
+            <label for="filter-scope" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Scope</label>
+            <select id="filter-scope" class="{{ $select }}">
+                <option value="total" selected>Total (main + side streets)</option>
+                <option value="arterial">Main arterial only</option>
+                <option value="side_street">Side streets only</option>
+            </select>
+        </div>
+        <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
+            Which roads' traffic every chart and stat block below measures.
         </p>
+    </div>
 
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    {{-- ============================================ the research question --}}
+    <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+            <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+                Paired comparison against Webster-timed fixed-time control on the same seeds, across every
+                stat block below.
+            </p>
+        </div>
+        <div>
+            <label for="filter-its-target" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Compare against fixed-time</label>
+            <select id="filter-its-target" class="{{ $select }}">
+                @foreach ($comparisonOptions as $option)
+                    <option value="{{ $option['key'] }}">{{ $option['label'] }}</option>
+                @endforeach
+            </select>
+        </div>
+    </div>
+
+    <section class="mb-8">
+        <div class="grid gap-3 sm:grid-cols-2">
             @foreach ($pairedComparisons as $comparison)
                 @php
                     $improves = $comparison['wait_improves'];
-                    $tone = $improves
-                        ? 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]'
-                        : 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]';
-                    $figureTone = $improves
-                        ? 'text-emerald-700 dark:text-emerald-300'
-                        : 'text-rose-700 dark:text-rose-300';
+                    $tone = match (true) {
+                        $improves === null => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40',
+                        $improves => 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]',
+                        default => 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]',
+                    };
+                    $figureTone = match (true) {
+                        $improves === null => 'text-slate-400 dark:text-slate-500',
+                        $improves => 'text-emerald-700 dark:text-emerald-300',
+                        default => 'text-rose-700 dark:text-rose-300',
+                    };
                 @endphp
-                <div class="rounded-lg border {{ $tone }} p-4">
+                <div class="rounded-lg border {{ $tone }} p-4" data-its-key="{{ $comparisonKey($comparison) }}" data-scope="{{ $comparison['scope'] }}">
                     <div class="flex items-center gap-2">
                         <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {{ $modeColours[$comparison['mode']] }}"></span>
-                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $modeLabels[$comparison['mode']] }}</span>
+                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
                         <span class="text-[10px] text-slate-500">vs fixed-time</span>
                     </div>
                     <div class="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
@@ -136,11 +207,15 @@
 
                     <div class="mt-3 flex items-baseline gap-2">
                         <span class="text-3xl font-semibold leading-none {{ $figureTone }}">
-                            {{ $comparison['wait_delta_pct'] > 0 ? '+' : '' }}{{ number_format($comparison['wait_delta_pct'], 1) }}%
+                            {{ $fmtDelta($comparison['wait_delta_pct'], '%') }}
                         </span>
                         <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $figureTone }}">
-                            <span aria-hidden="true">{{ $improves ? '▼' : '▲' }}</span>
-                            {{ $improves ? 'less waiting' : 'more waiting' }}
+                            @if ($improves === null)
+                                not measured yet
+                            @else
+                                <span aria-hidden="true">{{ $improves ? '▼' : '▲' }}</span>
+                                {{ $improves ? 'less waiting' : 'more waiting' }}
+                            @endif
                         </span>
                     </div>
                     <p class="mt-0.5 text-[10px] text-slate-500">average wait per vehicle</p>
@@ -149,13 +224,13 @@
                         <div class="flex justify-between gap-2">
                             <dt class="text-slate-500">Throughput</dt>
                             <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                {{ $comparison['throughput_delta_pct'] > 0 ? '+' : '' }}{{ number_format($comparison['throughput_delta_pct'], 1) }}%
+                                {{ $fmtDelta($comparison['throughput_delta_pct'], '%') }}
                             </dd>
                         </div>
                         <div class="flex justify-between gap-2">
                             <dt class="text-slate-500">Cleared w/o stopping</dt>
                             <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                {{ $comparison['cleared_delta_pp'] > 0 ? '+' : '' }}{{ number_format($comparison['cleared_delta_pp'], 1) }} pp
+                                {{ $fmtDelta($comparison['cleared_delta_pp'], ' pp') }}
                             </dd>
                         </div>
                     </dl>
@@ -164,12 +239,133 @@
         </div>
     </section>
 
+    {{-- ============================================ more headline metrics --}}
+    @php
+        $metricSections = [
+            [
+                'heading' => 'Does ITS move more traffic?',
+                'description' => 'Same paired comparison, headlining throughput instead of wait time. Higher is better.',
+                'valueKey' => 'throughput_delta_pct',
+                'improvesKey' => 'throughput_improves',
+                'suffix' => '%',
+                'improvedLabel' => 'more throughput',
+                'worseLabel' => 'less throughput',
+                'unitLabel' => 'vehicles cleared per minute',
+                'secondary' => [
+                    ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                    ['label' => 'Cleared w/o stopping', 'key' => 'cleared_delta_pp', 'suffix' => ' pp'],
+                ],
+                'filter' => null,
+            ],
+            [
+                'heading' => 'Does ITS clear more traffic without stopping?',
+                'description' => 'Share of vehicles that pass through without a full stop. Higher is better.',
+                'valueKey' => 'cleared_delta_pp',
+                'improvesKey' => 'cleared_improves',
+                'suffix' => ' pp',
+                'improvedLabel' => 'more cleared w/o stopping',
+                'worseLabel' => 'fewer cleared w/o stopping',
+                'unitLabel' => 'percentage-point change',
+                'secondary' => [
+                    ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                    ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
+                ],
+                'filter' => null,
+            ],
+            [
+                'heading' => 'How fast does ITS recover from load shedding?',
+                'description' => 'Time to return to normal flow once power is restored. Lower is better.',
+                'valueKey' => 'recovery_delta_pct',
+                'improvesKey' => 'recovery_improves',
+                'suffix' => '%',
+                'improvedLabel' => 'faster recovery',
+                'worseLabel' => 'slower recovery',
+                'unitLabel' => 'time to recovery',
+                'secondary' => [
+                    ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                    ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
+                ],
+                'filter' => fn ($c) => $c['power_state'] === 'load_shedding' && $c['recovery_delta_pct'] !== null,
+            ],
+        ];
+    @endphp
+
+    @foreach ($metricSections as $section)
+        @php
+            $rows = array_values(array_filter($pairedComparisons, $section['filter'] ?? fn ($c) => true));
+        @endphp
+        @if (count($rows))
+            <section class="mb-8">
+                <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ $section['heading'] }}</h2>
+                <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">{{ $section['description'] }}</p>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    @foreach ($rows as $comparison)
+                        @php
+                            $improves = $comparison[$section['improvesKey']];
+                            $value = $comparison[$section['valueKey']];
+                            $tone = match (true) {
+                                $improves === null => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40',
+                                $improves => 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]',
+                                default => 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]',
+                            };
+                            $figureTone = match (true) {
+                                $improves === null => 'text-slate-400 dark:text-slate-500',
+                                $improves => 'text-emerald-700 dark:text-emerald-300',
+                                default => 'text-rose-700 dark:text-rose-300',
+                            };
+                        @endphp
+                        <div class="rounded-lg border {{ $tone }} p-4" data-its-key="{{ $comparisonKey($comparison) }}" data-scope="{{ $comparison['scope'] }}">
+                            <div class="flex items-center gap-2">
+                                <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {{ $modeColours[$comparison['mode']] }}"></span>
+                                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
+                                <span class="text-[10px] text-slate-500">vs fixed-time</span>
+                            </div>
+                            <div class="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                                {{ $powerLabels[$comparison['power_state']] }}
+                            </div>
+
+                            <div class="mt-3 flex items-baseline gap-2">
+                                <span class="text-3xl font-semibold leading-none {{ $figureTone }}">
+                                    {{ $fmtDelta($value, $section['suffix']) }}
+                                </span>
+                                <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $figureTone }}">
+                                    @if ($improves === null)
+                                        not measured yet
+                                    @else
+                                        <span aria-hidden="true">{{ $value >= 0 ? '▲' : '▼' }}</span>
+                                        {{ $improves ? $section['improvedLabel'] : $section['worseLabel'] }}
+                                    @endif
+                                </span>
+                            </div>
+                            <p class="mt-0.5 text-[10px] text-slate-500">{{ $section['unitLabel'] }}</p>
+
+                            <dl class="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-[11px] dark:border-slate-800">
+                                @foreach ($section['secondary'] as $secondary)
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-500">{{ $secondary['label'] }}</dt>
+                                        <dd class="font-medium text-slate-800 dark:text-slate-200">
+                                            {{ $fmtDelta($comparison[$secondary['key']], $secondary['suffix']) }}
+                                        </dd>
+                                    </div>
+                                @endforeach
+                            </dl>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+        @endif
+    @endforeach
+
     {{-- ========================================================= bar trio --}}
     <section class="mb-8">
         <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
                 <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Per-condition means</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Each controller mode under normal power and under load shedding.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Each controller mode under normal power and under load shedding. Adaptive's bars follow the
+                    "Compare against fixed-time" selection above.
+                </p>
             </div>
             {{-- Shared legend: identity is text + swatch, never colour alone. --}}
             <ul class="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -254,17 +450,13 @@
     </section>
 
     {{-- ========================================================= recovery --}}
-    <section class="mb-8 grid gap-4 xl:grid-cols-[2fr_1fr]">
+    <section class="mb-8 grid gap-4 xl:grid-cols-2">
         <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1 flex flex-wrap items-end justify-between gap-2">
-                <span>
-                    <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut</span>
-                    <span class="text-[10px] text-slate-500">
-                        average wait, seconds per vehicle · lights dark from 120&nbsp;s to 240&nbsp;s
-                    </span>
-                </span>
+            <figcaption class="mb-1">
+                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - throughput</span>
                 <span class="text-[10px] text-slate-500">
-                    source: per-tick CSV (§9), not <code class="text-slate-600 dark:text-slate-400">simulation_runs</code>
+                    vehicles cleared per minute · shaded band marks the outage window · adaptive follows the
+                    "Compare against fixed-time" selection above
                 </span>
             </figcaption>
             <div class="relative h-[280px] w-full">
@@ -273,6 +465,19 @@
         </figure>
 
         <figure class="min-w-0 {{ $card }} p-4">
+            <figcaption class="mb-1">
+                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - wait time</span>
+                <span class="text-[10px] text-slate-500">
+                    average wait, seconds per vehicle · shaded band marks the outage window · adaptive follows the
+                    "Compare against fixed-time" selection above
+                </span>
+            </figcaption>
+            <div class="relative h-[280px] w-full">
+                <canvas id="chart-recovery-wait"></canvas>
+            </div>
+        </figure>
+
+        <figure class="min-w-0 {{ $card }} p-4 xl:col-span-2">
             <figcaption class="mb-1">
                 <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery</span>
                 <span class="text-[10px] text-slate-500">seconds back to pre-cut wait · lower is better</span>
@@ -341,6 +546,7 @@
     @php
         $chartPayload = [
             'aggregates' => $aggregates,
+            'aggregatesBySensor' => $aggregatesBySensor,
             'controllerModes' => $controllerModes,
             'powerStates' => $powerStates,
             'recoveryTimeline' => $recoveryTimeline,

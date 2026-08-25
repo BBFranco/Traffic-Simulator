@@ -22,7 +22,14 @@ import {
 import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall, mobilShouldChangeLane } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
 import { AdaptiveController } from './controllers/adaptive.js';
-import { AllWayStopController, MIN_STOP_DWELL_S } from './controllers/allWayStop.js';
+import {
+    AllWayStopController,
+    MIN_STOP_DWELL_S,
+    STOP_DWELL_JITTER_S,
+    junctionClearTimeS,
+    RELEASE_HESITATION_MIN_S,
+    RELEASE_HESITATION_JITTER_S,
+} from './controllers/allWayStop.js';
 import { buildGreenWaveControllers } from './controllers/greenWave.js';
 import { readQueueLength, detectPresenceAtStopLine, sensorAvailable } from './sensors.js';
 
@@ -206,6 +213,9 @@ export class SimulationEngine {
         };
         this.powerState = this._computePowerState();
         this.accounting = { totalSpawned: 0, totalClearedNetwork: 0 };
+        // Combined side-street (all connectors) wait/throughput stats - one bucket, not
+        // one per connector, since nothing downstream needs per-connector granularity.
+        this.sideStreetStats = { clearedTotal: 0, clearedWithoutStopTotal: 0, recentClears: [] };
 
         this.arterialState.clear();
         for (const arterial of this.layout.arterials) {
@@ -374,6 +384,8 @@ export class SimulationEngine {
             }
         }
 
+        this._updateAllWayStopReleases();
+
         for (const arterial of this.layout.arterials) {
             this._spawnForArterial(arterial, dt);
         }
@@ -391,8 +403,9 @@ export class SimulationEngine {
         }
 
         for (const state of this.arterialState.values()) {
-            this._pruneRolling(state);
+            this._pruneRolling(state.stats);
         }
+        this._pruneRolling(this.sideStreetStats);
 
         this._sampleChart(dt);
     }
@@ -482,12 +495,26 @@ export class SimulationEngine {
             };
         }
 
+        const sideStreetRecent = this.sideStreetStats.recentClears;
+        const sideStreet = {
+            avgWaitRolling: sideStreetRecent.length
+                ? sideStreetRecent.reduce((s, c) => s + c.waitS, 0) / sideStreetRecent.length
+                : 0,
+            throughputPerMin: sideStreetRecent.length,
+            clearedTotal: this.sideStreetStats.clearedTotal,
+            clearedWithoutStopTotal: this.sideStreetStats.clearedWithoutStopTotal,
+            clearedWithoutStopPct: this.sideStreetStats.clearedTotal
+                ? (this.sideStreetStats.clearedWithoutStopTotal / this.sideStreetStats.clearedTotal) * 100
+                : null,
+        };
+
         return {
             simTimeS: this.simTimeS,
             powerState: this.powerState,
             cars,
             signals,
             stats,
+            sideStreet,
             sensorAvailable: sensorAvailable(this.sensorMode, this.powerState, this.batteryBackedSensors),
         };
     }
@@ -613,6 +640,14 @@ export class SimulationEngine {
         if (this.powerState === 'load_shedding') {
             info.controllerType = 'allWayStop';
             info.controller = new AllWayStopController();
+            // Fresh outage, fresh junction - don't let a lock timestamp or an
+            // approach's arrival clock from a previous load-shedding window
+            // (simTimeS never resets mid-run) leak into this one.
+            info.allWayStopLockedUntilS = 0;
+            info.allWayStopLegs = {
+                0: { arrivedAtS: null, requiredDwellS: null },
+                1: { arrivedAtS: null, requiredDwellS: null },
+            };
         } else if (arterialState.mode === 'fixed') {
             info.controllerType = 'fixed';
             info.controller = new FixedTimeController(this._arterialDemand(info.arterial.id), crossDemand);
@@ -713,7 +748,6 @@ export class SimulationEngine {
                 const signalAhead = this._signalAheadFor(nodeInfos, car);
                 const ahead = nearestAhead(realAhead, signalAhead);
                 stepCar(car, ahead, dt);
-                this._trackAllWayStopDwell(car, ahead, dt);
                 this._recordNodeClears(state, nodeInfos, car);
             }
 
@@ -882,26 +916,158 @@ export class SimulationEngine {
                         this._connectorSignalAhead(farGateInfo, dir.gateDistanceM, car);
                     const ahead = nearestAhead(realAhead, signalAhead);
                     stepCar(car, ahead, dt);
-                    this._trackAllWayStopDwell(car, ahead, dt);
                 }
 
                 while (lane.cars.length && lane.cars[0].distanceM > routeLengthM) {
-                    lane.cars.shift();
+                    const car = lane.cars.shift();
                     this.accounting.totalClearedNetwork += 1;
+                    this._recordSideStreetClear(car);
                 }
             }
         }
     }
 
-    /** Shared by both arterial and connector stepping - the all-way-stop release rule only cares about the resolved `ahead`. */
-    _trackAllWayStopDwell(car, ahead, dt) {
-        if (!ahead?.isSignal || ahead.controllerType !== 'allWayStop') return;
-        if (car.stoppedNow) {
-            car.stopDwellS += dt;
-            if (car.stopDwellS >= MIN_STOP_DWELL_S) car.releasedNodeId = ahead.nodeId;
-        } else {
-            car.stopDwellS = 0;
+    /**
+     * Keeps one all-way-stop approach's (arterial or cross, at one node) own
+     * arrival clock current: stamps `arrivedAtS` and rolls a fresh randomised
+     * `requiredDwellS` (the shared "hesitation" - see MIN_STOP_DWELL_S/
+     * STOP_DWELL_JITTER_S) the moment the approach goes from nobody queued to
+     * somebody queued, and clears both the moment it drains back to empty so
+     * the next arrival there starts a genuinely fresh clock. Deliberately
+     * PER-APPROACH, not per-car: an earlier per-car version rolled each
+     * lane's own hesitation independently, which meant four cars that all
+     * stopped within the same instant would peel off in two separate
+     * batches, whichever pair's random dwell happened to finish first -
+     * visibly wrong, since none of those lanes conflict with each other and
+     * a real driver waits for the CAR that's been sitting there, not a coin
+     * flip for their own lane. One shared clock per approach means every
+     * lane on the winning side releases together the moment that ONE clock
+     * is up, matching "any number of lanes go together, gated by whoever's
+     * actually been there longest."
+     */
+    _updateAllWayStopLegClock(info, legKey, hasQueue) {
+        const legState = info.allWayStopLegs[legKey];
+        if (hasQueue && legState.arrivedAtS === null) {
+            legState.arrivedAtS = this.simTimeS;
+            legState.requiredDwellS = MIN_STOP_DWELL_S + this.rng.next() * STOP_DWELL_JITTER_S;
+        } else if (!hasQueue) {
+            legState.arrivedAtS = null;
+            legState.requiredDwellS = null;
         }
+    }
+
+    /**
+     * Once per tick, decide which all-way-stop approach(es) - if any - get
+     * released past each node: true first-come-first-served between the two
+     * conflicting sides (arterial vs. cross - the same phase 0/1 convention
+     * every other controller uses; a road's own lanes/directions don't
+     * conflict with each other so they're one side each), by comparing which
+     * side's arrival clock (`_updateAllWayStopLegClock` above) started
+     * first, not a fixed turn order. A side only ever loses its priority
+     * once it drains empty - a fixed "alternate every turn" rule let a
+     * heavy-traffic side that merely refills faster win the race for a
+     * freed lock again and again, forcing a light side to keep re-queueing
+     * behind fresh arrivals and wait far longer than whoever's actually been
+     * sitting there longest. If the longest-waiting side's own clock hasn't
+     * finished yet, the lock is held idle rather than letting the other
+     * side cut in - exactly the "first one at the stop line goes first"
+     * rule of a real all-way stop. EVERY currently-queued lane on the
+     * winning side releases together (any number of lanes), since same-side
+     * traffic doesn't conflict with itself. The occupancy lock
+     * (`allWayStopLockedUntilS`) is what actually stops the two conflicting
+     * sides crossing the box at once - this only picks who's next once the
+     * box is free. Reading queue state that's up to one tick stale (this
+     * runs before this tick's car stepping) is harmless at dt-scale (~0.1s).
+     */
+    _updateAllWayStopReleases() {
+        for (const info of this.nodesInfo.values()) {
+            if (info.controllerType !== 'allWayStop') continue;
+
+            const arterialQueued = this._allWayStopQueuedCars(info, 0);
+            const crossQueued = this._allWayStopQueuedCars(info, 1);
+            this._updateAllWayStopLegClock(info, 0, arterialQueued.length > 0);
+            this._updateAllWayStopLegClock(info, 1, crossQueued.length > 0);
+
+            if (this.simTimeS < (info.allWayStopLockedUntilS ?? 0)) continue;
+            if (!arterialQueued.length && !crossQueued.length) continue;
+
+            const arterialArrival = arterialQueued.length ? info.allWayStopLegs[0].arrivedAtS : Infinity;
+            const crossArrival = crossQueued.length ? info.allWayStopLegs[1].arrivedAtS : Infinity;
+            const legKey = arterialArrival <= crossArrival ? 0 : 1;
+            const legState = info.allWayStopLegs[legKey];
+            if (this.simTimeS - legState.arrivedAtS < legState.requiredDwellS) continue; // the longest-waiting side hasn't finished its own hesitation yet - hold, don't let the other side jump ahead
+
+            const releasing = legKey === 0 ? arterialQueued : crossQueued;
+            for (const car of releasing) {
+                car.releasedNodeIds.add(info.node.id);
+                car.startupDelayS = RELEASE_HESITATION_MIN_S + this.rng.next() * RELEASE_HESITATION_JITTER_S;
+                car.startupTimerS = 0;
+            }
+            legState.arrivedAtS = null;
+            legState.requiredDwellS = null;
+            info.allWayStopLockedUntilS = this.simTimeS + junctionClearTimeS(info.node);
+        }
+    }
+
+    /**
+     * The one car per lane/direction (arterial `phase` 0, cross street
+     * `phase` 1) currently at the TRUE front of its queue for `info.node`
+     * specifically - i.e. the virtual all-way-stop obstacle, not a real car
+     * ahead of it, is what it's actually braking for right now. Cars further
+     * back in the same lane, still queued behind that front car, are
+     * deliberately excluded: they're not yet independently blocked by this
+     * node at all (a real car - the one ahead of them - is the nearer
+     * obstacle), so they don't belong in this approach's release group yet
+     * either; they join it themselves once they reach the front. The whole
+     * group's shared hesitation clock lives on `info.allWayStopLegs`, not on
+     * individual cars - see `_updateAllWayStopLegClock()`.
+     */
+    _allWayStopQueuedCars(info, phase) {
+        const result = [];
+
+        if (phase === 0) {
+            const nodeInfos = this.nodeInfosByArterial.get(info.arterial.id) ?? [];
+            const state = this.arterialState.get(info.arterial.id);
+            for (const lane of state.lanes) {
+                for (let i = 0; i < lane.cars.length; i += 1) {
+                    const car = lane.cars[i];
+                    if (!car.stoppedNow) continue;
+                    // Same real-leader-vs-virtual-signal resolution _stepArterialCars()
+                    // itself uses (lane.cars is front-first) - a car queued behind a
+                    // REAL car ahead of it isn't yet the true front of the queue for
+                    // this node, so it isn't counted as part of this approach yet.
+                    const realAhead = i > 0 ? lane.cars[i - 1] : null;
+                    const ahead = nearestAhead(realAhead, this._signalAheadFor(nodeInfos, car));
+                    if (ahead?.isSignal && ahead.nodeId === info.node.id) result.push(car);
+                }
+            }
+            return result;
+        }
+
+        if (!info.node.connectorId) return result;
+        const connector = this.connectorsById.get(info.node.connectorId);
+        if (!connector) return result;
+        const dirs = this.connectorDirs.get(connector.id);
+        const connState = this.connectorState.get(connector.id);
+        for (const dirKey of ['fwd', 'rev']) {
+            const dir = dirs[dirKey];
+            if (!dir.road.lanes) continue;
+            const nearGateInfo = this.nodesInfo.get(dir.nearGateNode.id);
+            const farGateInfo = this.nodesInfo.get(dir.gateNode.id);
+            for (const lane of connState[dirKey].lanes) {
+                for (let i = 0; i < lane.cars.length; i += 1) {
+                    const car = lane.cars[i];
+                    if (!car.stoppedNow) continue;
+                    const realAhead = i > 0 ? lane.cars[i - 1] : null;
+                    const signalAhead =
+                        this._connectorSignalAhead(nearGateInfo, dir.nearGateDistanceM, car) ??
+                        this._connectorSignalAhead(farGateInfo, dir.gateDistanceM, car);
+                    const ahead = nearestAhead(realAhead, signalAhead);
+                    if (ahead?.isSignal && ahead.nodeId === info.node.id) result.push(car);
+                }
+            }
+        }
+        return result;
     }
 
     /** Nearest node ahead of `car`, resolved to a virtual stationary obstacle if that node currently blocks the arterial. */
@@ -910,7 +1076,7 @@ export class SimulationEngine {
         if (!nearest) return null;
 
         if (nearest.controllerType === 'allWayStop') {
-            if (car.releasedNodeId === nearest.node.id) return null;
+            if (car.releasedNodeIds.has(nearest.node.id)) return null;
             return {
                 distanceM: nearest.stopLineDistanceM,
                 speedMps: 0,
@@ -946,7 +1112,7 @@ export class SimulationEngine {
         if (gateDistanceM <= car.distanceM) return null; // already past it, or entered past it (see _divertCarToConnector)
 
         if (gateInfo.controllerType === 'allWayStop') {
-            if (car.releasedNodeId === gateInfo.node.id) return null;
+            if (car.releasedNodeIds.has(gateInfo.node.id)) return null;
             return { distanceM: gateDistanceM, speedMps: 0, isSignal: true, nodeId: gateInfo.node.id, controllerType: 'allWayStop' };
         }
         if (!gateInfo.controller.isCrossGreen()) {
@@ -1155,7 +1321,12 @@ export class SimulationEngine {
         const base = { controllerType: info.controllerType, arterialQueue, crossQueue };
 
         if (info.controllerType === 'allWayStop') {
-            return { ...base, phaseLabel: 'Stop-controlled (load shedding)', elapsedS: null, etaLabel: 'per-car, ~2s dwell then release' };
+            return {
+                ...base,
+                phaseLabel: 'Stop-controlled (load shedding)',
+                elapsedS: null,
+                etaLabel: 'per-approach, ~2-4.5s hesitant dwell, one side clears the box at a time',
+            };
         }
         if (info.controllerType === 'none') {
             return { ...base, phaseLabel: 'Free flow', elapsedS: null, etaLabel: 'n/a' };
@@ -1232,10 +1403,17 @@ export class SimulationEngine {
         state.stats.recentClears.push({ tS: this.simTimeS, waitS: car.totalWaitS });
     }
 
-    _pruneRolling(state) {
+    /** Same bookkeeping as `_recordClear()`, but into the single combined side-street bucket. */
+    _recordSideStreetClear(car) {
+        this.sideStreetStats.clearedTotal += 1;
+        if (!car.everStopped) this.sideStreetStats.clearedWithoutStopTotal += 1;
+        this.sideStreetStats.recentClears.push({ tS: this.simTimeS, waitS: car.totalWaitS });
+    }
+
+    _pruneRolling(stats) {
         const cutoff = this.simTimeS - ROLLING_WINDOW_S;
-        while (state.stats.recentClears.length && state.stats.recentClears[0].tS < cutoff) {
-            state.stats.recentClears.shift();
+        while (stats.recentClears.length && stats.recentClears[0].tS < cutoff) {
+            stats.recentClears.shift();
         }
     }
 

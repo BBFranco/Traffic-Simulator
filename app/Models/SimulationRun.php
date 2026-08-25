@@ -18,9 +18,17 @@ use Illuminate\Database\Eloquent\Model;
     'sensor_mode',
     'corridor_config',
     'avg_wait_time',
+    'avg_wait_time_arterial',
+    'avg_wait_time_side_street',
     'throughput_per_min',
+    'throughput_per_min_arterial',
+    'throughput_per_min_side_street',
     'pct_cleared_without_stop',
+    'pct_cleared_without_stop_arterial',
+    'pct_cleared_without_stop_side_street',
     'time_to_recovery_seconds',
+    'time_to_recovery_seconds_arterial',
+    'time_to_recovery_seconds_side_street',
     'raw_config_json',
 ])]
 class SimulationRun extends Model

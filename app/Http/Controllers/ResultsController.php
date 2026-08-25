@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SimulationRun;
+use App\Models\SimulationRunRecoveryTick;
 use App\Support\CorridorRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -15,8 +16,10 @@ use Illuminate\View\View;
  *
  * The recovery-over-time line chart is the one exception: `simulation_runs`
  * stores one summary row per run (spec's DB schema), so that per-tick series
- * comes from the headless batch runner's own CSV output under `results/`,
- * not from the database - see csvRecoveryTimeline() below.
+ * comes from `simulation_run_recovery_ticks` instead - one representative
+ * run's curve per (controller_mode, sensor_mode), captured by the batch
+ * runner alongside the summary rows - see dbRecoveryTimeline() below and
+ * SimulationRunRecoveryTick's docblock for why a separate table.
  */
 class ResultsController extends Controller
 {
@@ -24,12 +27,11 @@ class ResultsController extends Controller
 
     private const POWER_STATES = ['normal', 'load_shedding'];
 
-    /** Representative condition (mode -> results/ subfolder) the recovery line chart reads its CSV from. */
-    private const RECOVERY_CONDITION_BY_MODE = [
-        'fixed' => 'fixed_load_shedding',
-        'adaptive' => 'adaptive_load_shedding_camera',
-        'green_wave' => 'green_wave_load_shedding',
-    ];
+    /**
+     * Every scope the results page's Total/Main Arterial/Side Streets filter can select -
+     * '' (unsuffixed columns) means Total, the rest suffix onto every scoped metric column.
+     */
+    private const SCOPES = ['' => 'total', '_arterial' => 'arterial', '_side_street' => 'side_street'];
 
     public function __construct(private readonly CorridorRepository $corridors) {}
 
@@ -53,6 +55,7 @@ class ResultsController extends Controller
 
         return response()->json([
             'aggregates' => $payload['aggregates'],
+            'aggregatesBySensor' => $payload['aggregatesBySensor'],
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
             'recoveryTimeline' => $payload['recoveryTimeline'],
@@ -83,16 +86,24 @@ class ResultsController extends Controller
                 'sensor_mode' => $run->sensor_mode,
                 'corridor_config' => $run->corridor_config,
                 'avg_wait_time' => $run->avg_wait_time,
+                'avg_wait_time_arterial' => $run->avg_wait_time_arterial,
+                'avg_wait_time_side_street' => $run->avg_wait_time_side_street,
                 'throughput_per_min' => $run->throughput_per_min,
+                'throughput_per_min_arterial' => $run->throughput_per_min_arterial,
+                'throughput_per_min_side_street' => $run->throughput_per_min_side_street,
                 'pct_cleared_without_stop' => $run->pct_cleared_without_stop,
+                'pct_cleared_without_stop_arterial' => $run->pct_cleared_without_stop_arterial,
+                'pct_cleared_without_stop_side_street' => $run->pct_cleared_without_stop_side_street,
                 'time_to_recovery_seconds' => $run->time_to_recovery_seconds,
+                'time_to_recovery_seconds_arterial' => $run->time_to_recovery_seconds_arterial,
+                'time_to_recovery_seconds_side_street' => $run->time_to_recovery_seconds_side_street,
             ])->all();
 
         return [
             'aggregates' => $aggregates,
             'aggregatesBySensor' => $aggregatesBySensor,
-            'pairedComparisons' => $this->pairedComparisons($aggregates),
-            'recoveryTimeline' => $this->csvRecoveryTimeline(),
+            'pairedComparisons' => $this->pairedComparisons($aggregates, $aggregatesBySensor),
+            'recoveryTimeline' => $this->dbRecoveryTimeline(),
             'recentRuns' => $recentRuns,
             'totalRuns' => (clone $query)->count(),
         ];
@@ -108,27 +119,56 @@ class ResultsController extends Controller
     private function aggregates(Builder $query): array
     {
         return $query
-            ->selectRaw(
-                'controller_mode, power_state, count(*) as runs, '.
-                'avg(avg_wait_time) as avg_wait_time, '.
-                'avg(throughput_per_min) as throughput_per_min, '.
-                'avg(pct_cleared_without_stop) as pct_cleared_without_stop, '.
-                'avg(time_to_recovery_seconds) as time_to_recovery_seconds'
-            )
+            ->selectRaw('controller_mode, power_state, count(*) as runs, '.$this->metricSelectRaw())
             ->groupBy('controller_mode', 'power_state')
             ->get()
             ->map(fn ($row) => [
                 'controller_mode' => $row->controller_mode,
                 'power_state' => $row->power_state,
                 'runs' => (int) $row->runs,
-                'avg_wait_time' => round((float) $row->avg_wait_time, 1),
-                'throughput_per_min' => round((float) $row->throughput_per_min, 1),
-                'pct_cleared_without_stop' => round((float) $row->pct_cleared_without_stop, 1),
-                'time_to_recovery_seconds' => $row->time_to_recovery_seconds === null
-                    ? null
-                    : round((float) $row->time_to_recovery_seconds, 1),
+                ...$this->metricRow($row),
             ])
             ->all();
+    }
+
+    /**
+     * Every scoped metric's `avg(...)` clause for a groupBy aggregate query - shared by
+     * aggregates() and aggregatesBySensor() so the Total/Arterial/Side-Streets columns
+     * (see SCOPES) stay in lockstep between both.
+     */
+    private function metricSelectRaw(): string
+    {
+        $clauses = [];
+        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
+            foreach (array_keys(self::SCOPES) as $suffix) {
+                $column = $metric.$suffix;
+                $clauses[] = "avg({$column}) as {$column}";
+            }
+        }
+
+        return implode(', ', $clauses);
+    }
+
+    /**
+     * Rounds every scoped metric column on an aggregate row - shared by aggregates() and
+     * aggregatesBySensor(). time_to_recovery_seconds* stays null-safe (no run in the group
+     * measured a recovery, e.g. all normal-power); the other three are never null on a
+     * populated row but a legacy pre-migration row can still average to null (see the
+     * scope-columns migration's docblock).
+     *
+     * @return array<string, float|null>
+     */
+    private function metricRow(object $row): array
+    {
+        $result = [];
+        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
+            foreach (array_keys(self::SCOPES) as $suffix) {
+                $column = $metric.$suffix;
+                $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -146,13 +186,7 @@ class ResultsController extends Controller
     private function aggregatesBySensor(Builder $query): array
     {
         return $query
-            ->selectRaw(
-                'controller_mode, power_state, sensor_mode, count(*) as runs, '.
-                'avg(avg_wait_time) as avg_wait_time, '.
-                'avg(throughput_per_min) as throughput_per_min, '.
-                'avg(pct_cleared_without_stop) as pct_cleared_without_stop, '.
-                'avg(time_to_recovery_seconds) as time_to_recovery_seconds'
-            )
+            ->selectRaw('controller_mode, power_state, sensor_mode, count(*) as runs, '.$this->metricSelectRaw())
             ->groupBy('controller_mode', 'power_state', 'sensor_mode')
             ->get()
             ->map(fn ($row) => [
@@ -160,12 +194,7 @@ class ResultsController extends Controller
                 'power_state' => $row->power_state,
                 'sensor_mode' => $row->sensor_mode,
                 'runs' => (int) $row->runs,
-                'avg_wait_time' => round((float) $row->avg_wait_time, 1),
-                'throughput_per_min' => round((float) $row->throughput_per_min, 1),
-                'pct_cleared_without_stop' => round((float) $row->pct_cleared_without_stop, 1),
-                'time_to_recovery_seconds' => $row->time_to_recovery_seconds === null
-                    ? null
-                    : round((float) $row->time_to_recovery_seconds, 1),
+                ...$this->metricRow($row),
             ])
             ->all();
     }
@@ -175,10 +204,18 @@ class ResultsController extends Controller
      * against the fixed-time baseline, separately under normal power and
      * under load shedding.
      *
+     * Adaptive isn't one thing - it's whichever of the 4 sensor models is
+     * reading the intersection, and they perform differently enough that a
+     * single blended "adaptive" row hides which sensor actually earns its
+     * keep. So adaptive gets one comparison per sensor mode (from
+     * aggregatesBySensor) plus one "average of all sensors" row, while
+     * green-wave - which never varies by sensor - keeps its single row.
+     *
      * @param  array<int, array<string, mixed>>  $aggregates
+     * @param  array<int, array<string, mixed>>  $aggregatesBySensor
      * @return array<int, array<string, mixed>>
      */
-    private function pairedComparisons(array $aggregates): array
+    private function pairedComparisons(array $aggregates, array $aggregatesBySensor): array
     {
         $lookup = [];
         foreach ($aggregates as $row) {
@@ -187,28 +224,99 @@ class ResultsController extends Controller
 
         $comparisons = [];
 
-        foreach (['adaptive', 'green_wave'] as $mode) {
-            foreach (self::POWER_STATES as $power) {
-                $subject = $lookup["{$mode}|{$power}"] ?? null;
+        foreach (self::SCOPES as $suffix => $scope) {
+            foreach (['adaptive', 'green_wave'] as $mode) {
+                foreach (self::POWER_STATES as $power) {
+                    $subject = $lookup["{$mode}|{$power}"] ?? null;
+                    $baseline = $lookup['fixed|'.$power] ?? null;
+                    if (! $subject || ! $baseline) {
+                        continue;
+                    }
+
+                    $comparisons[] = $this->buildComparison(
+                        $mode,
+                        $mode === 'adaptive' ? 'average' : null,
+                        $power,
+                        $scope,
+                        $suffix,
+                        $subject,
+                        $baseline
+                    );
+                }
+            }
+
+            $bySensor = [];
+            foreach ($aggregatesBySensor as $row) {
+                if ($row['controller_mode'] !== 'adaptive' || $row['sensor_mode'] === null) {
+                    continue;
+                }
+                $bySensor["{$row['sensor_mode']}|{$row['power_state']}"] = $row;
+            }
+
+            foreach ($bySensor as $key => $subject) {
+                [$sensor, $power] = explode('|', $key);
                 $baseline = $lookup['fixed|'.$power] ?? null;
-                if (! $subject || ! $baseline) {
+                if (! $baseline) {
                     continue;
                 }
 
-                $comparisons[] = [
-                    'mode' => $mode,
-                    'baseline' => 'fixed',
-                    'power_state' => $power,
-                    // Wait time: lower is better, so a negative delta is an improvement.
-                    'wait_delta_pct' => $this->pctChange($baseline['avg_wait_time'], $subject['avg_wait_time']),
-                    'throughput_delta_pct' => $this->pctChange($baseline['throughput_per_min'], $subject['throughput_per_min']),
-                    'cleared_delta_pp' => round($subject['pct_cleared_without_stop'] - $baseline['pct_cleared_without_stop'], 1),
-                    'wait_improves' => $subject['avg_wait_time'] < $baseline['avg_wait_time'],
-                ];
+                $comparisons[] = $this->buildComparison('adaptive', $sensor, $power, $scope, $suffix, $subject, $baseline);
             }
         }
 
         return $comparisons;
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $baseline
+     * @return array<string, mixed>
+     */
+    private function buildComparison(
+        string $mode,
+        ?string $sensorMode,
+        string $power,
+        string $scope,
+        string $suffix,
+        array $subject,
+        array $baseline
+    ): array {
+        $waitKey = 'avg_wait_time'.$suffix;
+        $throughputKey = 'throughput_per_min'.$suffix;
+        $clearedKey = 'pct_cleared_without_stop'.$suffix;
+        $recoveryKey = 'time_to_recovery_seconds'.$suffix;
+
+        // Every metric can be null here, not just recovery: a group made up entirely of
+        // pre-scope-migration rows averages to null on every `_arterial`/`_side_street`
+        // column (see the scope-columns migration's docblock) until fresh data replaces it.
+        $waitKnown = $subject[$waitKey] !== null && $baseline[$waitKey] !== null;
+        $throughputKnown = $subject[$throughputKey] !== null && $baseline[$throughputKey] !== null;
+        $clearedKnown = $subject[$clearedKey] !== null && $baseline[$clearedKey] !== null;
+        $recoveryKnown = $subject[$recoveryKey] !== null && $baseline[$recoveryKey] !== null;
+
+        return [
+            'mode' => $mode,
+            'sensor_mode' => $sensorMode,
+            'baseline' => 'fixed',
+            'power_state' => $power,
+            'scope' => $scope,
+            // Wait time: lower is better, so a negative delta is an improvement.
+            'wait_delta_pct' => $waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null,
+            'throughput_delta_pct' => $throughputKnown
+                ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey])
+                : null,
+            'cleared_delta_pp' => $clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null,
+            // Recovery time: only meaningful under load shedding (null otherwise); lower is better.
+            'recovery_delta_pct' => $recoveryKnown
+                ? $this->pctChange($baseline[$recoveryKey], $subject[$recoveryKey])
+                : null,
+            'wait_improves' => $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null,
+            'throughput_improves' => $throughputKnown ? $subject[$throughputKey] > $baseline[$throughputKey] : null,
+            'cleared_improves' => $clearedKnown ? $subject[$clearedKey] > $baseline[$clearedKey] : null,
+            'recovery_improves' => $recoveryKnown
+                ? $subject[$recoveryKey] < $baseline[$recoveryKey]
+                : null,
+        ];
     }
 
     private function pctChange(float $from, float $to): float
@@ -221,53 +329,43 @@ class ResultsController extends Controller
     }
 
     /**
-     * Per-tick average wait, one representative run's CSV per controller mode
-     * (the first seed found under that condition's results/ folder). Returns
-     * null until the batch runner has actually produced that CSV - there is
-     * no fallback to fake data here, an empty/missing chart is the honest
+     * Per-tick throughput and avg wait, one representative load-shedding run per
+     * (controller_mode, sensor_mode) - see SimulationRunRecoveryTick's
+     * docblock. Keyed the same way as pairedComparisons()'s cards
+     * (`"{mode}|{sensor_mode}"`, empty string for the two modes that never
+     * vary by sensor) so results.js can look a series up directly by
+     * whatever the "Compare against fixed-time" dropdown has selected.
+     * Returns null until the batch runner has actually captured one - there
+     * is no fallback to fake data here, an empty/missing chart is the honest
      * state before a run exists.
      *
-     * @return array{seconds: array<int, float>, series: array<string, array<int, float>>, sheddingStart: ?float, sheddingEnd: ?float}|null
+     * @return array{seconds: array<int, float>, series: array<string, array<string, array<int, ?float>>>, sheddingStart: ?float, sheddingEnd: ?float}|null
      */
-    private function csvRecoveryTimeline(): ?array
+    private function dbRecoveryTimeline(): ?array
     {
-        $series = [];
-        $seconds = null;
-        $sheddingStartSeconds = null;
-
-        foreach (self::RECOVERY_CONDITION_BY_MODE as $mode => $conditionKey) {
-            $dir = base_path("results/{$conditionKey}");
-            if (! is_dir($dir)) {
-                continue;
-            }
-
-            $csvFiles = glob("{$dir}/*.csv") ?: [];
-            if (! $csvFiles) {
-                continue;
-            }
-            sort($csvFiles, SORT_NATURAL);
-            $csvPath = $csvFiles[0];
-
-            [$ticks, $avgWaitByTick] = $this->parseAvgWaitByTick($csvPath);
-            if (! $ticks) {
-                continue;
-            }
-
-            $dt = $this->dtFromSummary($csvPath) ?? 0.1;
-            $secondsForThisRun = array_map(fn ($t) => round($t * $dt, 1), $ticks);
-            $seconds ??= $secondsForThisRun;
-            $series[$mode] = array_values($avgWaitByTick);
-
-            if ($sheddingStartSeconds === null) {
-                $powerEventTick = $this->powerEventTickFromSummary($csvPath);
-                if ($powerEventTick !== null) {
-                    $sheddingStartSeconds = round($powerEventTick * $dt, 1);
-                }
-            }
+        $rows = SimulationRunRecoveryTick::query()->orderBy('tick')->get();
+        if ($rows->isEmpty()) {
+            return null;
         }
 
-        if (! $series || $seconds === null) {
-            return null;
+        $seconds = null;
+        $series = [];
+        $sheddingStart = null;
+
+        foreach ($rows->groupBy(fn (SimulationRunRecoveryTick $row) => "{$row->controller_mode}|{$row->sensor_mode}") as $key => $conditionRows) {
+            $seconds ??= $conditionRows->pluck('seconds')->map(fn ($v) => round((float) $v, 1))->all();
+            $series[$key] = [];
+            foreach (self::SCOPES as $suffix => $scope) {
+                $series[$key]['throughput_per_min'.$suffix] = $conditionRows
+                    ->pluck('throughput_per_min'.$suffix)
+                    ->map(fn ($v) => $v === null ? null : round((float) $v, 1))
+                    ->all();
+                $series[$key]['avg_wait_time'.$suffix] = $conditionRows
+                    ->pluck('avg_wait_time'.$suffix)
+                    ->map(fn ($v) => $v === null ? null : round((float) $v, 1))
+                    ->all();
+            }
+            $sheddingStart ??= round((float) $conditionRows->first()->power_event_seconds, 1);
         }
 
         return [
@@ -276,66 +374,8 @@ class ResultsController extends Controller
             // No restoration event in this build's power model (a triggered
             // outage runs to the end of the batch run, see engine.js) - the
             // shaded band covers from the trigger to the end of the series.
-            'sheddingStart' => $sheddingStartSeconds,
-            'sheddingEnd' => $sheddingStartSeconds === null ? null : end($seconds),
+            'sheddingStart' => $sheddingStart,
+            'sheddingEnd' => $sheddingStart === null ? null : end($seconds),
         ];
-    }
-
-    /**
-     * @return array{0: array<int, int>, 1: array<int, float>}
-     */
-    private function parseAvgWaitByTick(string $csvPath): array
-    {
-        $handle = fopen($csvPath, 'r');
-        if ($handle === false) {
-            return [[], []];
-        }
-
-        $header = fgetcsv($handle);
-        $tickIndex = array_search('tick', $header, true);
-        $waitIndex = array_search('avgWaitTime', $header, true);
-
-        $sums = [];
-        $counts = [];
-        while (($row = fgetcsv($handle)) !== false) {
-            if ($tickIndex === false || $waitIndex === false || ! isset($row[$tickIndex], $row[$waitIndex])) {
-                continue;
-            }
-            $tick = (int) $row[$tickIndex];
-            $sums[$tick] = ($sums[$tick] ?? 0.0) + (float) $row[$waitIndex];
-            $counts[$tick] = ($counts[$tick] ?? 0) + 1;
-        }
-        fclose($handle);
-
-        ksort($sums);
-        $ticks = array_keys($sums);
-        $avg = [];
-        foreach ($ticks as $tick) {
-            $avg[$tick] = round($sums[$tick] / $counts[$tick], 1);
-        }
-
-        return [$ticks, $avg];
-    }
-
-    private function summaryForCsv(string $csvPath): ?array
-    {
-        $jsonPath = preg_replace('/\.csv$/', '.json', $csvPath);
-        if ($jsonPath === null || ! is_file($jsonPath)) {
-            return null;
-        }
-
-        $decoded = json_decode((string) file_get_contents($jsonPath), true);
-
-        return is_array($decoded) ? $decoded : null;
-    }
-
-    private function dtFromSummary(string $csvPath): ?float
-    {
-        return $this->summaryForCsv($csvPath)['rawConfig']['dt'] ?? null;
-    }
-
-    private function powerEventTickFromSummary(string $csvPath): ?int
-    {
-        return $this->summaryForCsv($csvPath)['rawConfig']['powerEvent'] ?? null;
     }
 }

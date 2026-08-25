@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { runHeadless } from '../resources/js/sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experimentalMatrix.js';
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
+import { buildRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -78,6 +79,18 @@ async function postBatch(url, payloads) {
     }
 }
 
+async function postRecoveryTicks(url, payload) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`POST ${url} -> ${response.status}: ${body.slice(0, 500)}`);
+    }
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
@@ -98,7 +111,7 @@ async function main() {
 
         for (let rep = 0; rep < args.reps; rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
-            const { rows, summary } = runHeadless({
+            const { rows, sideStreetRows, summary } = runHeadless({
                 seed,
                 controllerMode: condition.controllerMode,
                 sensorMode: condition.sensorMode,
@@ -116,7 +129,25 @@ async function main() {
                 console.warn(`  ! car accounting mismatch on ${condition.key}/${seed}: ${JSON.stringify(summary.carAccounting)}`);
             }
 
-            if (args.post) pendingPosts.push(toApiPayload(summary));
+            if (args.post) {
+                pendingPosts.push(toApiPayload(summary));
+
+                // Rep 0 of a load-shedding condition is this condition's representative run for
+                // the recovery chart on /results - posted once, not batched like the rest.
+                if (rep === 0 && condition.powerState === 'load_shedding') {
+                    await postRecoveryTicks(
+                        args.post.replace(/\/[^/]+$/, '/recovery-ticks'),
+                        buildRecoveryTickPayload({
+                            controllerMode: condition.controllerMode,
+                            sensorMode: condition.sensorMode,
+                            rows,
+                            sideStreetRows,
+                            dt: args.dt,
+                            powerEventTick: args.powerEventTick,
+                        })
+                    );
+                }
+            }
 
             completed += 1;
             if (completed % 10 === 0 || completed === totalRuns) {

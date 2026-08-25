@@ -12,12 +12,20 @@ export function toApiPayload(summary) {
         sensor_mode: summary.sensorMode,
         corridor_config: summary.corridorConfig,
         avg_wait_time: summary.avgWaitTime,
+        avg_wait_time_arterial: summary.avgWaitTimeArterial,
+        avg_wait_time_side_street: summary.avgWaitTimeSideStreet,
         throughput_per_min: summary.throughputPerMin,
-        // The column isn't nullable (unlike sensor_mode/time_to_recovery_seconds,
+        throughput_per_min_arterial: summary.throughputPerMinArterial,
+        throughput_per_min_side_street: summary.throughputPerMinSideStreet,
+        // These columns aren't nullable (unlike sensor_mode/time_to_recovery_seconds,
         // which the spec explicitly marks nullable) - a run where nothing
         // cleared yet reports 0%, not null.
         pct_cleared_without_stop: summary.pctClearedWithoutStop ?? 0,
+        pct_cleared_without_stop_arterial: summary.pctClearedWithoutStopArterial ?? 0,
+        pct_cleared_without_stop_side_street: summary.pctClearedWithoutStopSideStreet ?? 0,
         time_to_recovery_seconds: summary.timeToRecoverySeconds,
+        time_to_recovery_seconds_arterial: summary.timeToRecoverySecondsArterial,
+        time_to_recovery_seconds_side_street: summary.timeToRecoverySecondsSideStreet,
         raw_config_json: summary.rawConfig,
     };
 }

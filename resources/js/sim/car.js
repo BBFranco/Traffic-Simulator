@@ -172,11 +172,17 @@ export class Car {
         /** Index into this arterial's ordered node list of the next stop line this car hasn't crossed yet - see SimulationEngine#_recordNodeClears(). */
         this.nextNodeIndex = 0;
 
-        // All-way-stop bookkeeping only (controllers/allWayStop.js, build step 6):
-        // how long this car has been continuously stopped at the front of its
-        // queue, and which node id (if any) the engine has released it past.
-        this.stopDwellS = 0;
-        this.releasedNodeId = null;
+        // All-way-stop bookkeeping only (controllers/allWayStop.js): the set
+        // of node ids the engine has released this car past. A SET, not a
+        // single id: a connector car crosses two real gates in sequence (its
+        // own near node, then the far one - see engine.js's connectorDirs
+        // comment), so a single scalar field would forget it had already
+        // passed the near gate the instant the far gate was also evaluated
+        // and released, permanently re-blocking it at the near gate forever.
+        // The dwell/hesitation timer itself lives per-APPROACH on the
+        // engine's own node info (engine.js#_updateAllWayStopLegClock), not
+        // per-car, so every lane on one side releases together.
+        this.releasedNodeIds = new Set();
 
         /**
          * Cosmetic-only turn sweep (build step 9 polish): a car diverted from

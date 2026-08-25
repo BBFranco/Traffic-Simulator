@@ -24,7 +24,7 @@ import { SimulationEngine } from './engine.js';
  * @param durationTicks    number of FIXED_DT_S ticks to run
  * @param dt               physics timestep in seconds (must match the live sim's FIXED_DT_S for the sanity-check comparison in build step 13 to be meaningful)
  * @param sampleEverySeconds  how often (sim time) to emit a CSV row - spec explicitly says not literally every tick
- * @returns { rows: object[], summary: object }
+ * @returns { rows: object[], sideStreetRows: object[], summary: object }
  */
 export function runHeadless({
     seed,
@@ -60,6 +60,7 @@ export function runHeadless({
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
     const rows = [];
+    const sideStreetRows = [];
     let powerTriggered = false;
 
     for (let tick = 0; tick < durationTicks; tick += 1) {
@@ -87,16 +88,51 @@ export function runHeadless({
                 }
                 rows.push(row);
             }
+
+            sideStreetRows.push({
+                tick,
+                avgWaitTime: round(snap.sideStreet.avgWaitRolling, 3),
+                throughputPerMin: snap.sideStreet.throughputPerMin,
+                clearedWithoutStopping:
+                    snap.sideStreet.clearedWithoutStopPct == null ? '' : round(snap.sideStreet.clearedWithoutStopPct, 1),
+                powerState: snap.powerState,
+            });
         }
     }
 
     const accounting = engine.carAccounting();
-    const summary = buildSummary({ layout, engine, seed, controllerMode, sensorMode, powerEvent, corridorConfig, durationTicks, dt, rows, accounting });
+    const summary = buildSummary({
+        layout,
+        engine,
+        seed,
+        controllerMode,
+        sensorMode,
+        powerEvent,
+        corridorConfig,
+        durationTicks,
+        dt,
+        rows,
+        sideStreetRows,
+        accounting,
+    });
 
-    return { rows, summary };
+    return { rows, sideStreetRows, summary };
 }
 
-function buildSummary({ layout, engine, seed, controllerMode, sensorMode, powerEvent, corridorConfig, durationTicks, dt, rows, accounting }) {
+function buildSummary({
+    layout,
+    engine,
+    seed,
+    controllerMode,
+    sensorMode,
+    powerEvent,
+    corridorConfig,
+    durationTicks,
+    dt,
+    rows,
+    sideStreetRows,
+    accounting,
+}) {
     const finalSnap = engine.snapshot();
 
     const perArterial = layout.arterials.map((arterial) => {
@@ -111,18 +147,45 @@ function buildSummary({ layout, engine, seed, controllerMode, sensorMode, powerE
         };
     });
 
-    // Aggregated to match `simulation_runs`' single-scalar-per-run schema
-    // (build step 16). Throughput is additive (sum across arterials); wait
-    // time and cleared-without-stop % are weighted by each arterial's own
-    // cleared count so a busier arterial counts for more, not an unweighted
-    // average of two possibly very different sample sizes.
-    const clearedTotal = perArterial.reduce((sum, a) => sum + a.clearedTotal, 0);
-    const clearedWithoutStopTotal = perArterial.reduce((sum, a) => sum + a.clearedWithoutStopTotal, 0);
-    const throughputPerMin = perArterial.reduce((sum, a) => sum + a.throughputPerMin, 0);
+    // Arterial scope: aggregated across arterials to match `simulation_runs`'
+    // single-scalar-per-run schema (build step 16). Throughput is additive
+    // (sum across arterials); wait time and cleared-without-stop % are
+    // weighted by each arterial's own cleared count so a busier arterial
+    // counts for more, not an unweighted average of two possibly very
+    // different sample sizes.
+    const clearedTotalArterial = perArterial.reduce((sum, a) => sum + a.clearedTotal, 0);
+    const clearedWithoutStopTotalArterial = perArterial.reduce((sum, a) => sum + a.clearedWithoutStopTotal, 0);
+    const throughputPerMinArterial = perArterial.reduce((sum, a) => sum + a.throughputPerMin, 0);
+    const avgWaitTimeArterial = clearedTotalArterial
+        ? perArterial.reduce((sum, a) => sum + a.avgWaitTime * a.clearedTotal, 0) / clearedTotalArterial
+        : 0;
+    const pctClearedWithoutStopArterial = clearedTotalArterial
+        ? (clearedWithoutStopTotalArterial / clearedTotalArterial) * 100
+        : null;
+
+    // Side-street scope: the engine already keeps one combined bucket across
+    // every connector (see engine.js's `sideStreetStats`), so no further
+    // aggregation is needed here.
+    const sideStreet = finalSnap.sideStreet;
+
+    // Total scope: arterial + side-street blended, weighted by each scope's
+    // own cleared count - same weighting principle as the arterial-only
+    // aggregation above, just one level up.
+    const clearedTotal = clearedTotalArterial + sideStreet.clearedTotal;
+    const clearedWithoutStopTotal = clearedWithoutStopTotalArterial + sideStreet.clearedWithoutStopTotal;
+    const throughputPerMin = throughputPerMinArterial + sideStreet.throughputPerMin;
     const avgWaitTime = clearedTotal
-        ? perArterial.reduce((sum, a) => sum + a.avgWaitTime * a.clearedTotal, 0) / clearedTotal
+        ? (avgWaitTimeArterial * clearedTotalArterial + sideStreet.avgWaitRolling * sideStreet.clearedTotal) /
+          clearedTotal
         : 0;
     const pctClearedWithoutStop = clearedTotal ? (clearedWithoutStopTotal / clearedTotal) * 100 : null;
+
+    const arterialByTick = buildByTickThroughput(rows);
+    const sideStreetByTick = buildByTickThroughput(sideStreetRows);
+    const totalByTick = new Map(arterialByTick);
+    for (const [tick, value] of sideStreetByTick) {
+        totalByTick.set(tick, (totalByTick.get(tick) ?? 0) + value);
+    }
 
     return {
         seed,
@@ -131,9 +194,17 @@ function buildSummary({ layout, engine, seed, controllerMode, sensorMode, powerE
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         corridorConfig: corridorConfig.id,
         avgWaitTime,
+        avgWaitTimeArterial,
+        avgWaitTimeSideStreet: sideStreet.avgWaitRolling,
         throughputPerMin,
+        throughputPerMinArterial,
+        throughputPerMinSideStreet: sideStreet.throughputPerMin,
         pctClearedWithoutStop,
-        timeToRecoverySeconds: computeRecoverySeconds(rows, powerEvent, dt, layout.arterials),
+        pctClearedWithoutStopArterial,
+        pctClearedWithoutStopSideStreet: sideStreet.clearedWithoutStopPct,
+        timeToRecoverySeconds: computeRecoverySeconds(totalByTick, powerEvent, dt),
+        timeToRecoverySecondsArterial: computeRecoverySeconds(arterialByTick, powerEvent, dt),
+        timeToRecoverySecondsSideStreet: computeRecoverySeconds(sideStreetByTick, powerEvent, dt),
         perArterial,
         carAccounting: accounting,
         durationTicks,
@@ -141,22 +212,31 @@ function buildSummary({ layout, engine, seed, controllerMode, sensorMode, powerE
     };
 }
 
-/**
- * Recovery time: seconds from the load-shedding event until aggregate
- * throughput first climbs back to >=80% of its own pre-event baseline. Not a
- * cited formula (there isn't a standard one for this) - a documented,
- * reproducible proxy, same spirit as the adaptive threshold heuristic in
- * equations.js. Returns null for a normal-power run, or if it never recovers
- * within the run's duration.
- */
-function computeRecoverySeconds(rows, powerEventTick, dt, arterials) {
-    if (powerEventTick == null) return null;
-
+function buildByTickThroughput(rows) {
     const byTick = new Map();
     for (const row of rows) {
-        const total = (byTick.get(row.tick) ?? 0) + row.throughputPerMin;
-        byTick.set(row.tick, total);
+        byTick.set(row.tick, (byTick.get(row.tick) ?? 0) + row.throughputPerMin);
     }
+    return byTick;
+}
+
+/**
+ * Recovery time: seconds from the load-shedding event until aggregate
+ * throughput first dips below 80% of its own pre-event baseline and then
+ * climbs back to it. Not a cited formula (there isn't a standard one for
+ * this) - a documented, reproducible proxy, same spirit as the adaptive
+ * threshold heuristic in equations.js. Returns null for a normal-power run,
+ * if it never dips at all (nothing to recover from), or if it dips but never
+ * climbs back within the run's duration.
+ *
+ * The dip check matters: the very first sampled tick at/after the event is
+ * often still near baseline (the queue backup hasn't shown up in throughput
+ * yet), so requiring only ">= threshold" without first confirming a real dip
+ * made every run "recover" instantly at 0s.
+ */
+function computeRecoverySeconds(byTick, powerEventTick, dt) {
+    if (powerEventTick == null) return null;
+
     const ticks = [...byTick.keys()].sort((a, b) => a - b);
 
     const preEventTicks = ticks.filter((t) => t < powerEventTick);
@@ -164,7 +244,11 @@ function computeRecoverySeconds(rows, powerEventTick, dt, arterials) {
     const baseline = preEventTicks.reduce((sum, t) => sum + byTick.get(t), 0) / preEventTicks.length;
     const threshold = baseline * 0.8;
 
-    const recoveredTick = ticks.find((t) => t >= powerEventTick && byTick.get(t) >= threshold);
+    const postEventTicks = ticks.filter((t) => t >= powerEventTick);
+    const dipIndex = postEventTicks.findIndex((t) => byTick.get(t) < threshold);
+    if (dipIndex === -1) return null;
+
+    const recoveredTick = postEventTicks.slice(dipIndex).find((t) => byTick.get(t) >= threshold);
     if (recoveredTick == null) return null;
     return round((recoveredTick - powerEventTick) * dt, 1);
 }

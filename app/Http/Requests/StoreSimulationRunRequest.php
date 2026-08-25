@@ -29,9 +29,17 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.sensor_mode' => ['nullable', 'in:inductive_loop,radar,camera,magnetometer'],
             'runs.*.corridor_config' => ['required', 'string', 'max:255'],
             'runs.*.avg_wait_time' => ['required', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_arterial' => ['required', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_side_street' => ['required', 'numeric', 'min:0'],
             'runs.*.throughput_per_min' => ['required', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_arterial' => ['required', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_side_street' => ['required', 'numeric', 'min:0'],
             'runs.*.pct_cleared_without_stop' => ['required', 'numeric', 'between:0,100'],
+            'runs.*.pct_cleared_without_stop_arterial' => ['required', 'numeric', 'between:0,100'],
+            'runs.*.pct_cleared_without_stop_side_street' => ['required', 'numeric', 'between:0,100'],
             'runs.*.time_to_recovery_seconds' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.time_to_recovery_seconds_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.time_to_recovery_seconds_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.raw_config_json' => ['required', 'array'],
         ];
     }

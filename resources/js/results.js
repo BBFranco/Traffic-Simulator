@@ -37,18 +37,62 @@ import { onThemeChange } from './theme.js';
 import { runHeadless } from './sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
 import { toApiPayload } from './sim/apiPayload.js';
+import { buildRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
 
 /** Fast lookup: "mode|power" -> aggregate row. Rebuilt after the batch-run button refreshes `data`. */
 let byKey;
 
+/** Fast lookup: "sensor|power" -> aggregate row, adaptive's rows only (the only mode that varies by sensor). */
+let byKeyBySensor;
+
 function rebuildByKey() {
     byKey = new Map(data.aggregates.map((row) => [`${row.controller_mode}|${row.power_state}`, row]));
+    byKeyBySensor = new Map(
+        data.aggregatesBySensor
+            .filter((row) => row.controller_mode === 'adaptive' && row.sensor_mode)
+            .map((row) => [`${row.sensor_mode}|${row.power_state}`, row])
+    );
     return byKey;
 }
 
 rebuildByKey();
+
+/** The "Compare against fixed-time" dropdown's raw selection, as {mode, sensor}. */
+function selectedItsTarget() {
+    const [mode, sensor] = (document.getElementById('filter-its-target')?.value || '').split('|');
+    return { mode, sensor };
+}
+
+/**
+ * Which adaptive sensor mode the dropdown has selected, or null for the blended average / a
+ * non-adaptive target - in which case the charts keep reading the blended `data.aggregates` row.
+ */
+function selectedAdaptiveSensor() {
+    const { mode, sensor } = selectedItsTarget();
+    return mode === 'adaptive' && sensor && sensor !== 'average' ? sensor : null;
+}
+
+/** The aggregate row backing a mode's bar at a given power state - adaptive's row follows the dropdown's sensor pick. */
+function rowForModeAndPower(mode, power) {
+    const sensor = selectedAdaptiveSensor();
+    return mode === 'adaptive' && sensor ? byKeyBySensor.get(`${sensor}|${power}`) : byKey.get(`${mode}|${power}`);
+}
+
+/** The "Scope" dropdown's raw selection - 'total' | 'arterial' | 'side_street'. */
+function selectedScope() {
+    return document.getElementById('filter-scope')?.value || 'total';
+}
+
+/**
+ * Every scoped metric column follows `<metric>` (Total) / `<metric>_arterial` / `<metric>_side_street`
+ * (see ResultsController's SCOPES) - this resolves whichever one the Scope dropdown has selected.
+ */
+function scopedMetric(metric) {
+    const scope = selectedScope();
+    return scope === 'total' ? metric : `${metric}_${scope}`;
+}
 
 const one = (v) => (v === null || v === undefined ? null : Number(Number(v).toFixed(1)));
 
@@ -89,7 +133,7 @@ function groupedByMode(metric) {
             barDataset({
                 label: MODE_LABELS[mode] ?? mode,
                 colour: MODE_COLOURS[mode],
-                data: data.powerStates.map((power) => one(byKey.get(`${mode}|${power}`)?.[metric] ?? null)),
+                data: data.powerStates.map((power) => one(rowForModeAndPower(mode, power)?.[scopedMetric(metric)] ?? null)),
             })
         ),
     };
@@ -121,17 +165,46 @@ function groupedBarChart(canvasId, metric, { unit, tickSuffix = '' }) {
     );
 }
 
-function recoveryChart() {
-    const canvas = document.getElementById('chart-recovery');
+/**
+ * The line chart's Adaptive series for `metric` ('throughput_per_min' or 'avg_wait_time'):
+ * the selected sensor's own recorded curve, or - for the blended "average of sensors" target -
+ * a point-wise average across whichever adaptive sensor curves were actually captured (there's
+ * no literal run backing a blended curve, unlike the scalar aggregates() average, so it's
+ * computed here instead of stored).
+ */
+function adaptiveRecoverySeries(timeline, metric) {
+    const key = scopedMetric(metric);
+    const target = selectedItsTarget();
+    if (target.mode === 'adaptive' && target.sensor && target.sensor !== 'average') {
+        return timeline.series[`adaptive|${target.sensor}`]?.[key] ?? null;
+    }
+
+    const sensorSeries = Object.keys(timeline.series)
+        .filter((seriesKey) => seriesKey.startsWith('adaptive|'))
+        .map((seriesKey) => timeline.series[seriesKey][key]);
+    if (!sensorSeries.length) return null;
+
+    return sensorSeries[0].map((_, i) => one(sensorSeries.reduce((sum, s) => sum + s[i], 0) / sensorSeries.length));
+}
+
+function buildRecoveryLineChart(canvasId, metric, { tooltipUnit }) {
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
     const timeline = data.recoveryTimeline;
-    if (!timeline?.seconds?.length) return; // no CSV output yet - see ResultsController::csvRecoveryTimeline()
+    if (!timeline?.seconds?.length) return; // no representative run captured yet - see ResultsController::dbRecoveryTimeline()
+
+    const scopedKey = scopedMetric(metric);
+    const seriesByMode = {
+        fixed: timeline.series['fixed|']?.[scopedKey],
+        green_wave: timeline.series['green_wave|']?.[scopedKey],
+        adaptive: adaptiveRecoverySeries(timeline, metric),
+    };
 
     const options = baseOptions({
         xTitle: 'seconds into run',
-        tickFormat: (v) => `${v}s`,
-        tooltipLabel: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} s`,
+        tickFormat: (v) => `${v}`,
+        tooltipLabel: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} ${tooltipUnit}`,
     });
     // Room on the right for the end-of-line series labels.
     options.layout.padding.right = 92;
@@ -142,12 +215,12 @@ function recoveryChart() {
             data: {
                 labels: timeline.seconds,
                 datasets: data.controllerModes
-                    .filter((mode) => timeline.series[mode])
+                    .filter((mode) => seriesByMode[mode])
                     .map((mode) =>
                         lineDataset({
                             label: MODE_LABELS[mode] ?? mode,
                             colour: MODE_COLOURS[mode],
-                            data: timeline.series[mode],
+                            data: seriesByMode[mode],
                         })
                     ),
             },
@@ -174,13 +247,20 @@ function recoveryChart() {
     );
 }
 
+function recoveryChart() {
+    buildRecoveryLineChart('chart-recovery', 'throughput_per_min', { tooltipUnit: 'veh/min' });
+}
+
+function recoveryWaitChart() {
+    buildRecoveryLineChart('chart-recovery-wait', 'avg_wait_time', { tooltipUnit: 's' });
+}
+
 function recoveryTimeChart() {
     const canvas = document.getElementById('chart-recovery-time');
     if (!canvas) return;
 
-    const modes = data.controllerModes.filter(
-        (mode) => byKey.get(`${mode}|load_shedding`)?.time_to_recovery_seconds != null
-    );
+    const recoveryKey = scopedMetric('time_to_recovery_seconds');
+    const modes = data.controllerModes.filter((mode) => rowForModeAndPower(mode, 'load_shedding')?.[recoveryKey] != null);
 
     const options = baseOptions({ tooltipLabel: (ctx) => `${ctx.parsed.x} s to recover` });
     options.layout.padding = { top: 6, right: 40, bottom: 2, left: 2 };
@@ -207,9 +287,7 @@ function recoveryTimeChart() {
                 datasets: [
                     {
                         label: 'Time to recovery',
-                        data: modes.map((mode) =>
-                            one(byKey.get(`${mode}|load_shedding`).time_to_recovery_seconds)
-                        ),
+                        data: modes.map((mode) => one(rowForModeAndPower(mode, 'load_shedding')[recoveryKey])),
                         // Colour still follows the entity: each bar takes its mode's hue.
                         backgroundColor: modes.map((mode) => MODE_COLOURS[mode]),
                         borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 },
@@ -241,6 +319,7 @@ function renderAll() {
     groupedBarChart('chart-throughput', 'throughput_per_min', { unit: ' veh/min' });
     groupedBarChart('chart-cleared', 'pct_cleared_without_stop', { unit: '%', tickSuffix: '%' });
     recoveryChart();
+    recoveryWaitChart();
     recoveryTimeChart();
 }
 
@@ -300,7 +379,7 @@ batchButton?.addEventListener('click', async () => {
         for (const condition of matrix) {
             for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
                 const seed = seedForRep(BASE_SEED, condition.powerState, rep);
-                const { summary } = runHeadless({
+                const { rows, sideStreetRows, summary } = runHeadless({
                     seed,
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
@@ -313,6 +392,21 @@ batchButton?.addEventListener('click', async () => {
                 pending.push(toApiPayload(summary));
                 completed += 1;
                 updateBatchProgress(completed, totalRuns, condition.key);
+
+                // Rep 0 of a load-shedding condition is this condition's representative run for
+                // the recovery chart - captured once, not batched with the summary POSTs above.
+                if (rep === 0 && condition.powerState === 'load_shedding') {
+                    await postRecoveryTicks(
+                        buildRecoveryTickPayload({
+                            controllerMode: condition.controllerMode,
+                            sensorMode: condition.sensorMode,
+                            rows,
+                            sideStreetRows,
+                            dt: DT,
+                            powerEventTick: POWER_EVENT_TICK,
+                        })
+                    );
+                }
 
                 if (pending.length >= POST_BATCH_SIZE) {
                     await postSimulationRuns(pending.splice(0, pending.length));
@@ -382,6 +476,23 @@ async function postSimulationRuns(payloads) {
     }
 }
 
+async function postRecoveryTicks(payload) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    const response = await fetch('/api/recovery-ticks', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': csrfToken ?? '',
+        },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`POST /api/recovery-ticks -> ${response.status}: ${body.slice(0, 300)}`);
+    }
+}
+
 /** Re-fetch the aggregate queries and redraw the charts - no full page reload (build step 17). */
 async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     const url = params.toString() ? `${data.resultsDataUrl}?${params}` : data.resultsDataUrl;
@@ -413,3 +524,32 @@ for (const id of ['filter-corridor', 'filter-sensor']) {
         refreshAggregatesAndRerender(params);
     });
 }
+
+/* ------------------------------------------------------- ITS-target filter */
+
+/**
+ * Which single ITS configuration - a specific adaptive sensor mode, the
+ * blended adaptive average, or green-wave - the "vs fixed-time" stat blocks
+ * and the per-condition chart trio compare adaptive against. Every
+ * configuration is already in the initial payload, so switching it is a
+ * local toggle/rerender, not a fetch.
+ */
+function applyItsTargetFilter() {
+    const select = document.getElementById('filter-its-target');
+    if (!select) return;
+    const key = select.value;
+    const scope = selectedScope();
+    document.querySelectorAll('[data-its-key]').forEach((card) => {
+        card.classList.toggle('hidden', card.dataset.itsKey !== key || card.dataset.scope !== scope);
+    });
+}
+
+document.getElementById('filter-its-target')?.addEventListener('change', () => {
+    applyItsTargetFilter();
+    renderAll();
+});
+document.getElementById('filter-scope')?.addEventListener('change', () => {
+    applyItsTargetFilter();
+    renderAll();
+});
+applyItsTargetFilter();
