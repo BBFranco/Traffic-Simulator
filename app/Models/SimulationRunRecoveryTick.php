@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * One (tick, throughput_per_min, avg_wait_time) sample of a representative
- * load-shedding run's recovery curve, one series per (controller_mode,
- * sensor_mode) - see the migration's docblock for why this exists alongside
- * `simulation_runs`.
+ * One (tick, throughput_per_min, avg_wait_time) sample of a load-shedding
+ * condition's recovery curve, averaged across every rep of that
+ * (controller_mode, sensor_mode) condition - see recoveryTickPayload.js's
+ * accumulateRecoveryTicks()/finalizeRecoveryTickPayload() and the migration's
+ * docblock for why this exists alongside `simulation_runs`.
  */
 #[Fillable([
     'controller_mode',

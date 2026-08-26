@@ -6,7 +6,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * One representative run's per-tick recovery series for a single
+ * One (already averaged-across-reps) per-tick recovery series for a single
  * (controller_mode, sensor_mode) condition - see
  * SimulationRunRecoveryTick's docblock. RecoveryTickController::store()
  * replaces any existing series for that condition rather than appending.

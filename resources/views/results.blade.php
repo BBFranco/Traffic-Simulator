@@ -53,6 +53,14 @@
     // measured under normal power. Render a neutral placeholder rather than a fabricated number.
     $fmtDelta = fn (?float $v, string $suffix) => $v === null ? '—' : ($v > 0 ? '+' : '').number_format($v, 1).$suffix;
 
+    // Recovery time on its own reads as "how good the controller is at recovering" - it isn't,
+    // it only clocks how long throughput takes to sustain its way back to baseline, saying
+    // nothing about where wait time actually settles afterwards. Always show it next to that
+    // steady-state figure so a short-but-still-elevated recovery can't pass as fully healed.
+    $fmtSecondsPair = fn (?float $subject, ?float $baseline, string $suffix = 's') => ($subject === null || $baseline === null)
+        ? '—'
+        : number_format($subject, 1).$suffix.' vs '.number_format($baseline, 1).$suffix;
+
     $comparisonKey = fn (array $c) => $c['mode'].'|'.($c['sensor_mode'] ?? '');
     $comparisonLabel = function (array $c) use ($modeLabels, $sensorLabels) {
         if ($c['mode'] !== 'adaptive') {
@@ -299,6 +307,9 @@
                     ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
                 ],
                 'filter' => fn ($c) => $c['power_state'] === 'load_shedding' && $c['recovery_delta_pct'] !== null,
+                // Recovery time alone can't be trusted (see $fmtSecondsPair's comment above) -
+                // this card always renders it next to the post-recovery steady-state wait.
+                'recoveryPair' => true,
             ],
         ];
     @endphp
@@ -363,6 +374,20 @@
                                         </dd>
                                     </div>
                                 @endforeach
+                                @if ($section['recoveryPair'] ?? false)
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-500">Recovery time (subject vs fixed-time)</dt>
+                                        <dd class="font-medium text-slate-800 dark:text-slate-200">
+                                            {{ $fmtSecondsPair($comparison['recovery_seconds'], $comparison['baseline_recovery_seconds']) }}
+                                        </dd>
+                                    </div>
+                                    <div class="flex justify-between gap-2">
+                                        <dt class="text-slate-500">Post-recovery avg wait</dt>
+                                        <dd class="font-medium text-slate-800 dark:text-slate-200">
+                                            {{ $fmtSecondsPair($comparison['post_recovery_avg_wait'], $comparison['baseline_post_recovery_avg_wait']) }}
+                                        </dd>
+                                    </div>
+                                @endif
                             </dl>
                         </div>
                     @endforeach

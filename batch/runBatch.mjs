@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url';
 import { runHeadless } from '../resources/js/sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experimentalMatrix.js';
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
-import { buildRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
+import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -138,6 +138,8 @@ async function main() {
         const outDir = path.join(ROOT, 'results', condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
+        let recoveryAcc = null;
+
         for (let rep = 0; rep < args.reps; rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
             const { rows, sideStreetRows, summary } = runHeadless({
@@ -163,21 +165,12 @@ async function main() {
             if (args.post) {
                 pendingPosts.push(toApiPayload(summary));
 
-                // Rep 0 of a load-shedding condition is this condition's representative run for
-                // the recovery chart on /results - posted once, not batched like the rest.
-                if (rep === 0 && condition.powerState === 'load_shedding') {
-                    await postRecoveryTicks(
-                        args.post.replace(/\/[^/]+$/, '/recovery-ticks'),
-                        buildRecoveryTickPayload({
-                            controllerMode: condition.controllerMode,
-                            sensorMode: condition.sensorMode,
-                            rows,
-                            sideStreetRows,
-                            dt: args.dt,
-                            powerOutageStartTick: args.powerOutageStartTick,
-                            powerOutageEndTick: args.powerOutageEndTick,
-                        })
-                    );
+                // Every rep of a load-shedding condition folds into this condition's recovery
+                // curve, so the chart on /results averages the same population the "time to
+                // recovery" stat card does - posted once after the last rep, not batched like
+                // the rest.
+                if (condition.powerState === 'load_shedding') {
+                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { rows, sideStreetRows });
                 }
             }
 
@@ -189,6 +182,19 @@ async function main() {
             if (args.post && pendingPosts.length >= POST_BATCH_SIZE) {
                 await postBatch(args.post, pendingPosts.splice(0, pendingPosts.length));
             }
+        }
+
+        if (args.post && recoveryAcc) {
+            await postRecoveryTicks(
+                args.post.replace(/\/[^/]+$/, '/recovery-ticks'),
+                finalizeRecoveryTickPayload(recoveryAcc, {
+                    controllerMode: condition.controllerMode,
+                    sensorMode: condition.sensorMode,
+                    dt: args.dt,
+                    powerOutageStartTick: args.powerOutageStartTick,
+                    powerOutageEndTick: args.powerOutageEndTick,
+                })
+            );
         }
     }
 

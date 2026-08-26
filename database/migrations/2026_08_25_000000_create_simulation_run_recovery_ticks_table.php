@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Per-tick throughput and avg-wait series for one representative load-shedding
- * run per (controller_mode, sensor_mode) - what the /results page's "Recovery
+ * Per-tick throughput and avg-wait series for a load-shedding condition, averaged across every
+ * rep of that (controller_mode, sensor_mode) condition - what the /results page's "Recovery
  * after a power cut" line charts plot. `simulation_runs` only stores one summary row
  * per run, so this is the DB-backed replacement for the CLI batch runner's
  * per-run CSV export, which the browser-driven "Generate dataset" button can

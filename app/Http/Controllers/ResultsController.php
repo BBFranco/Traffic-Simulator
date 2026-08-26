@@ -16,10 +16,12 @@ use Illuminate\View\View;
  *
  * The recovery-over-time line chart is the one exception: `simulation_runs`
  * stores one summary row per run (spec's DB schema), so that per-tick series
- * comes from `simulation_run_recovery_ticks` instead - one representative
- * run's curve per (controller_mode, sensor_mode), captured by the batch
- * runner alongside the summary rows - see dbRecoveryTimeline() below and
- * SimulationRunRecoveryTick's docblock for why a separate table.
+ * comes from `simulation_run_recovery_ticks` instead - one curve per
+ * (controller_mode, sensor_mode), averaged across every rep of that
+ * condition by the batch runner (recoveryTickPayload.js) so the chart tracks
+ * the same population the "time to recovery" stat card averages - see
+ * dbRecoveryTimeline() below and SimulationRunRecoveryTick's docblock for why
+ * a separate table.
  */
 class ResultsController extends Controller
 {
@@ -415,6 +417,19 @@ class ResultsController extends Controller
             'recovery_improves' => $recoveryKnown
                 ? $subject[$recoveryKey] < $baseline[$recoveryKey]
                 : null,
+            // Recovery time only measures how long throughput takes to sustain its way back to
+            // baseline - it says nothing about where things settle afterwards. A shorter recovery
+            // time next to a worse steady-state (or vice versa) is a real, common pattern here
+            // (e.g. a controller with a much lower pre-outage baseline has further, proportionally,
+            // to climb back before it counts as "recovered"), so always render this raw seconds
+            // value paired with the post-recovery segment average rather than alone - see the
+            // results-page audit. Total-scope only ($subject/$baseline are the same row across every
+            // SCOPES iteration, just read at a different suffix - post-recovery segments were never
+            // split by scope).
+            'recovery_seconds' => $recoveryKnown ? $subject[$recoveryKey] : null,
+            'baseline_recovery_seconds' => $recoveryKnown ? $baseline[$recoveryKey] : null,
+            'post_recovery_avg_wait' => $subject['avg_wait_time_post_recovery'] ?? null,
+            'baseline_post_recovery_avg_wait' => $baseline['avg_wait_time_post_recovery'] ?? null,
             // Sample size behind this row's own mean, and each side's 95% CI half-width
             // (mean +/- ci95) - not a CI on the delta itself, see metricSelectRaw()'s comment.
             'runs' => $subject['runs'],
@@ -438,8 +453,8 @@ class ResultsController extends Controller
     }
 
     /**
-     * Per-tick throughput and avg wait, one representative load-shedding run per
-     * (controller_mode, sensor_mode) - see SimulationRunRecoveryTick's
+     * Per-tick throughput and avg wait, averaged across every load-shedding rep of a
+     * (controller_mode, sensor_mode) condition - see SimulationRunRecoveryTick's
      * docblock. Keyed the same way as pairedComparisons()'s cards
      * (`"{mode}|{sensor_mode}"`, empty string for the two modes that never
      * vary by sensor) so results.js can look a series up directly by

@@ -3,14 +3,20 @@
  * arterial per sample) and `sideStreetRows` (one combined side-street row per
  * sample) to the payload shape `POST /api/recovery-ticks` validates and
  * stores: (tick, throughput_per_min, avg_wait_time) series for the Total,
- * Main Arterial, and Side Streets scopes. Throughput is summed across
- * arterials (and, for the total, across arterials + side streets), same as
- * buildSummary()'s corridor-wide throughputPerMin in runHeadless.js (additive,
- * not averaged); wait time is averaged unweighted (across arterials for the
- * arterial scope, and between the arterial and side-street averages for the
- * total scope). Shared by the CLI batch driver and the /results page's
- * batch-run button - only call this for a load-shedding condition's rep 0,
- * the one representative run whose curve backs the recovery charts.
+ * Main Arterial, and Side Streets scopes.
+ *
+ * The recovery-timeline chart needs to agree with the "time to recovery"
+ * stat card, which averages across every rep of a condition (n=30, n=120,
+ * ...) - a single representative run's curve doesn't track that average and
+ * can visibly disagree with it (see the results-page audit). So this now
+ * accumulates every load-shedding rep of a (controller_mode, sensor_mode)
+ * condition via accumulateRecoveryTicks(), and finalizeRecoveryTickPayload()
+ * averages them into one curve at the end - same population the "time to
+ * recovery" aggregate is drawn from. Throughput stays additive across
+ * arterials within a rep (summed, matching buildSummary()'s corridor-wide
+ * throughputPerMin in runHeadless.js), then that per-rep total is averaged
+ * across reps; wait time is averaged unweighted across arterials and reps
+ * together (equivalent since every rep has the same arterial count).
  */
 /**
  * Chart-point cap: the recovery line charts don't benefit from more points than this (a 60s
@@ -35,27 +41,41 @@ function downsample(sortedTicks, maxPoints) {
     return [...picked];
 }
 
-export function buildRecoveryTickPayload({
-    controllerMode,
-    sensorMode,
-    rows,
-    sideStreetRows,
-    dt,
-    powerOutageStartTick,
-    powerOutageEndTick,
-}) {
-    const throughputSums = new Map();
-    const waitSums = new Map();
-    const counts = new Map();
+/**
+ * Folds one rep's per-tick `rows`/`sideStreetRows` into a running accumulator across every rep
+ * of a (controller_mode, sensor_mode) condition. Pass `acc` back in on the next call; pass
+ * `undefined`/`null` to start a fresh one. Call finalizeRecoveryTickPayload() once every rep is in.
+ */
+export function accumulateRecoveryTicks(acc, { rows, sideStreetRows }) {
+    acc ??= {
+        throughputArterialSum: new Map(),
+        waitArterialSum: new Map(),
+        arterialRowCount: new Map(),
+        throughputSideStreetSum: new Map(),
+        waitSideStreetSum: new Map(),
+        reps: 0,
+    };
+
     for (const row of rows) {
-        throughputSums.set(row.tick, (throughputSums.get(row.tick) ?? 0) + row.throughputPerMin);
-        waitSums.set(row.tick, (waitSums.get(row.tick) ?? 0) + row.avgWaitTime);
-        counts.set(row.tick, (counts.get(row.tick) ?? 0) + 1);
+        acc.throughputArterialSum.set(row.tick, (acc.throughputArterialSum.get(row.tick) ?? 0) + row.throughputPerMin);
+        acc.waitArterialSum.set(row.tick, (acc.waitArterialSum.get(row.tick) ?? 0) + row.avgWaitTime);
+        acc.arterialRowCount.set(row.tick, (acc.arterialRowCount.get(row.tick) ?? 0) + 1);
     }
+    for (const row of sideStreetRows) {
+        acc.throughputSideStreetSum.set(row.tick, (acc.throughputSideStreetSum.get(row.tick) ?? 0) + row.throughputPerMin);
+        acc.waitSideStreetSum.set(row.tick, (acc.waitSideStreetSum.get(row.tick) ?? 0) + row.avgWaitTime);
+    }
+    acc.reps += 1;
 
-    const sideStreetByTick = new Map(sideStreetRows.map((row) => [row.tick, row]));
+    return acc;
+}
 
-    const ticks = downsample([...throughputSums.keys()].sort((a, b) => a - b), MAX_CHART_POINTS);
+/** Averages an accumulator built by accumulateRecoveryTicks() into the `POST /api/recovery-ticks` payload shape. */
+export function finalizeRecoveryTickPayload(
+    acc,
+    { controllerMode, sensorMode, dt, powerOutageStartTick, powerOutageEndTick }
+) {
+    const ticks = downsample([...acc.throughputArterialSum.keys()].sort((a, b) => a - b), MAX_CHART_POINTS);
 
     return {
         controller_mode: controllerMode,
@@ -64,19 +84,20 @@ export function buildRecoveryTickPayload({
         power_event_seconds: round(powerOutageStartTick * dt, 1),
         power_outage_end_seconds: round(powerOutageEndTick * dt, 1),
         ticks: ticks.map((tick) => {
-            const throughputArterial = throughputSums.get(tick);
-            const waitArterial = waitSums.get(tick) / counts.get(tick);
-            const sideStreet = sideStreetByTick.get(tick) ?? { throughputPerMin: 0, avgWaitTime: 0 };
+            const throughputArterial = acc.throughputArterialSum.get(tick) / acc.reps;
+            const waitArterial = acc.waitArterialSum.get(tick) / acc.arterialRowCount.get(tick);
+            const throughputSideStreet = (acc.throughputSideStreetSum.get(tick) ?? 0) / acc.reps;
+            const waitSideStreet = (acc.waitSideStreetSum.get(tick) ?? 0) / acc.reps;
 
             return {
                 tick,
                 seconds: round(tick * dt, 1),
-                throughput_per_min: round(throughputArterial + sideStreet.throughputPerMin, 1),
+                throughput_per_min: round(throughputArterial + throughputSideStreet, 1),
                 throughput_per_min_arterial: round(throughputArterial, 1),
-                throughput_per_min_side_street: round(sideStreet.throughputPerMin, 1),
-                avg_wait_time: round((waitArterial + sideStreet.avgWaitTime) / 2, 1),
+                throughput_per_min_side_street: round(throughputSideStreet, 1),
+                avg_wait_time: round((waitArterial + waitSideStreet) / 2, 1),
                 avg_wait_time_arterial: round(waitArterial, 1),
-                avg_wait_time_side_street: round(sideStreet.avgWaitTime, 1),
+                avg_wait_time_side_street: round(waitSideStreet, 1),
             };
         }),
     };

@@ -37,7 +37,7 @@ import { onThemeChange } from './theme.js';
 import { runHeadless } from './sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
 import { toApiPayload } from './sim/apiPayload.js';
-import { buildRecoveryTickPayload } from './sim/recoveryTickPayload.js';
+import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
 
@@ -400,6 +400,8 @@ batchButton?.addEventListener('click', async () => {
         let pending = [];
 
         for (const condition of matrix) {
+            let recoveryAcc = null;
+
             for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
                 const seed = seedForRep(BASE_SEED, condition.powerState, rep);
                 const { rows, sideStreetRows, summary } = runHeadless({
@@ -418,20 +420,11 @@ batchButton?.addEventListener('click', async () => {
                 completed += 1;
                 updateBatchProgress(completed, totalRuns, condition.key);
 
-                // Rep 0 of a load-shedding condition is this condition's representative run for
-                // the recovery chart - captured once, not batched with the summary POSTs above.
-                if (rep === 0 && condition.powerState === 'load_shedding') {
-                    await postRecoveryTicks(
-                        buildRecoveryTickPayload({
-                            controllerMode: condition.controllerMode,
-                            sensorMode: condition.sensorMode,
-                            rows,
-                            sideStreetRows,
-                            dt: DT,
-                            powerOutageStartTick: POWER_OUTAGE_START_TICK,
-                            powerOutageEndTick: POWER_OUTAGE_END_TICK,
-                        })
-                    );
+                // Every rep of a load-shedding condition folds into this condition's recovery
+                // curve, so the chart averages the same population the "time to recovery" stat
+                // card does - posted once after the last rep, not batched with the summary POSTs.
+                if (condition.powerState === 'load_shedding') {
+                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { rows, sideStreetRows });
                 }
 
                 if (pending.length >= POST_BATCH_SIZE) {
@@ -442,6 +435,18 @@ batchButton?.addEventListener('click', async () => {
                 // repaints - a tight synchronous loop never gets the chance.
                 // eslint-disable-next-line no-await-in-loop
                 await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+
+            if (recoveryAcc) {
+                await postRecoveryTicks(
+                    finalizeRecoveryTickPayload(recoveryAcc, {
+                        controllerMode: condition.controllerMode,
+                        sensorMode: condition.sensorMode,
+                        dt: DT,
+                        powerOutageStartTick: POWER_OUTAGE_START_TICK,
+                        powerOutageEndTick: POWER_OUTAGE_END_TICK,
+                    })
+                );
             }
         }
 

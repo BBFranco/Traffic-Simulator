@@ -354,8 +354,17 @@ function segmentStats(cumulativeByTick, fromTick, toTick, dt, finalCumulative = 
 
 /**
  * Recovery time: seconds from power being RESTORED (`powerOutageEndTick`) until aggregate
- * throughput climbs back to at least 80% of its own pre-outage baseline. Returns null for a
- * normal-power run, or if throughput never climbs back to that threshold within the run.
+ * throughput climbs back to at least 80% of its own pre-outage baseline AND STAYS there for
+ * the rest of the run. Returns null for a normal-power run, or if throughput never sustains
+ * that threshold before the run ends.
+ *
+ * Sustained, not first-touch: a first-crossing definition reports a "recovered" time even when
+ * the system dips back below baseline later (this corridor's demand fluctuates on a fixed
+ * ~300s cycle - see equations.js's fluctuatingDemand() - independently of the outage, so a
+ * later demand peak can easily produce exactly that kind of false-recovery blip). Scanning for
+ * the last below-threshold tick and reporting the point right after it means a relapse anywhere
+ * in the post-restore window correctly pushes the reported recovery time out, instead of being
+ * silently missed.
  *
  * Unlike the old permanent-outage build, power actually comes back on here, so this now
  * measures exactly what the dashboard copy says it does ("time to return to normal flow once
@@ -372,9 +381,15 @@ function computeRecoverySeconds(byTick, powerOutageStartTick, powerOutageEndTick
     const threshold = baseline * 0.8;
 
     const postRestoreTicks = ticks.filter((t) => t >= powerOutageEndTick);
-    const recoveredTick = postRestoreTicks.find((t) => byTick.get(t) >= threshold);
-    if (recoveredTick == null) return null;
+    if (!postRestoreTicks.length) return null;
 
+    let lastBelowIndex = -1;
+    postRestoreTicks.forEach((t, i) => {
+        if (byTick.get(t) < threshold) lastBelowIndex = i;
+    });
+    if (lastBelowIndex === postRestoreTicks.length - 1) return null; // never sustains recovery through run end
+
+    const recoveredTick = postRestoreTicks[lastBelowIndex + 1];
     return round((recoveredTick - powerOutageEndTick) * dt, 1);
 }
 

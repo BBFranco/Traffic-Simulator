@@ -8,9 +8,10 @@ use Illuminate\Http\JsonResponse;
 
 /**
  * Where the "Recovery after a power cut" chart's per-tick series lands
- * (see SimulationRunRecoveryTick's docblock). Posted once per condition -
- * not batched like simulation-runs.store(), since only one representative
- * run per (controller_mode, sensor_mode) is ever kept.
+ * (see SimulationRunRecoveryTick's docblock). Posted once per condition,
+ * after the client has averaged every rep's curve together - not batched
+ * like simulation-runs.store(), since only one (already-averaged) series
+ * per (controller_mode, sensor_mode) is ever kept.
  */
 class RecoveryTickController extends Controller
 {
