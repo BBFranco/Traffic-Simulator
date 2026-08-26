@@ -37,19 +37,28 @@ Route::middleware('auth')->group(function () {
     // in place after a batch completes, no full page reload.
     Route::get('/results/data', [ResultsController::class, 'data'])->name('results.data');
 
-    // Batch-run summaries land here (build step 16) - posted by the headless
-    // batch runner and by the /results page's batch-run button (build step 17).
-    Route::post('/api/simulation-runs', [SimulationRunController::class, 'store'])
-        ->name('simulation-runs.store');
-
-    // The "Recovery after a power cut" chart's per-tick series (build step 22b) - posted
-    // once per representative condition, replacing that condition's prior series.
-    Route::post('/api/recovery-ticks', [RecoveryTickController::class, 'store'])
-        ->name('recovery-ticks.store');
-
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
+
+/*
+ * Deliberately OUTSIDE the 'auth' group - batch/runBatch.mjs's headless CLI batch runner
+ * posts here directly with a plain Node fetch(), which has no browser session to
+ * authenticate with. The browser's own /results batch-run button still hits these same
+ * routes (just with a session it happens to already have). Also exempted from CSRF
+ * verification (bootstrap/app.php) for the same reason. This is a local single-user
+ * dissertation tool, not a multi-tenant app - these two endpoints only ever accept
+ * simulation-run summary data, nothing sensitive.
+ */
+// Batch-run summaries land here (build step 16) - posted by the headless
+// batch runner and by the /results page's batch-run button (build step 17).
+Route::post('/api/simulation-runs', [SimulationRunController::class, 'store'])
+    ->name('simulation-runs.store');
+
+// The "Recovery after a power cut" chart's per-tick series (build step 22b) - posted
+// once per representative condition, replacing that condition's prior series.
+Route::post('/api/recovery-ticks', [RecoveryTickController::class, 'store'])
+    ->name('recovery-ticks.store');
 
 require __DIR__.'/auth.php';

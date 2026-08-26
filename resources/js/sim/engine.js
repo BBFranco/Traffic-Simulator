@@ -215,7 +215,10 @@ export class SimulationEngine {
         this.accounting = { totalSpawned: 0, totalClearedNetwork: 0 };
         // Combined side-street (all connectors) wait/throughput stats - one bucket, not
         // one per connector, since nothing downstream needs per-connector granularity.
-        this.sideStreetStats = { clearedTotal: 0, clearedWithoutStopTotal: 0, recentClears: [] };
+        this.sideStreetStats = { clearedTotal: 0, clearedWithoutStopTotal: 0, waitSumTotal: 0, recentClears: [] };
+        // Every completed vehicle's total wait, network-wide, in clear order - the raw
+        // material for a full-run median/p95/max wait (see waitDistributionTotal()).
+        this.allWaitTimesTotal = [];
 
         this.arterialState.clear();
         for (const arterial of this.layout.arterials) {
@@ -244,6 +247,10 @@ export class SimulationEngine {
                 stats: {
                     clearedTotal: 0,
                     clearedWithoutStopTotal: 0,
+                    // Cumulative, never pruned (unlike `recentClears`) - this is what lets
+                    // buildSummary() in runHeadless.js compute a true full-run (or segment)
+                    // average wait instead of a 60s-rolling-window snapshot.
+                    waitSumTotal: 0,
                     recentClears: [],
                     clearedByNode: Object.fromEntries(arterial.intersections.map((node) => [node.id, 0])),
                 },
@@ -353,6 +360,40 @@ export class SimulationEngine {
     _rollVehicleType() {
         if (this.rng.next() >= this.truckRatio) return 'car';
         return TRUCK_VEHICLE_TYPES[Math.floor(this.rng.next() * TRUCK_VEHICLE_TYPES.length)];
+    }
+
+    /**
+     * Zeroes every CUMULATIVE stats accumulator (clears, wait sums, the full-run wait
+     * distribution) WITHOUT touching cars on the road, signal/queue state, RNG, or power state
+     * - the standard traffic-sim warm-up technique: run the corridor from empty past its own
+     * ramp-up transient first, then call this once to start measuring from an
+     * already-equilibrated network instead of from a cold start. See runHeadless.js's
+     * `warmupTicks`, which calls this right as the measured phase begins.
+     *
+     * Deliberately does NOT touch `recentClears` (the 60s rolling window `avgWaitRolling`/
+     * `throughputPerMin` read from): that window is self-pruning and already reflects genuinely
+     * equilibrated traffic the instant warm-up ends, so clearing it would just fabricate a fake
+     * "corridor restarting from empty" dip in the rolling rate for the next 60s, on top of the
+     * real one warm-up already spent ticks eliminating.
+     *
+     * A car already in transit at the moment this is called keeps whatever wait/stopped state
+     * it accumulated during warm-up and carries it into its eventual (measured) clear - a minor,
+     * standard edge effect at the warm-up boundary that only affects the handful of vehicles
+     * mid-trip at that instant, not an ongoing bias.
+     */
+    resetStats() {
+        for (const state of this.arterialState.values()) {
+            state.stats.clearedTotal = 0;
+            state.stats.clearedWithoutStopTotal = 0;
+            state.stats.waitSumTotal = 0;
+            for (const nodeId of Object.keys(state.stats.clearedByNode)) {
+                state.stats.clearedByNode[nodeId] = 0;
+            }
+        }
+        this.sideStreetStats.clearedTotal = 0;
+        this.sideStreetStats.clearedWithoutStopTotal = 0;
+        this.sideStreetStats.waitSumTotal = 0;
+        this.allWaitTimesTotal = [];
     }
 
     setManualLoadShedding(active) {
@@ -485,6 +526,7 @@ export class SimulationEngine {
                 avgWaitRolling: recent.length ? recent.reduce((s, c) => s + c.waitS, 0) / recent.length : 0,
                 throughputPerMin: recent.length,
                 clearedTotal: state.stats.clearedTotal,
+                waitSumTotal: state.stats.waitSumTotal,
                 clearedWithoutStopTotal: state.stats.clearedWithoutStopTotal,
                 clearedWithoutStopPct: state.stats.clearedTotal
                     ? (state.stats.clearedWithoutStopTotal / state.stats.clearedTotal) * 100
@@ -502,6 +544,7 @@ export class SimulationEngine {
                 : 0,
             throughputPerMin: sideStreetRecent.length,
             clearedTotal: this.sideStreetStats.clearedTotal,
+            waitSumTotal: this.sideStreetStats.waitSumTotal,
             clearedWithoutStopTotal: this.sideStreetStats.clearedWithoutStopTotal,
             clearedWithoutStopPct: this.sideStreetStats.clearedTotal
                 ? (this.sideStreetStats.clearedWithoutStopTotal / this.sideStreetStats.clearedTotal) * 100
@@ -1398,16 +1441,39 @@ export class SimulationEngine {
     _recordClear(arterial, car) {
         const state = this.arterialState.get(arterial.id);
         state.stats.clearedTotal += 1;
+        state.stats.waitSumTotal += car.totalWaitS;
         this.accounting.totalClearedNetwork += 1;
         if (!car.everStopped) state.stats.clearedWithoutStopTotal += 1;
         state.stats.recentClears.push({ tS: this.simTimeS, waitS: car.totalWaitS });
+        this.allWaitTimesTotal.push(car.totalWaitS);
     }
 
     /** Same bookkeeping as `_recordClear()`, but into the single combined side-street bucket. */
     _recordSideStreetClear(car) {
         this.sideStreetStats.clearedTotal += 1;
+        this.sideStreetStats.waitSumTotal += car.totalWaitS;
         if (!car.everStopped) this.sideStreetStats.clearedWithoutStopTotal += 1;
         this.sideStreetStats.recentClears.push({ tS: this.simTimeS, waitS: car.totalWaitS });
+        this.allWaitTimesTotal.push(car.totalWaitS);
+    }
+
+    /**
+     * Full-run, network-wide wait distribution - median/p95/max, computed once (not per
+     * snapshot) from every vehicle that ever cleared, not just the last 60s rolling window
+     * `snapshot()`'s avgWaitRolling uses. A single mean can't tell "everyone waits a bit
+     * longer" apart from "most people are fine, a few are stranded" - this can.
+     */
+    waitDistributionTotal() {
+        const waits = this.allWaitTimesTotal;
+        if (!waits.length) return { medianWait: null, p95Wait: null, maxWait: null };
+
+        const sorted = [...waits].sort((a, b) => a - b);
+        const percentile = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+        return {
+            medianWait: percentile(0.5),
+            p95Wait: percentile(0.95),
+            maxWait: sorted[sorted.length - 1],
+        };
     }
 
     _pruneRolling(stats) {

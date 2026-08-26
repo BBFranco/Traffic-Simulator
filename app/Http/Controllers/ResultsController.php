@@ -33,6 +33,23 @@ class ResultsController extends Controller
      */
     private const SCOPES = ['' => 'total', '_arterial' => 'arterial', '_side_street' => 'side_street'];
 
+    /**
+     * Total-scope-only columns (no `_arterial`/`_side_street` counterpart) - the
+     * pre/during/post outage segments and the full-run wait distribution added
+     * alongside the results-page audit's other fixes.
+     */
+    private const TOTAL_ONLY_METRICS = [
+        'avg_wait_time_pre_outage',
+        'avg_wait_time_during_outage',
+        'avg_wait_time_post_recovery',
+        'throughput_per_min_pre_outage',
+        'throughput_per_min_during_outage',
+        'throughput_per_min_post_recovery',
+        'median_wait_time',
+        'p95_wait_time',
+        'max_wait_time',
+    ];
+
     public function __construct(private readonly CorridorRepository $corridors) {}
 
     public function index(): View
@@ -118,6 +135,8 @@ class ResultsController extends Controller
     /** @param  Builder<SimulationRun>  $query */
     private function aggregates(Builder $query): array
     {
+        $stddevs = $this->computeStddevs((clone $query), ['controller_mode', 'power_state']);
+
         return $query
             ->selectRaw('controller_mode, power_state, count(*) as runs, '.$this->metricSelectRaw())
             ->groupBy('controller_mode', 'power_state')
@@ -126,7 +145,7 @@ class ResultsController extends Controller
                 'controller_mode' => $row->controller_mode,
                 'power_state' => $row->power_state,
                 'runs' => (int) $row->runs,
-                ...$this->metricRow($row),
+                ...$this->metricRow($row, $stddevs["{$row->controller_mode}|{$row->power_state}"] ?? []),
             ])
             ->all();
     }
@@ -145,8 +164,75 @@ class ResultsController extends Controller
                 $clauses[] = "avg({$column}) as {$column}";
             }
         }
+        foreach (self::TOTAL_ONLY_METRICS as $column) {
+            $clauses[] = "avg({$column}) as {$column}";
+        }
 
         return implode(', ', $clauses);
+    }
+
+    /** Every scoped (Total/Arterial/Side-Streets) column of the four paired-comparison metrics. */
+    private function scopedMetricColumns(): array
+    {
+        $columns = [];
+        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
+            foreach (array_keys(self::SCOPES) as $suffix) {
+                $columns[] = $metric.$suffix;
+            }
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Sample stddev per group, across the group's reps - with 30 seeded reps per condition
+     * this is what lets a viewer tell a small delta (e.g. +2.6%) apart from noise. A
+     * per-condition figure, not a paired stddev of the delta itself (that would need
+     * per-seed joins across conditions) - labelled as such in the UI.
+     *
+     * Computed in PHP rather than pushed into the aggregate SQL (`avg()` above): this app's
+     * dev/test DB is SQLite, which has no STDDEV_SAMP, and hand-rolling it as
+     * sqrt(avg(x*x) - avg(x)^2) would be numerically shakier than just fetching the (at most
+     * a few hundred) raw rows once and computing it directly.
+     *
+     * @return array<string, array<string, float|null>> group key -> column -> stddev
+     */
+    /** @param  Builder<SimulationRun>  $query */
+    private function computeStddevs(Builder $query, array $groupColumns): array
+    {
+        $metricColumns = $this->scopedMetricColumns();
+        $rows = $query->select(array_merge($groupColumns, $metricColumns))->get();
+
+        $valuesByGroup = [];
+        foreach ($rows as $row) {
+            $key = implode('|', array_map(fn ($c) => (string) ($row->$c ?? ''), $groupColumns));
+            foreach ($metricColumns as $column) {
+                $valuesByGroup[$key][$column][] = $row->$column;
+            }
+        }
+
+        $stddevs = [];
+        foreach ($valuesByGroup as $key => $columns) {
+            foreach ($columns as $column => $values) {
+                $stddevs[$key][$column] = $this->sampleStddev($values);
+            }
+        }
+
+        return $stddevs;
+    }
+
+    private function sampleStddev(array $values): ?float
+    {
+        $values = array_values(array_filter($values, fn ($v) => $v !== null));
+        $n = count($values);
+        if ($n < 2) {
+            return null;
+        }
+
+        $mean = array_sum($values) / $n;
+        $variance = array_sum(array_map(fn ($v) => ($v - $mean) ** 2, $values)) / ($n - 1);
+
+        return sqrt($variance);
     }
 
     /**
@@ -158,14 +244,25 @@ class ResultsController extends Controller
      *
      * @return array<string, float|null>
      */
-    private function metricRow(object $row): array
+    private function metricRow(object $row, array $stddevByColumn = []): array
     {
         $result = [];
+        $runs = (int) $row->runs;
         foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
+
+                $stddev = $stddevByColumn[$column] ?? null;
+                // 95% CI half-width on THIS condition's own mean (mean +/- ci95), not on a
+                // delta - needs >= 2 reps to have a defined stddev at all.
+                $result[$column.'_ci95'] = ($stddev === null || $runs < 2)
+                    ? null
+                    : round(1.96 * $stddev / sqrt($runs), 1);
             }
+        }
+        foreach (self::TOTAL_ONLY_METRICS as $column) {
+            $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
         }
 
         return $result;
@@ -185,6 +282,8 @@ class ResultsController extends Controller
     /** @param  Builder<SimulationRun>  $query */
     private function aggregatesBySensor(Builder $query): array
     {
+        $stddevs = $this->computeStddevs((clone $query), ['controller_mode', 'power_state', 'sensor_mode']);
+
         return $query
             ->selectRaw('controller_mode, power_state, sensor_mode, count(*) as runs, '.$this->metricSelectRaw())
             ->groupBy('controller_mode', 'power_state', 'sensor_mode')
@@ -194,7 +293,7 @@ class ResultsController extends Controller
                 'power_state' => $row->power_state,
                 'sensor_mode' => $row->sensor_mode,
                 'runs' => (int) $row->runs,
-                ...$this->metricRow($row),
+                ...$this->metricRow($row, $stddevs["{$row->controller_mode}|{$row->power_state}|{$row->sensor_mode}"] ?? []),
             ])
             ->all();
     }
@@ -316,6 +415,16 @@ class ResultsController extends Controller
             'recovery_improves' => $recoveryKnown
                 ? $subject[$recoveryKey] < $baseline[$recoveryKey]
                 : null,
+            // Sample size behind this row's own mean, and each side's 95% CI half-width
+            // (mean +/- ci95) - not a CI on the delta itself, see metricSelectRaw()'s comment.
+            'runs' => $subject['runs'],
+            'baseline_runs' => $baseline['runs'],
+            'wait_ci95' => $subject[$waitKey.'_ci95'] ?? null,
+            'baseline_wait_ci95' => $baseline[$waitKey.'_ci95'] ?? null,
+            'throughput_ci95' => $subject[$throughputKey.'_ci95'] ?? null,
+            'baseline_throughput_ci95' => $baseline[$throughputKey.'_ci95'] ?? null,
+            'cleared_ci95' => $subject[$clearedKey.'_ci95'] ?? null,
+            'baseline_cleared_ci95' => $baseline[$clearedKey.'_ci95'] ?? null,
         ];
     }
 
@@ -351,6 +460,7 @@ class ResultsController extends Controller
         $seconds = null;
         $series = [];
         $sheddingStart = null;
+        $sheddingEnd = null;
 
         foreach ($rows->groupBy(fn (SimulationRunRecoveryTick $row) => "{$row->controller_mode}|{$row->sensor_mode}") as $key => $conditionRows) {
             $seconds ??= $conditionRows->pluck('seconds')->map(fn ($v) => round((float) $v, 1))->all();
@@ -366,16 +476,20 @@ class ResultsController extends Controller
                     ->all();
             }
             $sheddingStart ??= round((float) $conditionRows->first()->power_event_seconds, 1);
+            $sheddingEnd ??= $conditionRows->first()->power_outage_end_seconds === null
+                ? null
+                : round((float) $conditionRows->first()->power_outage_end_seconds, 1);
         }
 
         return [
             'seconds' => $seconds,
             'series' => $series,
-            // No restoration event in this build's power model (a triggered
-            // outage runs to the end of the batch run, see engine.js) - the
-            // shaded band covers from the trigger to the end of the series.
+            // Power is actually restored at `sheddingEnd` (see runBatch.mjs/results.js's
+            // outage schedule) - a legacy row captured before that existed has no restore
+            // time on record, so its band falls back to "trigger to end of series" rather
+            // than claiming a restore that was never simulated.
             'sheddingStart' => $sheddingStart,
-            'sheddingEnd' => $sheddingStart === null ? null : end($seconds),
+            'sheddingEnd' => $sheddingEnd ?? ($sheddingStart === null ? null : end($seconds)),
         ];
     }
 }

@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
     'avg_wait_time_arterial',
     'avg_wait_time_side_street',
     'power_event_seconds',
+    'power_outage_end_seconds',
 ])]
 class SimulationRunRecoveryTick extends Model
 {

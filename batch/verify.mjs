@@ -50,7 +50,7 @@ function pass(results, name, detail) {
 }
 
 function checkSeedDeterminism(results, corridorConfig, duration, dt) {
-    const opts = { seed: 424242, controllerMode: 'adaptive', sensorMode: 'camera', powerEvent: null, corridorConfig, durationTicks: duration, dt };
+    const opts = { seed: 424242, controllerMode: 'adaptive', sensorMode: 'camera', powerOutageStartTick: null, powerOutageEndTick: null, corridorConfig, durationTicks: duration, dt };
     const a = runHeadless(opts);
     const b = runHeadless(opts);
 
@@ -126,7 +126,8 @@ function main() {
         seed: 1,
         controllerMode: 'fixed',
         sensorMode: 'inductive_loop',
-        powerEvent: null,
+        powerOutageStartTick: null,
+        powerOutageEndTick: null,
         corridorConfig,
         durationTicks: args.duration,
         dt: args.dt,
@@ -134,12 +135,14 @@ function main() {
     checkCarConservation(results, normalRun, 'fixed, normal power');
     checkQueueBounds(results, normalRun, corridorConfig, 'fixed, normal power');
 
-    const outageTick = Math.floor(args.duration / 3);
+    const outageStartTick = Math.floor(args.duration / 4);
+    const outageEndTick = Math.floor(args.duration / 2);
     const outageRun = runHeadless({
         seed: 2,
         controllerMode: 'adaptive',
         sensorMode: 'radar',
-        powerEvent: outageTick,
+        powerOutageStartTick: outageStartTick,
+        powerOutageEndTick: outageEndTick,
         corridorConfig,
         durationTicks: args.duration,
         dt: args.dt,

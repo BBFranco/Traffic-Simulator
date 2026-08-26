@@ -37,6 +37,7 @@ class RecoveryTickController extends Controller
             'avg_wait_time_arterial' => $tick['avg_wait_time_arterial'],
             'avg_wait_time_side_street' => $tick['avg_wait_time_side_street'],
             'power_event_seconds' => $request->validated('power_event_seconds'),
+            'power_outage_end_seconds' => $request->validated('power_outage_end_seconds'),
             'created_at' => $now,
         ]);
 

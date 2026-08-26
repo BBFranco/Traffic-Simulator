@@ -26,6 +26,18 @@ export function toApiPayload(summary) {
         time_to_recovery_seconds: summary.timeToRecoverySeconds,
         time_to_recovery_seconds_arterial: summary.timeToRecoverySecondsArterial,
         time_to_recovery_seconds_side_street: summary.timeToRecoverySecondsSideStreet,
+        // Total-scope only (see runHeadless.js's buildSummary) - null on a normal-power run.
+        avg_wait_time_pre_outage: summary.preOutage?.avgWaitTime ?? null,
+        avg_wait_time_during_outage: summary.duringOutage?.avgWaitTime ?? null,
+        avg_wait_time_post_recovery: summary.postRecovery?.avgWaitTime ?? null,
+        throughput_per_min_pre_outage: summary.preOutage?.throughputPerMin ?? null,
+        throughput_per_min_during_outage: summary.duringOutage?.throughputPerMin ?? null,
+        throughput_per_min_post_recovery: summary.postRecovery?.throughputPerMin ?? null,
+        // Full-run, network-wide distribution - a mean alone can't tell "everyone waits a
+        // bit longer" apart from "most people are fine, a few are stranded".
+        median_wait_time: summary.medianWait,
+        p95_wait_time: summary.p95Wait,
+        max_wait_time: summary.maxWait,
         raw_config_json: summary.rawConfig,
     };
 }

@@ -12,7 +12,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // These two endpoints exist specifically for the headless CLI batch runner
+        // (batch/runBatch.mjs, see routes/web.php's comment on them) - a plain Node
+        // fetch() has no browser session or CSRF token to present, so both would
+        // otherwise 419/401 on every request from the CLI.
+        $middleware->validateCsrfTokens(except: [
+            'api/simulation-runs',
+            'api/recovery-ticks',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

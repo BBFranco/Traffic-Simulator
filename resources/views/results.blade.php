@@ -29,6 +29,18 @@
         $byKeyBySensor[$key] = $rows;
     }
 
+    // Mode+power lookup for the segmented/distribution table below - Total scope only,
+    // no sensor breakdown (keeps that table to one row per mode+power).
+    $byModeAndPower = [];
+    foreach ($aggregates as $row) {
+        $byModeAndPower["{$row['controller_mode']}|{$row['power_state']}"] = $row;
+    }
+
+    // "24.1" -> "24.1 ± 1.2" when a 95% CI half-width is available (>= 2 reps).
+    $fmtWithCi = fn (?float $value, ?float $ci95, int $decimals = 1) => $value === null
+        ? '—'
+        : number_format($value, $decimals).($ci95 === null ? '' : ' ± '.number_format($ci95, $decimals));
+
     $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
     $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
     $select = 'rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
@@ -201,8 +213,9 @@
                         <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
                         <span class="text-[10px] text-slate-500">vs fixed-time</span>
                     </div>
-                    <div class="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                        {{ $powerLabels[$comparison['power_state']] }}
+                    <div class="mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                        <span>{{ $powerLabels[$comparison['power_state']] }}</span>
+                        <span class="font-mono normal-case tracking-normal text-slate-400">n={{ $comparison['runs'] }} vs {{ $comparison['baseline_runs'] }}</span>
                     </div>
 
                     <div class="mt-3 flex items-baseline gap-2">
@@ -321,8 +334,9 @@
                                 <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
                                 <span class="text-[10px] text-slate-500">vs fixed-time</span>
                             </div>
-                            <div class="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                                {{ $powerLabels[$comparison['power_state']] }}
+                            <div class="mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                                <span>{{ $powerLabels[$comparison['power_state']] }}</span>
+                                <span class="font-mono normal-case tracking-normal text-slate-400">n={{ $comparison['runs'] }} vs {{ $comparison['baseline_runs'] }}</span>
                             </div>
 
                             <div class="mt-3 flex items-baseline gap-2">
@@ -412,9 +426,9 @@
                             <th scope="col" class="px-4 py-2 font-semibold">Power state</th>
                             <th scope="col" class="px-4 py-2 font-semibold">Sensor</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Runs</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Cleared w/o stop (%)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s, ± 95% CI)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min, ± 95% CI)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Cleared w/o stop (%, ± 95% CI)</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Recovery (s)</th>
                         </tr>
                     </thead>
@@ -433,9 +447,9 @@
                                             {{ $row['sensor_mode'] === null ? '—' : $sensorLabels[$row['sensor_mode']] }}
                                         </td>
                                         <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
-                                        <td class="px-4 py-2 text-right">{{ number_format($row['avg_wait_time'], 1) }}</td>
-                                        <td class="px-4 py-2 text-right">{{ number_format($row['throughput_per_min'], 1) }}</td>
-                                        <td class="px-4 py-2 text-right">{{ number_format($row['pct_cleared_without_stop'], 1) }}</td>
+                                        <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['avg_wait_time'], $row['avg_wait_time_ci95']) }}</td>
+                                        <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['throughput_per_min'], $row['throughput_per_min_ci95']) }}</td>
+                                        <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['pct_cleared_without_stop'], $row['pct_cleared_without_stop_ci95']) }}</td>
                                         <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
                                             {{ $row['time_to_recovery_seconds'] === null ? '—' : number_format($row['time_to_recovery_seconds'], 1) }}
                                         </td>
@@ -449,14 +463,71 @@
         </details>
     </section>
 
+    {{-- ============================================ segmented + distribution --}}
+    <section class="mb-8">
+        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Load shedding, segmented</h2>
+        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            Pre-outage / during-outage / post-recovery averages (Total scope), computed from
+            cumulative counters rather than a rolling window - this is what shows the real
+            Adaptive-vs-Fixed-time gap on either side of the outage, instead of a snapshot
+            near the end of the run. During the outage every controller mode falls back to the
+            same all-way-stop control, so near-identical numbers there are expected, not a sign
+            adaptive handles outages well. Also includes the full-run wait distribution
+            (median/p95/max), since a single mean can't tell "everyone waits a bit longer"
+            apart from "most people are fine, a few are stranded".
+        </p>
+
+        <div class="overflow-x-auto {{ $card }}">
+            <table class="w-full min-w-[1080px] text-left text-xs">
+                <thead class="{{ $tableHead }}">
+                    <tr>
+                        <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage thru (/min)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage thru (/min)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery thru (/min)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
+                    @foreach ($controllerModes as $mode)
+                        @php $row = $byModeAndPower["{$mode}|load_shedding"] ?? null; @endphp
+                        @if ($row)
+                            <tr class="text-slate-700 dark:text-slate-300">
+                                <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
+                                    <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
+                                    {{ $modeLabels[$mode] }}
+                                </th>
+                                <td class="px-4 py-2 text-right">{{ $row['median_wait_time'] === null ? '—' : number_format($row['median_wait_time'], 1) }}</td>
+                                <td class="px-4 py-2 text-right">{{ $row['p95_wait_time'] === null ? '—' : number_format($row['p95_wait_time'], 1) }}</td>
+                                <td class="px-4 py-2 text-right">{{ $row['max_wait_time'] === null ? '—' : number_format($row['max_wait_time'], 1) }}</td>
+                                <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_pre_outage'] === null ? '—' : number_format($row['avg_wait_time_pre_outage'], 1) }}</td>
+                                <td class="px-4 py-2 text-right text-slate-400">{{ $row['avg_wait_time_during_outage'] === null ? '—' : number_format($row['avg_wait_time_during_outage'], 1) }}</td>
+                                <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_post_recovery'] === null ? '—' : number_format($row['avg_wait_time_post_recovery'], 1) }}</td>
+                                <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_pre_outage'] === null ? '—' : number_format($row['throughput_per_min_pre_outage'], 1) }}</td>
+                                <td class="px-4 py-2 text-right text-slate-400">{{ $row['throughput_per_min_during_outage'] === null ? '—' : number_format($row['throughput_per_min_during_outage'], 1) }}</td>
+                                <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_post_recovery'] === null ? '—' : number_format($row['throughput_per_min_post_recovery'], 1) }}</td>
+                            </tr>
+                        @endif
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     {{-- ========================================================= recovery --}}
     <section class="mb-8 grid gap-4 xl:grid-cols-2">
         <figure class="min-w-0 {{ $card }} p-4">
             <figcaption class="mb-1">
                 <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - throughput</span>
                 <span class="text-[10px] text-slate-500">
-                    vehicles cleared per minute · shaded band marks the outage window · adaptive follows the
-                    "Compare against fixed-time" selection above
+                    vehicles cleared per minute · shaded band marks the outage window (power is
+                    restored at its right edge) · adaptive follows the "Compare against fixed-time"
+                    selection above
                 </span>
             </figcaption>
             <div class="relative h-[280px] w-full">
@@ -468,8 +539,9 @@
             <figcaption class="mb-1">
                 <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - wait time</span>
                 <span class="text-[10px] text-slate-500">
-                    average wait, seconds per vehicle · shaded band marks the outage window · adaptive follows the
-                    "Compare against fixed-time" selection above
+                    average wait, seconds per vehicle · shaded band marks the outage window (power is
+                    restored at its right edge) · adaptive follows the "Compare against fixed-time"
+                    selection above
                 </span>
             </figcaption>
             <div class="relative h-[280px] w-full">
@@ -492,8 +564,11 @@
     <section class="mb-10">
         <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Recent runs</h2>
         <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            One row per completed batch run. The seed plus the corridor config is enough to reproduce any
-            row exactly.
+            One row per completed batch run, most recent first - not filtered by the "Compare against
+            fixed-time" selection above, so it can easily show a different sensor mode than whatever
+            aggregate you're looking at. Rows matching the current selection are highlighted; the rest
+            are dimmed rather than hidden, so you can still audit recent activity generally. Use the
+            "Sensor mode" filter at the top of the page to actually restrict this table.
         </p>
 
         <div class="overflow-x-auto {{ $card }}">
@@ -513,7 +588,9 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
                     @foreach ($recentRuns as $run)
-                        <tr class="text-slate-700 dark:text-slate-300">
+                        <tr class="text-slate-700 transition dark:text-slate-300"
+                            data-run-controller-mode="{{ $run['controller_mode'] }}"
+                            data-run-sensor-mode="{{ $run['sensor_mode'] ?? '' }}">
                             <td class="whitespace-nowrap px-4 py-2 font-mono text-slate-400 dark:text-slate-500">#{{ $run['id'] }}</td>
                             <td class="whitespace-nowrap px-4 py-2 font-mono text-slate-500 dark:text-slate-400">{{ $run['seed'] }}</td>
                             <td class="whitespace-nowrap px-4 py-2">

@@ -12,7 +12,38 @@
  * batch-run button - only call this for a load-shedding condition's rep 0,
  * the one representative run whose curve backs the recovery charts.
  */
-export function buildRecoveryTickPayload({ controllerMode, sensorMode, rows, sideStreetRows, dt, powerEventTick }) {
+/**
+ * Chart-point cap: the recovery line charts don't benefit from more points than this (a 60s
+ * rolling-window metric can't meaningfully change faster than that anyway), but a full-resolution
+ * series at the longer post-warm-up run durations (thousands of samples) was slow enough for
+ * Laravel's per-field wildcard validation on `POST /api/recovery-ticks` to blow past PHP's 30s
+ * execution limit - which, since the batch-run button awaits that POST, killed the entire
+ * 360-run batch the first time it hit a load-shedding condition. Segment-stat accuracy
+ * (pre/during/post-outage) is untouched by this - those are computed separately in
+ * runHeadless.js from the full-resolution `rows`, not from this downsampled series.
+ */
+const MAX_CHART_POINTS = 300;
+
+function downsample(sortedTicks, maxPoints) {
+    if (sortedTicks.length <= maxPoints) return sortedTicks;
+
+    const step = (sortedTicks.length - 1) / (maxPoints - 1);
+    const picked = new Set();
+    for (let i = 0; i < maxPoints; i += 1) {
+        picked.add(sortedTicks[Math.round(i * step)]);
+    }
+    return [...picked];
+}
+
+export function buildRecoveryTickPayload({
+    controllerMode,
+    sensorMode,
+    rows,
+    sideStreetRows,
+    dt,
+    powerOutageStartTick,
+    powerOutageEndTick,
+}) {
     const throughputSums = new Map();
     const waitSums = new Map();
     const counts = new Map();
@@ -24,13 +55,14 @@ export function buildRecoveryTickPayload({ controllerMode, sensorMode, rows, sid
 
     const sideStreetByTick = new Map(sideStreetRows.map((row) => [row.tick, row]));
 
-    const ticks = [...throughputSums.keys()].sort((a, b) => a - b);
+    const ticks = downsample([...throughputSums.keys()].sort((a, b) => a - b), MAX_CHART_POINTS);
 
     return {
         controller_mode: controllerMode,
         // fixed-time and green-wave never vary by sensor (matches simulation_runs' own column).
         sensor_mode: controllerMode === 'adaptive' ? sensorMode : null,
-        power_event_seconds: round(powerEventTick * dt, 1),
+        power_event_seconds: round(powerOutageStartTick * dt, 1),
+        power_outage_end_seconds: round(powerOutageEndTick * dt, 1),
         ticks: ticks.map((tick) => {
             const throughputArterial = throughputSums.get(tick);
             const waitArterial = waitSums.get(tick) / counts.get(tick);

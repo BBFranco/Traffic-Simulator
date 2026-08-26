@@ -337,18 +337,14 @@ export function stepCar(car, ahead, dt) {
         car.startupTimerS = 0;
     }
 
-    let newSpeed = v + accel * dt;
-    if (newSpeed < -1e-6) {
-        // Verification pass (Phase 2 spec): IDM's braking term should never push
-        // velocity meaningfully below 0. A car resting exactly at its
-        // equilibrium gap produces float noise on the order of 1e-9 every tick
-        // (accel oscillates a hair either side of zero) - that is expected and
-        // not logged. Anything past this threshold means the formula/timestep
-        // is actually wrong, not that the car is reversing.
-        // eslint-disable-next-line no-console
-        console.warn(`[sim] car ${car.id} would go negative (${newSpeed.toFixed(3)} m/s) - clamped to 0.`);
-    }
-    newSpeed = Math.max(0, newSpeed);
+    // IDM's braking term isn't capped at the "comfortable" b=2.0 m/s^2 (equations.js) - it
+    // legitimately spikes much harder as a car closes in on a stop line, so a hard-braking car
+    // routinely overshoots past 0 by a few tenths of a m/s within one dt=0.1s tick before this
+    // clamps it. That's ordinary explicit-Euler discretization, not a broken formula or a car
+    // reversing - it used to be logged per-occurrence, which meant thousands of warnings per
+    // batch run (every car braking to a stop, every tick) drowning out actual batch progress
+    // output for no diagnostic benefit.
+    const newSpeed = Math.max(0, v + accel * dt);
 
     car.stoppedNow = newSpeed < STOPPED_SPEED_MPS;
     if (car.stoppedNow) {

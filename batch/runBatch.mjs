@@ -15,12 +15,23 @@
  *
  * Usage:
  *   node batch/runBatch.mjs [--corridor=hatfield-pretorius-francisbaard]
- *     [--reps=30] [--duration=3600] [--base-seed=20260101]
- *     [--power-event-tick=1800] [--post=http://traffic-simulator.test/api/simulation-runs]
+ *     [--reps=30] [--duration=24000] [--warmup-ticks=3600] [--base-seed=20260101]
+ *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
+ *     [--post=http://traffic-simulator.test/api/simulation-runs]
  *
- * --duration is in ticks at dt=0.1s (3600 ticks = 6 simulated minutes per
- * run by default - raise it for a dissertation-grade dataset; kept short
- * here so a full 360-run pass is quick to smoke-test).
+ * --duration is in MEASURED ticks at dt=0.1s (24000 ticks = 40 simulated minutes
+ * per run by default). --warmup-ticks (3600 = 6 simulated minutes by default) run
+ * BEFORE that and are discarded from every stat - the standard traffic-sim
+ * warm-up, long enough for this corridor's own from-empty ramp-up transient
+ * (measured at ~150-250s to first reach a steady, fluctuating throughput) to
+ * finish under normal power before anything gets measured. See engine.js's
+ * resetStats() and runHeadless.js's warmupTicks doc for the mechanics.
+ *
+ * A load-shedding condition's outage starts a quarter of the way into the
+ * MEASURED window (i.e. warm-up doesn't count) and power is restored at the
+ * halfway mark, by default (25%/50% of --duration) - override either tick
+ * explicitly if a different schedule is needed. Both must fall strictly
+ * before --duration.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,9 +51,11 @@ function parseArgs(argv) {
     const args = {
         corridor: 'hatfield-pretorius-francisbaard',
         reps: 30,
-        duration: 3600,
+        duration: 24000,
+        warmupTicks: 3600,
         baseSeed: 20260101,
-        powerEventTick: 1800,
+        powerOutageStartTick: null,
+        powerOutageEndTick: null,
         dt: 0.1,
         post: null,
     };
@@ -51,11 +64,18 @@ function parseArgs(argv) {
         if (key === 'corridor') args.corridor = value;
         else if (key === 'reps') args.reps = Number(value);
         else if (key === 'duration') args.duration = Number(value);
+        else if (key === 'warmup-ticks') args.warmupTicks = Number(value);
         else if (key === 'base-seed') args.baseSeed = Number(value);
-        else if (key === 'power-event-tick') args.powerEventTick = Number(value);
+        else if (key === 'power-outage-start-tick') args.powerOutageStartTick = Number(value);
+        else if (key === 'power-outage-end-tick') args.powerOutageEndTick = Number(value);
         else if (key === 'dt') args.dt = Number(value);
         else if (key === 'post') args.post = value;
     }
+    // Default outage schedule: starts a quarter of the way in, power restored at the
+    // halfway mark - only filled in once `duration` is known, so a custom --duration
+    // still gets a proportionally-placed outage.
+    if (args.powerOutageStartTick == null) args.powerOutageStartTick = Math.round(args.duration * 0.25);
+    if (args.powerOutageEndTick == null) args.powerOutageEndTick = Math.round(args.duration * 0.5);
     return args;
 }
 
@@ -67,28 +87,37 @@ function toCsv(rows) {
     return lines.join('\n') + '\n';
 }
 
-async function postBatch(url, payloads) {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ runs: payloads }),
-    });
-    if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`POST ${url} -> ${response.status}: ${body.slice(0, 500)}`);
+const POST_RETRIES = 3;
+
+/** Local Herd dev server occasionally drops the connection (ECONNRESET) under sustained
+ * load - retry transient network failures a few times with backoff before giving up. */
+async function postJson(url, body) {
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const text = await response.text().catch(() => '');
+                throw new Error(`POST ${url} -> ${response.status}: ${text.slice(0, 500)}`);
+            }
+            return;
+        } catch (err) {
+            if (attempt >= POST_RETRIES) throw err;
+            console.warn(`  ! POST ${url} failed (attempt ${attempt}/${POST_RETRIES}): ${err.message ?? err}. Retrying...`);
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
     }
 }
 
+async function postBatch(url, payloads) {
+    await postJson(url, { runs: payloads });
+}
+
 async function postRecoveryTicks(url, payload) {
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`POST ${url} -> ${response.status}: ${body.slice(0, 500)}`);
-    }
+    await postJson(url, payload);
 }
 
 async function main() {
@@ -115,7 +144,9 @@ async function main() {
                 seed,
                 controllerMode: condition.controllerMode,
                 sensorMode: condition.sensorMode,
-                powerEvent: condition.powerState === 'load_shedding' ? args.powerEventTick : null,
+                warmupTicks: args.warmupTicks,
+                powerOutageStartTick: condition.powerState === 'load_shedding' ? args.powerOutageStartTick : null,
+                powerOutageEndTick: condition.powerState === 'load_shedding' ? args.powerOutageEndTick : null,
                 corridorConfig,
                 durationTicks: args.duration,
                 dt: args.dt,
@@ -143,7 +174,8 @@ async function main() {
                             rows,
                             sideStreetRows,
                             dt: args.dt,
-                            powerEventTick: args.powerEventTick,
+                            powerOutageStartTick: args.powerOutageStartTick,
+                            powerOutageEndTick: args.powerOutageEndTick,
                         })
                     );
                 }

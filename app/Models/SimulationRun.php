@@ -29,6 +29,15 @@ use Illuminate\Database\Eloquent\Model;
     'time_to_recovery_seconds',
     'time_to_recovery_seconds_arterial',
     'time_to_recovery_seconds_side_street',
+    'avg_wait_time_pre_outage',
+    'avg_wait_time_during_outage',
+    'avg_wait_time_post_recovery',
+    'throughput_per_min_pre_outage',
+    'throughput_per_min_during_outage',
+    'throughput_per_min_post_recovery',
+    'median_wait_time',
+    'p95_wait_time',
+    'max_wait_time',
     'raw_config_json',
 ])]
 class SimulationRun extends Model

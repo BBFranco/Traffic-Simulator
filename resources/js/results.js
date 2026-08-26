@@ -187,6 +187,21 @@ function adaptiveRecoverySeries(timeline, metric) {
     return sensorSeries[0].map((_, i) => one(sensorSeries.reduce((sum, s) => sum + s[i], 0) / sensorSeries.length));
 }
 
+/** Index of the sample closest to `target` - recovery ticks are sampled every few
+ * seconds, so an outage timestamp rarely lands on an exact sample. */
+function nearestSecondIndex(seconds, target) {
+    let bestIndex = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < seconds.length; i += 1) {
+        const diff = Math.abs(seconds[i] - target);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIndex = i;
+        }
+    }
+    return bestIndex;
+}
+
 function buildRecoveryLineChart(canvasId, metric, { tooltipUnit }) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -234,8 +249,8 @@ function buildRecoveryLineChart(canvasId, metric, { tooltipUnit }) {
                     ...(timeline.sheddingStart != null && timeline.sheddingEnd != null
                         ? {
                               xRangeBand: {
-                                  from: timeline.seconds.indexOf(timeline.sheddingStart),
-                                  to: timeline.seconds.indexOf(timeline.sheddingEnd),
+                                  from: nearestSecondIndex(timeline.seconds, timeline.sheddingStart),
+                                  to: nearestSecondIndex(timeline.seconds, timeline.sheddingEnd),
                                   label: 'LIGHTS DARK',
                               },
                           }
@@ -339,8 +354,16 @@ onThemeChange((theme) => {
  * terminal), per the Phase 2 spec.
  */
 const REPS_PER_CONDITION = 30;
-const DURATION_TICKS = 3600; // 6 simulated minutes per run at DT=0.1s
-const POWER_EVENT_TICK = 1800; // load-shedding conditions trigger halfway through
+const DURATION_TICKS = 24000; // 40 measured simulated minutes per run at DT=0.1s
+// Warm-up run BEFORE anything is measured, discarded from every stat - standard
+// traffic-sim practice, long enough for this corridor's own from-empty ramp-up
+// transient to finish under normal power before the outage/recovery windows below
+// land inside an already-equilibrated corridor. See engine.js's resetStats().
+const WARMUP_TICKS = 3600; // 6 simulated minutes
+// Load-shedding conditions cut power a quarter of the way into the MEASURED window
+// and restore it at the halfway mark - see batch/runBatch.mjs's matching default schedule.
+const POWER_OUTAGE_START_TICK = Math.round(DURATION_TICKS * 0.25);
+const POWER_OUTAGE_END_TICK = Math.round(DURATION_TICKS * 0.5);
 const DT = 0.1;
 const BASE_SEED = 20260101;
 /** Batch the network writes - don't POST 360 times (build step 17). */
@@ -383,7 +406,9 @@ batchButton?.addEventListener('click', async () => {
                     seed,
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
-                    powerEvent: condition.powerState === 'load_shedding' ? POWER_EVENT_TICK : null,
+                    warmupTicks: WARMUP_TICKS,
+                    powerOutageStartTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_START_TICK : null,
+                    powerOutageEndTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_END_TICK : null,
                     corridorConfig,
                     durationTicks: DURATION_TICKS,
                     dt: DT,
@@ -403,7 +428,8 @@ batchButton?.addEventListener('click', async () => {
                             rows,
                             sideStreetRows,
                             dt: DT,
-                            powerEventTick: POWER_EVENT_TICK,
+                            powerOutageStartTick: POWER_OUTAGE_START_TICK,
+                            powerOutageEndTick: POWER_OUTAGE_END_TICK,
                         })
                     );
                 }
@@ -541,6 +567,25 @@ function applyItsTargetFilter() {
     const scope = selectedScope();
     document.querySelectorAll('[data-its-key]').forEach((card) => {
         card.classList.toggle('hidden', card.dataset.itsKey !== key || card.dataset.scope !== scope);
+    });
+
+    highlightMatchingRecentRuns();
+}
+
+/**
+ * The Recent Runs table isn't filtered by the "Compare against fixed-time" dropdown (it's
+ * always the most-recent 10 rows overall, so it can auditably show a different sensor mode
+ * than whatever aggregate is on screen) - this highlights the rows that DO match the current
+ * selection instead, so a viewer can still spot-check the headline number against a real run.
+ */
+function highlightMatchingRecentRuns() {
+    const { mode, sensor } = selectedItsTarget();
+    document.querySelectorAll('[data-run-controller-mode]').forEach((row) => {
+        const sensorMatches = mode !== 'adaptive' || sensor === 'average' || row.dataset.runSensorMode === sensor;
+        const matches = row.dataset.runControllerMode === mode && sensorMatches;
+        row.classList.toggle('bg-sky-50', matches);
+        row.classList.toggle('dark:bg-sky-500/10', matches);
+        row.classList.toggle('opacity-50', !matches);
     });
 }
 
