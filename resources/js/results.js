@@ -10,8 +10,8 @@
  *     across all five charts on the page - and across both themes.
  *   - One line chart for recovery over time (change over time), with the outage
  *     window drawn as a shaded band rather than dashed rules.
- *   - One single-series horizontal bar for time-to-recovery: three values, no
- *     second dimension, so no legend - the title names the measure.
+ *   - Two single-series horizontal bars for time-to-recovery (wait, then throughput): three
+ *     values each, no second dimension, so no legend - the title names the measure.
  *   - Every chart has a table twin in the page markup.
  *   - One y-axis per chart. Never two.
  *
@@ -270,11 +270,16 @@ function recoveryWaitChart() {
     buildRecoveryLineChart('chart-recovery-wait', 'avg_wait_time', { tooltipUnit: 's' });
 }
 
-function recoveryTimeChart() {
-    const canvas = document.getElementById('chart-recovery-time');
+/**
+ * One single-series horizontal bar for time-to-recovery, parameterised by metric column so
+ * both the wait-based and throughput-based cards (see runHeadless.js's computeRecoverySeconds)
+ * render off the same code - three values, no second dimension, so no legend.
+ */
+function recoveryTimeChart(canvasId, metricColumn, { barLabel }) {
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
-    const recoveryKey = scopedMetric('time_to_recovery_seconds');
+    const recoveryKey = scopedMetric(metricColumn);
     const modes = data.controllerModes.filter((mode) => rowForModeAndPower(mode, 'load_shedding')?.[recoveryKey] != null);
 
     const options = baseOptions({ tooltipLabel: (ctx) => `${ctx.parsed.x} s to recover` });
@@ -301,7 +306,7 @@ function recoveryTimeChart() {
                 labels: modes.map((mode) => MODE_LABELS[mode] ?? mode),
                 datasets: [
                     {
-                        label: 'Time to recovery',
+                        label: barLabel,
                         data: modes.map((mode) => one(rowForModeAndPower(mode, 'load_shedding')[recoveryKey])),
                         // Colour still follows the entity: each bar takes its mode's hue.
                         backgroundColor: modes.map((mode) => MODE_COLOURS[mode]),
@@ -333,9 +338,11 @@ function renderAll() {
     groupedBarChart('chart-wait', 'avg_wait_time', { unit: ' s', tickSuffix: 's' });
     groupedBarChart('chart-throughput', 'throughput_per_min', { unit: ' veh/min' });
     groupedBarChart('chart-cleared', 'pct_cleared_without_stop', { unit: '%', tickSuffix: '%' });
-    recoveryChart();
+    // Wait before throughput throughout this page - keep new recovery charts in that order too.
     recoveryWaitChart();
-    recoveryTimeChart();
+    recoveryChart();
+    recoveryTimeChart('chart-recovery-time-wait', 'time_to_recovery_wait_seconds', { barLabel: 'Time to recovery (wait)' });
+    recoveryTimeChart('chart-recovery-time', 'time_to_recovery_seconds', { barLabel: 'Time to recovery (throughput)' });
 }
 
 onThemeChange((theme) => {

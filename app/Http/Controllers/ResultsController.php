@@ -116,6 +116,9 @@ class ResultsController extends Controller
                 'time_to_recovery_seconds' => $run->time_to_recovery_seconds,
                 'time_to_recovery_seconds_arterial' => $run->time_to_recovery_seconds_arterial,
                 'time_to_recovery_seconds_side_street' => $run->time_to_recovery_seconds_side_street,
+                'time_to_recovery_wait_seconds' => $run->time_to_recovery_wait_seconds,
+                'time_to_recovery_wait_seconds_arterial' => $run->time_to_recovery_wait_seconds_arterial,
+                'time_to_recovery_wait_seconds_side_street' => $run->time_to_recovery_wait_seconds_side_street,
             ])->all();
 
         return [
@@ -160,7 +163,7 @@ class ResultsController extends Controller
     private function metricSelectRaw(): string
     {
         $clauses = [];
-        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
+        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'] as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $clauses[] = "avg({$column}) as {$column}";
@@ -177,7 +180,7 @@ class ResultsController extends Controller
     private function scopedMetricColumns(): array
     {
         $columns = [];
-        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
+        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'] as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $columns[] = $metric.$suffix;
             }
@@ -239,10 +242,10 @@ class ResultsController extends Controller
 
     /**
      * Rounds every scoped metric column on an aggregate row - shared by aggregates() and
-     * aggregatesBySensor(). time_to_recovery_seconds* stays null-safe (no run in the group
-     * measured a recovery, e.g. all normal-power); the other three are never null on a
-     * populated row but a legacy pre-migration row can still average to null (see the
-     * scope-columns migration's docblock).
+     * aggregatesBySensor(). time_to_recovery_seconds* and time_to_recovery_wait_seconds* stay
+     * null-safe (no run in the group measured a recovery, e.g. all normal-power); the other
+     * three are never null on a populated row but a legacy pre-migration row can still average
+     * to null (see the scope-columns migration's docblock).
      *
      * @return array<string, float|null>
      */
@@ -250,7 +253,7 @@ class ResultsController extends Controller
     {
         $result = [];
         $runs = (int) $row->runs;
-        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds'] as $metric) {
+        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'] as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
@@ -385,7 +388,12 @@ class ResultsController extends Controller
         $waitKey = 'avg_wait_time'.$suffix;
         $throughputKey = 'throughput_per_min'.$suffix;
         $clearedKey = 'pct_cleared_without_stop'.$suffix;
+        // Two independent recovery clocks - see runHeadless.js's computeRecoverySeconds(): one
+        // measures throughput climbing back to baseline, the other wait time dropping back to
+        // it. Neither implies the other (a controller can restore flow volume quickly while
+        // individual cars still wait longer than before, or vice versa).
         $recoveryKey = 'time_to_recovery_seconds'.$suffix;
+        $recoveryWaitKey = 'time_to_recovery_wait_seconds'.$suffix;
 
         // Every metric can be null here, not just recovery: a group made up entirely of
         // pre-scope-migration rows averages to null on every `_arterial`/`_side_street`
@@ -394,6 +402,7 @@ class ResultsController extends Controller
         $throughputKnown = $subject[$throughputKey] !== null && $baseline[$throughputKey] !== null;
         $clearedKnown = $subject[$clearedKey] !== null && $baseline[$clearedKey] !== null;
         $recoveryKnown = $subject[$recoveryKey] !== null && $baseline[$recoveryKey] !== null;
+        $recoveryWaitKnown = $subject[$recoveryWaitKey] !== null && $baseline[$recoveryWaitKey] !== null;
 
         return [
             'mode' => $mode,
@@ -411,25 +420,42 @@ class ResultsController extends Controller
             'recovery_delta_pct' => $recoveryKnown
                 ? $this->pctChange($baseline[$recoveryKey], $subject[$recoveryKey])
                 : null,
+            'recovery_wait_delta_pct' => $recoveryWaitKnown
+                ? $this->pctChange($baseline[$recoveryWaitKey], $subject[$recoveryWaitKey])
+                : null,
             'wait_improves' => $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null,
             'throughput_improves' => $throughputKnown ? $subject[$throughputKey] > $baseline[$throughputKey] : null,
             'cleared_improves' => $clearedKnown ? $subject[$clearedKey] > $baseline[$clearedKey] : null,
             'recovery_improves' => $recoveryKnown
                 ? $subject[$recoveryKey] < $baseline[$recoveryKey]
                 : null,
-            // Recovery time only measures how long throughput takes to sustain its way back to
-            // baseline - it says nothing about where things settle afterwards. A shorter recovery
-            // time next to a worse steady-state (or vice versa) is a real, common pattern here
-            // (e.g. a controller with a much lower pre-outage baseline has further, proportionally,
-            // to climb back before it counts as "recovered"), so always render this raw seconds
-            // value paired with the post-recovery segment average rather than alone - see the
-            // results-page audit. Total-scope only ($subject/$baseline are the same row across every
-            // SCOPES iteration, just read at a different suffix - post-recovery segments were never
-            // split by scope).
-            'recovery_seconds' => $recoveryKnown ? $subject[$recoveryKey] : null,
-            'baseline_recovery_seconds' => $recoveryKnown ? $baseline[$recoveryKey] : null,
+            'recovery_wait_improves' => $recoveryWaitKnown
+                ? $subject[$recoveryWaitKey] < $baseline[$recoveryWaitKey]
+                : null,
+            // Recovery time on its own only measures how long a metric takes to sustain its way
+            // back to baseline - it says nothing about where things settle afterwards. A shorter
+            // recovery time next to a worse steady-state (or vice versa) is a real, common
+            // pattern here (e.g. a controller with a much lower pre-outage baseline has further,
+            // proportionally, to climb back before it counts as "recovered"), so always render
+            // this raw seconds value paired with the matching post-recovery segment average
+            // rather than alone - see the results-page audit. Total-scope only ($subject/
+            // $baseline are the same row across every SCOPES iteration, just read at a different
+            // suffix - post-recovery segments were never split by scope).
+            //
+            // Deliberately NOT gated behind $recoveryKnown/$recoveryWaitKnown (unlike the
+            // percentage/improves fields above, which need BOTH sides to mean anything): a side
+            // that measured null - most commonly fixed-time's own wait-time baseline, which
+            // routinely never crosses the recovered threshold within the measured window on this
+            // corridor - shouldn't also blank out the OTHER side's real, valid number. The view
+            // renders each side independently (see $fmtRecoverySide in results.blade.php).
+            'recovery_seconds' => $subject[$recoveryKey],
+            'baseline_recovery_seconds' => $baseline[$recoveryKey],
+            'recovery_wait_seconds' => $subject[$recoveryWaitKey],
+            'baseline_recovery_wait_seconds' => $baseline[$recoveryWaitKey],
             'post_recovery_avg_wait' => $subject['avg_wait_time_post_recovery'] ?? null,
             'baseline_post_recovery_avg_wait' => $baseline['avg_wait_time_post_recovery'] ?? null,
+            'post_recovery_throughput' => $subject['throughput_per_min_post_recovery'] ?? null,
+            'baseline_post_recovery_throughput' => $baseline['throughput_per_min_post_recovery'] ?? null,
             // Sample size behind this row's own mean, and each side's 95% CI half-width
             // (mean +/- ci95) - not a CI on the delta itself, see metricSelectRaw()'s comment.
             'runs' => $subject['runs'],

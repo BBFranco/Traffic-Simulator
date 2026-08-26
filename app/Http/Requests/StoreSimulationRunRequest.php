@@ -40,6 +40,9 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.time_to_recovery_seconds' => ['nullable', 'numeric', 'min:0'],
             'runs.*.time_to_recovery_seconds_arterial' => ['nullable', 'numeric', 'min:0'],
             'runs.*.time_to_recovery_seconds_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.time_to_recovery_wait_seconds' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.time_to_recovery_wait_seconds_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.time_to_recovery_wait_seconds_side_street' => ['nullable', 'numeric', 'min:0'],
             // Total scope only - null on a normal-power run (nothing to segment) or on the
             // "during outage" segment before it has any clears yet.
             'runs.*.avg_wait_time_pre_outage' => ['nullable', 'numeric', 'min:0'],

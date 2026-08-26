@@ -26,6 +26,9 @@ export function toApiPayload(summary) {
         time_to_recovery_seconds: summary.timeToRecoverySeconds,
         time_to_recovery_seconds_arterial: summary.timeToRecoverySecondsArterial,
         time_to_recovery_seconds_side_street: summary.timeToRecoverySecondsSideStreet,
+        time_to_recovery_wait_seconds: summary.timeToRecoveryWaitSeconds,
+        time_to_recovery_wait_seconds_arterial: summary.timeToRecoveryWaitSecondsArterial,
+        time_to_recovery_wait_seconds_side_street: summary.timeToRecoveryWaitSecondsSideStreet,
         // Total-scope only (see runHeadless.js's buildSummary) - null on a normal-power run.
         avg_wait_time_pre_outage: summary.preOutage?.avgWaitTime ?? null,
         avg_wait_time_during_outage: summary.duringOutage?.avgWaitTime ?? null,

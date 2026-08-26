@@ -229,6 +229,10 @@ function buildSummary({
         totalByTick.set(tick, (totalByTick.get(tick) ?? 0) + value);
     }
 
+    const arterialWaitByTick = buildByTickWeightedAvgWait([rows]);
+    const sideStreetWaitByTick = buildByTickWeightedAvgWait([sideStreetRows]);
+    const totalWaitByTick = buildByTickWeightedAvgWait([rows, sideStreetRows]);
+
     // Pre-outage / during-outage / post-recovery segmented total-scope averages - only
     // meaningful (non-null) for a bounded-outage run. Computed from cumulative counters at
     // the segment boundaries, not from the rolling window, for the same reason as the
@@ -275,6 +279,22 @@ function buildSummary({
         timeToRecoverySeconds: computeRecoverySeconds(totalByTick, powerOutageStartTick, powerOutageEndTick, dt),
         timeToRecoverySecondsArterial: computeRecoverySeconds(arterialByTick, powerOutageStartTick, powerOutageEndTick, dt),
         timeToRecoverySecondsSideStreet: computeRecoverySeconds(sideStreetByTick, powerOutageStartTick, powerOutageEndTick, dt),
+        // Wait-time's own recovery time: "lower is better", so recovered means DROPPING back to
+        // (rather than climbing up to) within tolerance of the pre-outage baseline. 1.25x
+        // mirrors throughput's 0.8x (1 / 0.8 = 1.25) - no data-driven reason to pick a different
+        // tolerance for a metric moving in the opposite direction.
+        timeToRecoveryWaitSeconds: computeRecoverySeconds(totalWaitByTick, powerOutageStartTick, powerOutageEndTick, dt, {
+            thresholdMultiplier: 1.25,
+            notRecoveredWhen: (value, threshold) => value > threshold,
+        }),
+        timeToRecoveryWaitSecondsArterial: computeRecoverySeconds(arterialWaitByTick, powerOutageStartTick, powerOutageEndTick, dt, {
+            thresholdMultiplier: 1.25,
+            notRecoveredWhen: (value, threshold) => value > threshold,
+        }),
+        timeToRecoveryWaitSecondsSideStreet: computeRecoverySeconds(sideStreetWaitByTick, powerOutageStartTick, powerOutageEndTick, dt, {
+            thresholdMultiplier: 1.25,
+            notRecoveredWhen: (value, threshold) => value > threshold,
+        }),
         powerOutageStartSeconds: powerOutageStartTick != null ? round(powerOutageStartTick * dt, 1) : null,
         powerOutageEndSeconds: powerOutageEndTick != null ? round(powerOutageEndTick * dt, 1) : null,
         perArterial,
@@ -298,6 +318,33 @@ function buildByTickThroughput(rows) {
     const byTick = new Map();
     for (const row of rows) {
         byTick.set(row.tick, (byTick.get(row.tick) ?? 0) + row.throughputPerMin);
+    }
+    return byTick;
+}
+
+/**
+ * Per-tick average wait across one or more row groups (e.g. every arterial, or arterial +
+ * side-street combined), weighted by each row's own `throughputPerMin` - which, per
+ * engine.js's snapshot(), is exactly `recentClears.length`, the same 60s-window car count
+ * `avgWaitTime` was itself averaged over. Wait isn't additive like throughput, so a plain
+ * sum/mean across arterials would let a near-empty arterial's noisy average count as much as
+ * a busy one's; weighting by recent clears fixes that without needing new engine fields.
+ */
+function buildByTickWeightedAvgWait(rowGroups) {
+    const acc = new Map();
+    for (const rows of rowGroups) {
+        for (const row of rows) {
+            const weight = row.throughputPerMin;
+            const entry = acc.get(row.tick) ?? { weightedSum: 0, weightSum: 0 };
+            entry.weightedSum += row.avgWaitTime * weight;
+            entry.weightSum += weight;
+            acc.set(row.tick, entry);
+        }
+    }
+
+    const byTick = new Map();
+    for (const [tick, { weightedSum, weightSum }] of acc) {
+        byTick.set(tick, weightSum > 0 ? weightedSum / weightSum : 0);
     }
     return byTick;
 }
@@ -353,24 +400,58 @@ function segmentStats(cumulativeByTick, fromTick, toTick, dt, finalCumulative = 
 }
 
 /**
- * Recovery time: seconds from power being RESTORED (`powerOutageEndTick`) until aggregate
- * throughput climbs back to at least 80% of its own pre-outage baseline AND STAYS there for
- * the rest of the run. Returns null for a normal-power run, or if throughput never sustains
- * that threshold before the run ends.
+ * How far back the trailing smoothing window in computeRecoverySeconds() reaches, in seconds.
+ * Matched to this project's demand-fluctuation period (corridor.js's own default, and every
+ * shipped corridor JSON's `fluctuationPeriodS`, is 300 - see equations.js's fluctuatingDemand())
+ * so the smoothing exactly cancels that cycle's ripple. computeRecoverySeconds() is corridor-
+ * agnostic (it only sees byTick, not the corridor config), so this is a hardcoded assumption,
+ * not a derived value - revisit it if a corridor with a different fluctuation period ships.
+ */
+const RECOVERY_SMOOTHING_WINDOW_SECONDS = 300;
+
+/**
+ * Recovery time: seconds from power being RESTORED (`powerOutageEndTick`) until an aggregate
+ * metric returns to, and then sustains, within tolerance of its own pre-outage baseline for the
+ * rest of the run. Returns null for a normal-power run, or if that's never established before
+ * the run ends.
  *
- * Sustained, not first-touch: a first-crossing definition reports a "recovered" time even when
- * the system dips back below baseline later (this corridor's demand fluctuates on a fixed
- * ~300s cycle - see equations.js's fluctuatingDemand() - independently of the outage, so a
- * later demand peak can easily produce exactly that kind of false-recovery blip). Scanning for
- * the last below-threshold tick and reporting the point right after it means a relapse anywhere
- * in the post-restore window correctly pushes the reported recovery time out, instead of being
- * silently missed.
+ * Generic over metric direction via `notRecoveredWhen`/`thresholdMultiplier`: throughput's
+ * default (climb back to >= 80% of baseline) suits a "higher is better" metric; a "lower is
+ * better" metric like wait time passes its own options (e.g. drop back to <= 125% of baseline)
+ * - see the timeToRecoveryWaitSeconds* call sites below.
+ *
+ * "Sustains" is checked on a trailing RECOVERY_SMOOTHING_WINDOW_SECONDS-wide rolling average of
+ * the metric, not the raw per-tick value, and not a suffix-to-end average either - both of
+ * those were tried and both broke:
+ *   - Raw per-tick "never dips below threshold again": this corridor's demand fluctuates on a
+ *     fixed ~300s cycle, completely independently of the outage, so every controller's raw
+ *     throughput legitimately troughs below any fixed threshold every ~150s, forever. That rule
+ *     just measures which controller's noisiest dip happens to land latest in the sampled
+ *     series - not a real recovery difference - and can inflate an otherwise-fine controller's
+ *     number by an order of magnitude (see the results-page audit).
+ *   - Suffix-mean-from-T-to-end: for a long post-restore window, a distant healthy tail
+ *     mathematically dilutes an early bad patch enough to satisfy the threshold from T=0, so it
+ *     reports "recovered instantly" even when the system was clearly still struggling right
+ *     after restore.
+ * A fixed-width trailing window avoids both: it's wide enough (one full demand cycle) to average
+ * out the harmless cyclic ripple, but bounded, so a distant future tail can't retroactively
+ * paper over how bad things were near T - the smoothed value at each point only reflects the
+ * recent past. Scanning for the LAST point that trailing average dips below threshold, and
+ * reporting the point right after it, means a real, sustained relapse (a demand-cycle peak
+ * coinciding with the post-restore window, or an actual outage-driven second surge) still
+ * correctly pushes the reported time out, while brief single-sample noise no longer can.
  *
  * Unlike the old permanent-outage build, power actually comes back on here, so this now
  * measures exactly what the dashboard copy says it does ("time to return to normal flow once
  * power is restored") rather than self-stabilization under a permanent all-way-stop fallback.
  */
-function computeRecoverySeconds(byTick, powerOutageStartTick, powerOutageEndTick, dt) {
+function computeRecoverySeconds(
+    byTick,
+    powerOutageStartTick,
+    powerOutageEndTick,
+    dt,
+    { thresholdMultiplier = 0.8, notRecoveredWhen = (value, threshold) => value < threshold } = {}
+) {
     if (powerOutageStartTick == null || powerOutageEndTick == null) return null;
 
     const ticks = [...byTick.keys()].sort((a, b) => a - b);
@@ -378,16 +459,37 @@ function computeRecoverySeconds(byTick, powerOutageStartTick, powerOutageEndTick
     const preOutageTicks = ticks.filter((t) => t < powerOutageStartTick);
     if (!preOutageTicks.length) return null;
     const baseline = preOutageTicks.reduce((sum, t) => sum + byTick.get(t), 0) / preOutageTicks.length;
-    const threshold = baseline * 0.8;
+    const threshold = baseline * thresholdMultiplier;
 
     const postRestoreTicks = ticks.filter((t) => t >= powerOutageEndTick);
-    if (!postRestoreTicks.length) return null;
+    const n = postRestoreTicks.length;
+    if (!n) return null;
+
+    // Trailing rolling average via two pointers: smoothed[i] = mean of samples with tick in
+    // (tick_i - windowTicks, tick_i]. Deliberately trailing, not forward or centered - a forward
+    // window shrinks to a single (raw, noise-sensitive) sample right at the array's end, which
+    // is exactly the region this needs to be MOST stable in.
+    const windowTicks = RECOVERY_SMOOTHING_WINDOW_SECONDS / dt;
+    const smoothed = new Array(n);
+    let windowStart = 0;
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < n; i += 1) {
+        sum += byTick.get(postRestoreTicks[i]);
+        count += 1;
+        while (postRestoreTicks[i] - postRestoreTicks[windowStart] > windowTicks) {
+            sum -= byTick.get(postRestoreTicks[windowStart]);
+            count -= 1;
+            windowStart += 1;
+        }
+        smoothed[i] = sum / count;
+    }
 
     let lastBelowIndex = -1;
-    postRestoreTicks.forEach((t, i) => {
-        if (byTick.get(t) < threshold) lastBelowIndex = i;
+    smoothed.forEach((value, i) => {
+        if (notRecoveredWhen(value, threshold)) lastBelowIndex = i;
     });
-    if (lastBelowIndex === postRestoreTicks.length - 1) return null; // never sustains recovery through run end
+    if (lastBelowIndex === n - 1) return null; // never sustains recovery through run end
 
     const recoveredTick = postRestoreTicks[lastBelowIndex + 1];
     return round((recoveredTick - powerOutageEndTick) * dt, 1);
