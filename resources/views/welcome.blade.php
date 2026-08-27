@@ -34,7 +34,7 @@
             <main class="flex-1">
                 <div class="max-w-6xl mx-auto px-6 py-16 sm:py-24">
                     <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-900">
-                        DST481 · IoT-enabled smart traffic management
+                        IoT-enabled smart traffic management
                     </span>
 
                     <h1 class="mt-6 max-w-3xl text-3xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl dark:text-slate-50">

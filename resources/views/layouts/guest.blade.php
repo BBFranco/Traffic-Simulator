@@ -22,7 +22,7 @@
                     <span class="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">{{ config('app.name') }}</span>
                 </a>
                 <p class="max-w-sm text-center text-xs leading-relaxed text-slate-500">
-                    Fixed-time vs. sensor-adaptive signal control under load shedding — DST481
+                    Fixed-time vs. sensor-adaptive signal control under load shedding
                 </p>
             </div>
 
