@@ -72,19 +72,20 @@ Sign in with `demo@traffic-simulator.test` / `password` (seeded by
 
 ### Database
 
-Still runs on **SQLite** (`database/database.sqlite`) by default — `simulation_runs`
-and `simulation_run_recovery_ticks` (with their Total/Arterial/Side-Streets scoped
-columns) run fine on it. The spec calls for MySQL; a local MySQL is listening on
-3306 but its credentials were not available at setup time, so the switch has
-never been made. Switching is a `.env` change:
+Runs on **MySQL** (`traffic_simulator` database on `127.0.0.1:3306`), per the spec.
+`.env` is configured with:
 
 ```
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
+DB_PORT=3306
 DB_DATABASE=traffic_simulator
-DB_USERNAME=...
+DB_USERNAME=root
 DB_PASSWORD=...
 ```
+
+SQLite (`database/database.sqlite`) still works as a fallback if MySQL isn't
+available — just set `DB_CONNECTION=sqlite`.
 
 ### Tests
 
