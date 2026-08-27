@@ -2,8 +2,7 @@
 
 Browser-based traffic simulator comparing **fixed-time**, **sensor-adaptive** and
 **green-wave** signal control on the same corridor and the same seeded traffic,
-then cutting the power mid-run to see which assumptions survive. Supports the
-DST481 dissertation work on IoT-enabled smart traffic management in the South
+then cutting the power mid-run to see which assumptions survive. outh
 African context.
 
 Default scenario: Pretorius Street (inbound) and Francis Baard Street (outbound)
