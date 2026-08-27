@@ -12,27 +12,34 @@ intersections each, joined by four signalised two-way cross-streets.
 
 ---
 
-## Status: Phase 1 complete (shell only)
+## Status: Phase 1 complete, Phase 2 substantially built
 
-The build is split shell-first / logic-second, deliberately. **Phase 1 is done:**
-every page, every navigation path, every control and every visual output exists
-and looks finished — and nothing computes anything real.
+The build was split shell-first / logic-second, deliberately. **Phase 1** (every
+page, every navigation path, every control, every visual output — nothing
+computing anything real) was finished 2026-08-18. **Phase 2** has since replaced
+the fakes behind almost every control with real simulation:
 
-What that means concretely:
+| Area | State |
+|---|---|
+| `/simulator` road layout | Drawn from `corridors/*.json` — surfaces, lane markings, stop lines, junction boxes, signal heads, pan/zoom. Unchanged since Phase 1. |
+| Cars, IDM, lane changing | `resources/js/sim/car.js` + `engine.js` — IDM car-following, MOBIL-based lane changing, a 3-size truck mix with its own control slider |
+| Controllers | `resources/js/sim/controllers/` — `fixedTime.js` (Webster's method), `adaptive.js` (sensor-driven, 4 sensor fidelity modes), `greenWave.js`, `allWayStop.js` (load-shedding fallback) |
+| Sensors, load shedding | `sensors.js` — inductive loop / magnetometer / radar / camera fidelity degradation feeding `shouldExtendGreen()`; load-shedding forces all-way-stop |
+| Stats footer / charts | Live numbers driven by `engine.js` snapshots, scoped Total / Arterial / Side-Streets |
+| Seeded PRNG, headless runner | `rng.js`, `runHeadless.js` — byte-for-byte reproducible runs, used by both the browser and the CLI batch driver |
+| Batch runner, `simulation_runs` | `batch/runBatch.mjs` sweeps the full 12-condition experimental matrix (`experimentalMatrix.js`) and posts results via `POST /api/simulation-runs` / `/api/recovery-ticks` |
+| `/results` charts | Real charts against real `simulation_runs` / `simulation_run_recovery_ticks` queries in `ResultsController`, scoped Total / Arterial / Side-Streets, with paired fixed-time comparisons and recovery-time (both throughput- and wait-based) metrics |
 
-| Area | Phase 1 (now) | Phase 2 |
-|---|---|---|
-| `/simulator` road layout | Drawn from `corridors/*.json` — surfaces, lane markings, stop lines, junction boxes, unlit signal heads, block distances, pan/zoom | unchanged |
-| `/simulator` controls | All present and functional as UI: they hold state, reflect it, and log to the console and to the in-page **Control state log** | same controls, wired to real logic |
-| Cars, controllers, sensors, load shedding | **none** | build steps 6–14 |
-| Stats footer | Real layout, two columns per arterial, every value `—` | live numbers, build step 8 |
-| `/results` charts | Real charts against **hardcoded fake aggregates** in `ResultsController` | same charts, real `simulation_runs` queries, build step 22 |
-| Batch runner, seeded PRNG, DB | **none** | build steps 16–21 |
+Layered on top of the numbered spec steps, added by direct user request rather
+than the spec document: lane changing + trucks, the Total/Arterial/Side-Streets
+scope split, wait-based recovery metrics alongside the original throughput-based
+ones, and per-scope pre/during/post-outage segment stats. A plateau detector
+(`resources/js/sim/plateau.js`, `batch/warmupDiagnostics.mjs`) confirmed the
+360s warm-up window is sufficient for every scope.
 
-The discipline that matters: **no Phase 1 control quietly grew real logic.**
-`Run` flips a UI flag; there is no tick loop, no timer and no simulation state
-anywhere in `resources/js/`. If you find yourself adding IDM or controller code
-to make a control "actually work", that is Phase 2 arriving early.
+The discipline that still matters from Phase 1: real logic only replaces what
+sits *behind* the controls — it must not change layout, routing, or the
+controls themselves. `tests/Feature/NavigationTest.php` is the guard on that.
 
 ---
 
@@ -66,10 +73,11 @@ Sign in with `demo@traffic-simulator.test` / `password` (seeded by
 
 ### Database
 
-Phase 1 runs on **SQLite** (`database/database.sqlite`) — the only table needed
-is Breeze's `users`. The spec calls for MySQL, which is only required from build
-step 19 when `simulation_runs` lands; a local MySQL is listening on 3306 but its
-credentials were not available at setup time. Switching is a `.env` change:
+Still runs on **SQLite** (`database/database.sqlite`) by default — `simulation_runs`
+and `simulation_run_recovery_ticks` (with their Total/Arterial/Side-Streets scoped
+columns) run fine on it. The spec calls for MySQL; a local MySQL is listening on
+3306 but its credentials were not available at setup time, so the switch has
+never been made. Switching is a `.env` change:
 
 ```
 DB_CONNECTION=mysql
@@ -128,35 +136,49 @@ by hand at build step 14.
 ## Where things live
 
 ```
-routes/web.php                        # /, /simulator, /corridors/{id}, /results
+routes/web.php                        # /, /simulator, /corridors/{id}, /results, /api/*
 app/Support/CorridorRepository.php    # reads corridors/*.json
 app/Http/Controllers/
   SimulatorController.php             # simulator page + corridor JSON endpoint
-  ResultsController.php               # PHASE 1: hardcoded fake aggregates
+  ResultsController.php               # real simulation_runs / recovery_ticks queries, scoped metrics
+  SimulationRunController.php         # POST /api/simulation-runs
+  RecoveryTickController.php          # POST /api/recovery-ticks
+app/Models/SimulationRun.php
+database/migrations/                  # simulation_runs + simulation_run_recovery_ticks, scoped columns
 corridors/*.json                      # layout configs
 resources/views/
   simulator.blade.php                 # canvas, control rail, stats footer
-  results.blade.php                   # charts, paired comparisons, table twins
+  results.blade.php                   # charts, paired comparisons, scoped table twins
 resources/js/
   sim/corridor.js                     # config -> geometry graph
+  sim/equations.js                    # IDM, Webster's, green-wave offset, MOBIL, Poisson arrivals — all cited
+  sim/car.js                          # vehicle types (car + 3 truck sizes), IDM stepping
+  sim/engine.js                       # tick loop, lane changes, sensors, load shedding
+  sim/controllers/                    # fixedTime.js, adaptive.js, greenWave.js, allWayStop.js
+  sim/sensors.js                      # sensor fidelity modes
+  sim/rng.js                          # seeded PRNG
+  sim/runHeadless.js                  # headless engine driver shared by browser + batch runner
+  sim/plateau.js                      # convergence/plateau detector (warm-up verification)
+  sim/experimentalMatrix.js           # the 12-condition controller x power x sensor matrix
   sim/renderer.js                     # canvas draw + pan/zoom camera
   simulator.js                        # page wiring, control state, logging
   charts/theme.js                     # shared Chart.js theme + palettes
-  results.js                          # dashboard charts
-public/cars/                          # car sprites (empty — Phase 2)
-results/                              # batch run CSV/JSON output (empty — Phase 2)
+  results.js                          # dashboard charts, scope/target filters
+batch/
+  runBatch.mjs                        # CLI sweep of the experimental matrix -> POST /api/simulation-runs
+  warmupDiagnostics.mjs               # plateau-detector CLI, confirms WARMUP_TICKS
+  verify.mjs
+public/cars/                          # car sprites
+results/                              # batch run CSV/JSON output — populated per condition x power state
 ```
 
-Not yet created, and intentionally so: `car.js`, `intersection.js`,
-`controllers/`, `sensors.js`, `loadShedding.js`, `stats.js`, `rng.js`,
-`batchRunner.js`, the `simulation_runs` migration and model, and
-`POST /api/simulation-runs`.
-
-## Models behind the simulation (Phase 2)
+## Models behind the simulation
 
 Each behaviour model has a citation rather than ad hoc rules:
 
 - **Car following** — Intelligent Driver Model (Treiber, Hennig & Helbing, 2000)
+- **Lane changing** — MOBIL (Kesting, Treiber & Helbing, 2007), politeness/
+  threshold tuned per vehicle type so trucks change lanes less readily than cars
 - **Fixed-time timing** — Webster's method (Webster, 1958) for cycle length and
   phase splits, so the baseline is a legitimate implementation, not a strawman
 - **Adaptive control** — threshold/gap-extension heuristic mirroring the
