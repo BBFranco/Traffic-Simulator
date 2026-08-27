@@ -222,6 +222,8 @@ function buildSummary({
     const pctClearedWithoutStop = clearedTotal ? (clearedWithoutStopTotal / clearedTotal) * 100 : null;
 
     const totalCumulativeByTick = buildTotalCumulativeByTick(rows, sideStreetRows);
+    const arterialCumulativeByTick = buildCumulativeByTick(rows);
+    const sideStreetCumulativeByTick = buildCumulativeByTick(sideStreetRows);
     const arterialByTick = buildByTickThroughput(rows);
     const sideStreetByTick = buildByTickThroughput(sideStreetRows);
     const totalByTick = new Map(arterialByTick);
@@ -250,8 +252,30 @@ function buildSummary({
                       dt,
                       { clearedTotal, waitSumTotal }
                   ),
+                  preOutageArterial: segmentStats(arterialCumulativeByTick, 0, powerOutageStartTick, dt),
+                  duringOutageArterial: segmentStats(arterialCumulativeByTick, powerOutageStartTick, powerOutageEndTick, dt),
+                  postRecoveryArterial: segmentStats(
+                      arterialCumulativeByTick,
+                      powerOutageEndTick,
+                      durationTicks,
+                      dt,
+                      { clearedTotal: clearedTotalArterial, waitSumTotal: waitSumTotalArterial }
+                  ),
+                  preOutageSideStreet: segmentStats(sideStreetCumulativeByTick, 0, powerOutageStartTick, dt),
+                  duringOutageSideStreet: segmentStats(sideStreetCumulativeByTick, powerOutageStartTick, powerOutageEndTick, dt),
+                  postRecoverySideStreet: segmentStats(
+                      sideStreetCumulativeByTick,
+                      powerOutageEndTick,
+                      durationTicks,
+                      dt,
+                      { clearedTotal: sideStreet.clearedTotal, waitSumTotal: sideStreet.waitSumTotal }
+                  ),
               }
-            : { preOutage: null, duringOutage: null, postRecovery: null };
+            : {
+                  preOutage: null, duringOutage: null, postRecovery: null,
+                  preOutageArterial: null, duringOutageArterial: null, postRecoveryArterial: null,
+                  preOutageSideStreet: null, duringOutageSideStreet: null, postRecoverySideStreet: null,
+              };
 
     const waitDistribution = engine.waitDistributionTotal();
 
@@ -276,6 +300,12 @@ function buildSummary({
         preOutage: segments.preOutage,
         duringOutage: segments.duringOutage,
         postRecovery: segments.postRecovery,
+        preOutageArterial: segments.preOutageArterial,
+        duringOutageArterial: segments.duringOutageArterial,
+        postRecoveryArterial: segments.postRecoveryArterial,
+        preOutageSideStreet: segments.preOutageSideStreet,
+        duringOutageSideStreet: segments.duringOutageSideStreet,
+        postRecoverySideStreet: segments.postRecoverySideStreet,
         timeToRecoverySeconds: computeRecoverySeconds(totalByTick, powerOutageStartTick, powerOutageEndTick, dt),
         timeToRecoverySecondsArterial: computeRecoverySeconds(arterialByTick, powerOutageStartTick, powerOutageEndTick, dt),
         timeToRecoverySecondsSideStreet: computeRecoverySeconds(sideStreetByTick, powerOutageStartTick, powerOutageEndTick, dt),
@@ -314,7 +344,7 @@ function buildSummary({
     };
 }
 
-function buildByTickThroughput(rows) {
+export function buildByTickThroughput(rows) {
     const byTick = new Map();
     for (const row of rows) {
         byTick.set(row.tick, (byTick.get(row.tick) ?? 0) + row.throughputPerMin);
@@ -330,7 +360,7 @@ function buildByTickThroughput(rows) {
  * sum/mean across arterials would let a near-empty arterial's noisy average count as much as
  * a busy one's; weighting by recent clears fixes that without needing new engine fields.
  */
-function buildByTickWeightedAvgWait(rowGroups) {
+export function buildByTickWeightedAvgWait(rowGroups) {
     const acc = new Map();
     for (const rows of rowGroups) {
         for (const row of rows) {
@@ -349,8 +379,8 @@ function buildByTickWeightedAvgWait(rowGroups) {
     return byTick;
 }
 
-/** Total-scope (arterial + side-street) cumulative {clearedTotal, waitSumTotal} at every sampled tick. */
-function buildTotalCumulativeByTick(rows, sideStreetRows) {
+/** Cumulative {clearedTotal, waitSumTotal} at every sampled tick, summed across one row group. */
+function buildCumulativeByTick(rows) {
     const byTick = new Map();
     for (const row of rows) {
         const entry = byTick.get(row.tick) ?? { clearedTotal: 0, waitSumTotal: 0 };
@@ -358,11 +388,18 @@ function buildTotalCumulativeByTick(rows, sideStreetRows) {
         entry.waitSumTotal += row.waitSumTotal;
         byTick.set(row.tick, entry);
     }
-    for (const row of sideStreetRows) {
-        const entry = byTick.get(row.tick) ?? { clearedTotal: 0, waitSumTotal: 0 };
-        entry.clearedTotal += row.clearedTotal;
-        entry.waitSumTotal += row.waitSumTotal;
-        byTick.set(row.tick, entry);
+    return byTick;
+}
+
+/** Total-scope (arterial + side-street) cumulative {clearedTotal, waitSumTotal} at every sampled tick. */
+function buildTotalCumulativeByTick(rows, sideStreetRows) {
+    const byTick = buildCumulativeByTick(rows);
+    for (const [tick, entry] of buildCumulativeByTick(sideStreetRows)) {
+        const existing = byTick.get(tick) ?? { clearedTotal: 0, waitSumTotal: 0 };
+        byTick.set(tick, {
+            clearedTotal: existing.clearedTotal + entry.clearedTotal,
+            waitSumTotal: existing.waitSumTotal + entry.waitSumTotal,
+        });
     }
     return byTick;
 }

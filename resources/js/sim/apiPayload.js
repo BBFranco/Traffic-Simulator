@@ -29,13 +29,25 @@ export function toApiPayload(summary) {
         time_to_recovery_wait_seconds: summary.timeToRecoveryWaitSeconds,
         time_to_recovery_wait_seconds_arterial: summary.timeToRecoveryWaitSecondsArterial,
         time_to_recovery_wait_seconds_side_street: summary.timeToRecoveryWaitSecondsSideStreet,
-        // Total-scope only (see runHeadless.js's buildSummary) - null on a normal-power run.
+        // Null on a normal-power run (nothing to segment).
         avg_wait_time_pre_outage: summary.preOutage?.avgWaitTime ?? null,
         avg_wait_time_during_outage: summary.duringOutage?.avgWaitTime ?? null,
         avg_wait_time_post_recovery: summary.postRecovery?.avgWaitTime ?? null,
         throughput_per_min_pre_outage: summary.preOutage?.throughputPerMin ?? null,
         throughput_per_min_during_outage: summary.duringOutage?.throughputPerMin ?? null,
         throughput_per_min_post_recovery: summary.postRecovery?.throughputPerMin ?? null,
+        avg_wait_time_pre_outage_arterial: summary.preOutageArterial?.avgWaitTime ?? null,
+        avg_wait_time_during_outage_arterial: summary.duringOutageArterial?.avgWaitTime ?? null,
+        avg_wait_time_post_recovery_arterial: summary.postRecoveryArterial?.avgWaitTime ?? null,
+        throughput_per_min_pre_outage_arterial: summary.preOutageArterial?.throughputPerMin ?? null,
+        throughput_per_min_during_outage_arterial: summary.duringOutageArterial?.throughputPerMin ?? null,
+        throughput_per_min_post_recovery_arterial: summary.postRecoveryArterial?.throughputPerMin ?? null,
+        avg_wait_time_pre_outage_side_street: summary.preOutageSideStreet?.avgWaitTime ?? null,
+        avg_wait_time_during_outage_side_street: summary.duringOutageSideStreet?.avgWaitTime ?? null,
+        avg_wait_time_post_recovery_side_street: summary.postRecoverySideStreet?.avgWaitTime ?? null,
+        throughput_per_min_pre_outage_side_street: summary.preOutageSideStreet?.throughputPerMin ?? null,
+        throughput_per_min_during_outage_side_street: summary.duringOutageSideStreet?.throughputPerMin ?? null,
+        throughput_per_min_post_recovery_side_street: summary.postRecoverySideStreet?.throughputPerMin ?? null,
         // Full-run, network-wide distribution - a mean alone can't tell "everyone waits a
         // bit longer" apart from "most people are fine, a few are stranded".
         median_wait_time: summary.medianWait,

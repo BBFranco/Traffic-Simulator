@@ -32,6 +32,9 @@ Route::middleware('auth')->group(function () {
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.show');
 
+    // One representative batch-dataset run per condition, for the "replay a batch run" picker.
+    Route::get('/simulator/sample-runs', [SimulatorController::class, 'sampleRuns'])->name('simulator.sample-runs');
+
     Route::get('/results', [ResultsController::class, 'index'])->name('results');
     // JSON refresh for the batch-run button (build step 17) - re-render charts
     // in place after a batch completes, no full page reload.

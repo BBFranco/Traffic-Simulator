@@ -85,6 +85,30 @@
                 </div>
             </x-control-section>
 
+            <x-control-section title="Replay a batch run" subtitle="Loads one representative run from the dissertation dataset (same seed, controller mode, sensor, and - for load shedding - the exact outage timing) and plays it back automatically.">
+                <div id="replay-empty-state" class="hidden text-[11px] leading-relaxed text-slate-500">
+                    No batch runs found yet. Generate a dataset on the
+                    <a href="{{ route('results') }}" class="font-medium text-sky-600 hover:underline dark:text-sky-400">Results page</a>
+                    first.
+                </div>
+                <div id="replay-picker">
+                    <div>
+                        <label for="replay-family-select" class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Condition</label>
+                        <select id="replay-family-select" class="{{ $select }}"></select>
+                    </div>
+                    <div class="mt-3">
+                        <span class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Power</span>
+                        <x-segmented control="replay-power-state" size="sm" value="normal"
+                                     :options="['normal' => 'Normal', 'load_shedding' => 'Load shedding']" />
+                    </div>
+                    <button type="button" id="replay-load-button"
+                            class="mt-3 w-full rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20">
+                        Load &amp; play
+                    </button>
+                    <p id="replay-status" class="mt-1.5 text-[10px] leading-relaxed text-slate-500"></p>
+                </div>
+            </x-control-section>
+
             <x-control-section title="Signal control" subtitle="Each arterial runs its own mode, so one can be coordinated while the other is not and the footer compares them live. Every intersection on an arterial - including its cross-street - follows that arterial's mode.">
                 {{-- Populated from the loaded corridor: one row per arterial. --}}
                 <div id="arterial-mode-controls" class="space-y-3"></div>
@@ -200,9 +224,9 @@
 
                 <div class="flex items-center gap-2">
                     <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Speed</span>
-                    <div class="w-40">
+                    <div class="w-72">
                         <x-segmented control="speed" size="sm" value="1"
-                                     :options="['0.5' => '0.5×', '1' => '1×', '2' => '2×', '4' => '4×']" />
+                                     :options="['0.25' => '0.25×', '0.5' => '0.5×', '1' => '1×', '2' => '2×', '4' => '4×', '8' => '8×', '16' => '16×']" />
                     </div>
                 </div>
 

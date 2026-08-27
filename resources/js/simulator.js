@@ -99,6 +99,29 @@ let rafId = null;
 let runUntilS = null;
 /** Wall-clock budget per animation frame while catching up, so a long run-to-time still leaves the tab responsive instead of freezing it. */
 const RUN_TO_TIME_FRAME_BUDGET_MS = 40;
+/**
+ * Whether reaching `runUntilS` should stop the run (the "Run to t=1000s" button's behaviour)
+ * or hand off to normal speed-based playback (a replay's silent warm-up fast-forward). Reset
+ * to `true` right after each catch-up consumes it, so it always defaults back for next time.
+ */
+let pauseAfterCatchUp = true;
+
+/**
+ * Batch-dataset runs available to replay, one representative per (controller_mode,
+ * power_state, sensor_mode) condition - fetched from GET /simulator/sample-runs. See
+ * fetchSampleRuns().
+ */
+let sampleRuns = [];
+/** The "Power" side of the replay picker - 'normal' | 'load_shedding'. */
+let replaySelectedPowerState = 'normal';
+/**
+ * Non-null while a replay is driving the engine automatically - tracks its own tick count
+ * (independent of `engine.simTimeS`, since a replay always starts a fresh engine.reset() at
+ * t=0) against the recorded run's warm-up/outage/duration schedule. Mirrors runHeadless.js's
+ * own measuredTick bookkeeping exactly, so a replayed run reaches the same stats-reset and
+ * outage timing the batch data itself was measured against.
+ */
+let replay = null;
 
 const el = {
     canvasWrap: document.getElementById('canvas-wrap'),
@@ -123,6 +146,11 @@ const el = {
     runToTimeButton: document.getElementById('run-to-time-button'),
     resetButton: document.getElementById('reset-button'),
     loadSheddingToggle: document.getElementById('load-shedding-toggle'),
+    replayEmptyState: document.getElementById('replay-empty-state'),
+    replayPicker: document.getElementById('replay-picker'),
+    replayFamilySelect: document.getElementById('replay-family-select'),
+    replayLoadButton: document.getElementById('replay-load-button'),
+    replayStatus: document.getElementById('replay-status'),
     runStatePill: document.getElementById('run-state-pill'),
     runStateLabel: document.getElementById('run-state-label'),
     powerPill: document.getElementById('power-pill'),
@@ -186,6 +214,10 @@ segmentedHandlers.set('speed', (value) => {
     logChange('speed', `${state.speed}x`);
 });
 
+segmentedHandlers.set('replay-power-state', (value) => {
+    replaySelectedPowerState = value;
+});
+
 /* -------------------------------------------------------- corridor loading */
 
 async function loadCorridor(id, { config = null } = {}) {
@@ -222,6 +254,7 @@ async function loadCorridor(id, { config = null } = {}) {
     accumulatorS = 0;
 
     resetRunState();
+    await fetchSampleRuns(id);
 
     logChange('corridor', `${id} (${layout.arterials.length} arterials, ${layout.connectors.length} connectors)`);
 }
@@ -246,6 +279,66 @@ async function fetchCorridor(id) {
         throw new Error(`Failed to load corridor "${id}" (HTTP ${response.status}).`);
     }
     return response.json();
+}
+
+/**
+ * Loads the "replay a batch run" picker's options for the given corridor - one representative
+ * run per (controller_mode, power_state, sensor_mode) condition. Called every time a corridor
+ * finishes loading (see loadCorridor()) so the picker never offers a run for a corridor that
+ * isn't the one currently on screen.
+ */
+async function fetchSampleRuns(corridorId) {
+    if (!el.replayPicker) return; // picker markup not present (should always exist, defensive only)
+
+    try {
+        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}`;
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json();
+        sampleRuns = body.runs ?? [];
+    } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to load sample runs for replay picker', error);
+        sampleRuns = [];
+    }
+
+    populateReplayFamilySelect();
+}
+
+/** A stable key identifying a run's "family" - everything except power state (its own picker control). */
+function replayFamilyKey(run) {
+    return `${run.controller_mode}|${run.sensor_mode ?? ''}`;
+}
+
+/** Human label for a run's family, e.g. "Adaptive - Radar", "Fixed-time". */
+function replayFamilyLabel(run) {
+    const modeLabel = MODE_LABELS[run.controller_mode] ?? run.controller_mode;
+    if (run.controller_mode !== 'adaptive' || !run.sensor_mode) return modeLabel;
+    return `${modeLabel} - ${SENSOR_LABELS[run.sensor_mode] ?? run.sensor_mode}`;
+}
+
+function populateReplayFamilySelect() {
+    const hasRuns = sampleRuns.length > 0;
+    el.replayEmptyState?.classList.toggle('hidden', hasRuns);
+    el.replayPicker?.classList.toggle('hidden', !hasRuns);
+    if (!hasRuns) return;
+
+    const previousValue = el.replayFamilySelect.value;
+    const families = new Map(); // key -> label, first-seen order
+    for (const run of sampleRuns) {
+        const key = replayFamilyKey(run);
+        if (!families.has(key)) families.set(key, replayFamilyLabel(run));
+    }
+
+    el.replayFamilySelect.replaceChildren(
+        ...[...families].map(([key, label]) => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = label;
+            return option;
+        })
+    );
+    if ([...families.keys()].includes(previousValue)) el.replayFamilySelect.value = previousValue;
 }
 
 function renderCorridorSummary() {
@@ -616,6 +709,12 @@ function restartEngine() {
     engine.reset(engineResetOptions());
     accumulatorS = 0;
     lastFrameMs = null;
+    // Any in-flight replay's outage-scheduling bookkeeping no longer applies once the engine
+    // has been reset out from under it (manually, via seed/corridor change, or by a new replay).
+    // `pauseAfterCatchUp` is reset defensively too, in case a replay's warm-up catch-up was
+    // interrupted by a Reset before it could consume (and restore) the flag itself.
+    replay = null;
+    pauseAfterCatchUp = true;
     buildFooterChart();
     resetRunState();
 }
@@ -694,6 +793,109 @@ el.loadSheddingToggle.addEventListener('click', () => {
     logChange('power.loadShedding', state.power.loadShedding);
 });
 
+/**
+ * Loads and plays a batch-dataset run: forces every control to the run's recorded conditions
+ * (uniform controller mode across all arterials, its sensor, seed, and the batch defaults the
+ * live page doesn't otherwise apply - 0% trucks, battery-backed sensors on, no scheduled
+ * outages), then hands off to `tickEngine()` (via `replay`) to reset stats at the end of
+ * warm-up and trigger/restore power automatically at the run's original outage ticks.
+ */
+async function startReplay(run) {
+    if (run.corridor_config !== state.corridorId) {
+        await loadCorridor(run.corridor_config);
+        el.corridorSelect.value = run.corridor_config;
+    }
+
+    state.seed = run.seed;
+    el.seedInput.value = state.seed;
+
+    if (run.sensor_mode) {
+        state.sensorMode = run.sensor_mode;
+        const radio = document.querySelector(`input[name="sensorMode"][value="${run.sensor_mode}"]`);
+        if (radio) radio.checked = true;
+        el.sensorPillLabel.textContent = SENSOR_LABELS[run.sensor_mode] ?? run.sensor_mode;
+    }
+
+    state.truckRatio = 0;
+    el.truckRatioInput.value = 0;
+    el.truckRatioValue.textContent = '0';
+
+    state.batteryBackedSensors = true;
+    document.getElementById('battery-backed-sensors').checked = true;
+
+    // Outage timing is driven by tickEngine() below, not the manual toggle - start clean.
+    state.power = {
+        loadShedding: false,
+        scheduledOutages: false,
+        offMinutes: state.power.offMinutes,
+        periodMinutes: state.power.periodMinutes,
+    };
+    document.getElementById('scheduled-outages').checked = false;
+    applyToggleFaces(el.loadSheddingToggle, false);
+
+    // Batch runs apply one controller mode to every arterial (see runHeadless.js) - the live
+    // page's default is per-arterial, so this has to be forced, not just left to whatever the
+    // corridor's own default happened to be.
+    for (const arterial of layout.arterials) {
+        state.arterialModes[arterial.id] = run.controller_mode;
+    }
+    buildArterialModeControls();
+
+    restartEngine(); // real engine.reset() with all of the above now in `state`
+
+    const config = run.raw_config_json ?? {};
+    const warmupTicks = config.warmupTicks ?? 0;
+    replay = {
+        ticks: 0,
+        warmupTicks,
+        statsReset: warmupTicks <= 0,
+        powerOutageStartTick: config.powerOutageStartTick ?? null,
+        powerOutageEndTick: config.powerOutageEndTick ?? null,
+        durationTicks: config.durationTicks ?? Infinity,
+        outageStarted: false,
+        outageEnded: false,
+    };
+
+    if (warmupTicks > 0) {
+        // Reuse the "Run to t=1000s" catch-up mechanism to blast through warm-up silently -
+        // tickEngine() still runs on every one of those ticks, so stats-reset fires at the
+        // right moment even though playback hasn't visibly started yet.
+        runUntilS = warmupTicks * FIXED_DT_S;
+        pauseAfterCatchUp = false;
+    }
+
+    state.running = true;
+    applyToggleFaces(el.runToggle, true);
+    renderRunPill();
+
+    const label = replayFamilyLabel(run);
+    const powerLabel = run.power_state === 'load_shedding' ? 'with load shedding' : 'without load shedding';
+    if (el.replayStatus) el.replayStatus.textContent = `Replaying ${label}, ${powerLabel} (seed ${state.seed}).`;
+    logChange('replay', `${label} - ${powerLabel} (seed ${state.seed})`);
+}
+
+el.replayLoadButton?.addEventListener('click', async () => {
+    const familyKey = el.replayFamilySelect.value;
+    const run = sampleRuns.find((r) => replayFamilyKey(r) === familyKey && r.power_state === replaySelectedPowerState);
+    if (!run) {
+        if (el.replayStatus) {
+            el.replayStatus.textContent = `No ${replaySelectedPowerState === 'load_shedding' ? 'load-shedding' : 'normal-power'} run found for this condition.`;
+        }
+        return;
+    }
+
+    el.replayLoadButton.disabled = true;
+    try {
+        await startReplay(run);
+    } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Replay failed to start', error);
+        if (el.replayStatus) el.replayStatus.textContent = `Replay failed: ${error.message}`;
+    } finally {
+        el.replayLoadButton.disabled = false;
+    }
+});
+
 el.runToggle.addEventListener('click', () => {
     runUntilS = null;
     state.running = !state.running;
@@ -704,7 +906,7 @@ el.runToggle.addEventListener('click', () => {
 
 el.stepButton.addEventListener('click', () => {
     runUntilS = null;
-    engine.tick(FIXED_DT_S);
+    tickEngine();
     renderFrame(engine.snapshot());
     logChange('step', `advanced ${FIXED_DT_S}s`);
 });
@@ -714,6 +916,7 @@ const RUN_TO_TIME_TARGET_S = 1000;
 el.runToTimeButton.addEventListener('click', () => {
     if (engine.simTimeS >= RUN_TO_TIME_TARGET_S) return;
     runUntilS = RUN_TO_TIME_TARGET_S;
+    pauseAfterCatchUp = true;
     state.running = true;
     applyToggleFaces(el.runToggle, true);
     renderRunPill();
@@ -931,26 +1134,79 @@ function animate(nowMs) {
     if (state.running && runUntilS !== null) {
         const frameDeadlineMs = nowMs + RUN_TO_TIME_FRAME_BUDGET_MS;
         while (engine.simTimeS < runUntilS && performance.now() < frameDeadlineMs) {
-            engine.tick(FIXED_DT_S);
+            tickEngine();
         }
         if (engine.simTimeS >= runUntilS) {
             runUntilS = null;
-            state.running = false;
-            applyToggleFaces(el.runToggle, false);
-            renderRunPill();
-            logChange('running', false);
+            // The manual "Run to t=1000s" button always stops here; a replay's silent
+            // warm-up fast-forward instead hands off to normal speed-based playback below.
+            if (pauseAfterCatchUp) {
+                state.running = false;
+                applyToggleFaces(el.runToggle, false);
+                renderRunPill();
+                logChange('running', false);
+            }
+            pauseAfterCatchUp = true;
         }
     } else if (state.running) {
         accumulatorS += realDtS * state.speed;
         let steps = 0;
         while (accumulatorS >= FIXED_DT_S && steps < 50) {
-            engine.tick(FIXED_DT_S);
+            tickEngine();
             accumulatorS -= FIXED_DT_S;
             steps += 1;
         }
     }
 
     renderFrame(engine.snapshot());
+}
+
+/**
+ * Every engine tick goes through here, not just `engine.tick()` directly, so a replay's
+ * schedule-driven side effects (stats reset at the end of warm-up, automatic outage
+ * trigger/restore, auto-stop at the recorded run's end) apply identically whether the tick
+ * came from normal speed-based playback, the "Run to t=1000s"-style catch-up loop, or the
+ * Step button. Mirrors runHeadless.js's own measuredTick bookkeeping (see its main loop)
+ * exactly, so a replayed run reaches the same stats-reset/outage timing the batch data itself
+ * was measured against.
+ */
+function tickEngine() {
+    engine.tick(FIXED_DT_S);
+    if (!replay) return;
+
+    replay.ticks += 1;
+    const measuredTick = replay.ticks - replay.warmupTicks;
+
+    if (!replay.statsReset && measuredTick >= 0) {
+        engine.resetStats();
+        replay.statsReset = true;
+        logChange('replay', 'warm-up complete, stats reset');
+    }
+
+    if (replay.powerOutageStartTick != null && !replay.outageStarted && measuredTick >= replay.powerOutageStartTick) {
+        replay.outageStarted = true;
+        state.power.loadShedding = true;
+        applyToggleFaces(el.loadSheddingToggle, true);
+        engine.setManualLoadShedding(true);
+        logChange('replay', 'power outage triggered (matches recorded run)');
+    }
+
+    if (replay.powerOutageEndTick != null && replay.outageStarted && !replay.outageEnded && measuredTick >= replay.powerOutageEndTick) {
+        replay.outageEnded = true;
+        state.power.loadShedding = false;
+        applyToggleFaces(el.loadSheddingToggle, false);
+        engine.setManualLoadShedding(false);
+        logChange('replay', 'power restored (matches recorded run)');
+    }
+
+    if (measuredTick >= replay.durationTicks) {
+        replay = null;
+        runUntilS = null;
+        state.running = false;
+        applyToggleFaces(el.runToggle, false);
+        renderRunPill();
+        logChange('replay', 'reached end of recorded run - paused');
+    }
 }
 
 /* --------------------------------------------------------------------- boot */

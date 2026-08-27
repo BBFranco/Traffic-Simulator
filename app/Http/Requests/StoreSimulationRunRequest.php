@@ -43,14 +43,26 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.time_to_recovery_wait_seconds' => ['nullable', 'numeric', 'min:0'],
             'runs.*.time_to_recovery_wait_seconds_arterial' => ['nullable', 'numeric', 'min:0'],
             'runs.*.time_to_recovery_wait_seconds_side_street' => ['nullable', 'numeric', 'min:0'],
-            // Total scope only - null on a normal-power run (nothing to segment) or on the
-            // "during outage" segment before it has any clears yet.
+            // Null on a normal-power run (nothing to segment) or on the "during outage"
+            // segment before it has any clears yet.
             'runs.*.avg_wait_time_pre_outage' => ['nullable', 'numeric', 'min:0'],
             'runs.*.avg_wait_time_during_outage' => ['nullable', 'numeric', 'min:0'],
             'runs.*.avg_wait_time_post_recovery' => ['nullable', 'numeric', 'min:0'],
             'runs.*.throughput_per_min_pre_outage' => ['nullable', 'numeric', 'min:0'],
             'runs.*.throughput_per_min_during_outage' => ['nullable', 'numeric', 'min:0'],
             'runs.*.throughput_per_min_post_recovery' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_pre_outage_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_during_outage_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_post_recovery_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_pre_outage_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_during_outage_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_post_recovery_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_pre_outage_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_during_outage_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_post_recovery_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_pre_outage_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_during_outage_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_post_recovery_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.median_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.p95_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.max_wait_time' => ['nullable', 'numeric', 'min:0'],

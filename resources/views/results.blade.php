@@ -41,6 +41,12 @@
         ? '—'
         : number_format($value, $decimals).($ci95 === null ? '' : ' ± '.number_format($ci95, $decimals));
 
+    // Scope suffix convention shared with ResultsController::SCOPES and results.js's
+    // scopedMetric() - drives the per-condition-means and segmented tables below, which
+    // render all three scopes' rows up front and let JS toggle which is visible (same
+    // data-scope mechanism the "vs fixed-time" cards already use).
+    $scopeSuffixes = ['total' => '', 'arterial' => '_arterial', 'side_street' => '_side_street'];
+
     $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
     $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
     $select = 'rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
@@ -568,7 +574,7 @@
                 Show data table
             </summary>
             <div class="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
-                <table class="w-full min-w-[720px] text-left text-xs">
+                <table id="per-condition-table" class="w-full min-w-[720px] text-left text-xs">
                     <thead class="{{ $tableHead }}">
                         <tr>
                             <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
@@ -586,23 +592,25 @@
                             @foreach ($controllerModes as $mode)
                                 @php $rows = $byKeyBySensor["{$mode}|{$power}"] ?? []; @endphp
                                 @foreach ($rows as $row)
-                                    <tr class="text-slate-700 dark:text-slate-300">
-                                        <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
-                                            <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
-                                            {{ $modeLabels[$mode] }}
-                                        </th>
-                                        <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">{{ $powerLabels[$power] }}</td>
-                                        <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">
-                                            {{ $row['sensor_mode'] === null ? '—' : $sensorLabels[$row['sensor_mode']] }}
-                                        </td>
-                                        <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
-                                        <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['avg_wait_time'], $row['avg_wait_time_ci95']) }}</td>
-                                        <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['throughput_per_min'], $row['throughput_per_min_ci95']) }}</td>
-                                        <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['pct_cleared_without_stop'], $row['pct_cleared_without_stop_ci95']) }}</td>
-                                        <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
-                                            {{ $row['time_to_recovery_seconds'] === null ? '—' : number_format($row['time_to_recovery_seconds'], 1) }}
-                                        </td>
-                                    </tr>
+                                    @foreach ($scopeSuffixes as $scope => $suffix)
+                                        <tr class="text-slate-700 dark:text-slate-300 {{ $scope === 'total' ? '' : 'hidden' }}" data-scope="{{ $scope }}">
+                                            <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
+                                                <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
+                                                {{ $modeLabels[$mode] }}
+                                            </th>
+                                            <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">{{ $powerLabels[$power] }}</td>
+                                            <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">
+                                                {{ $row['sensor_mode'] === null ? '—' : $sensorLabels[$row['sensor_mode']] }}
+                                            </td>
+                                            <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
+                                            <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['avg_wait_time'.$suffix], $row['avg_wait_time'.$suffix.'_ci95']) }}</td>
+                                            <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['throughput_per_min'.$suffix], $row['throughput_per_min'.$suffix.'_ci95']) }}</td>
+                                            <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['pct_cleared_without_stop'.$suffix], $row['pct_cleared_without_stop'.$suffix.'_ci95']) }}</td>
+                                            <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
+                                                {{ $row['time_to_recovery_seconds'.$suffix] === null ? '—' : number_format($row['time_to_recovery_seconds'.$suffix], 1) }}
+                                            </td>
+                                        </tr>
+                                    @endforeach
                                 @endforeach
                             @endforeach
                         @endforeach
@@ -616,24 +624,25 @@
     <section class="mb-8">
         <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Load shedding, segmented</h2>
         <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            Pre-outage / during-outage / post-recovery averages (Total scope), computed from
-            cumulative counters rather than a rolling window - this is what shows the real
-            Adaptive-vs-Fixed-time gap on either side of the outage, instead of a snapshot
-            near the end of the run. During the outage every controller mode falls back to the
-            same all-way-stop control, so near-identical numbers there are expected, not a sign
-            adaptive handles outages well. Also includes the full-run wait distribution
-            (median/p95/max), since a single mean can't tell "everyone waits a bit longer"
-            apart from "most people are fine, a few are stranded".
+            Pre-outage / during-outage / post-recovery averages, computed from cumulative
+            counters rather than a rolling window - this is what shows the real Adaptive-vs-
+            Fixed-time gap on either side of the outage, instead of a snapshot near the end of
+            the run. During the outage every controller mode falls back to the same all-way-stop
+            control, so near-identical numbers there are expected, not a sign adaptive handles
+            outages well. The wait distribution columns (median/p95/max) are always Total scope
+            regardless of the selector above - a single mean can't tell "everyone waits a bit
+            longer" apart from "most people are fine, a few are stranded", but that distribution
+            isn't split by arterial/side-street.
         </p>
 
-        <div class="overflow-x-auto {{ $card }}">
+        <div class="overflow-x-auto {{ $card }}" id="segmented-table">
             <table class="w-full min-w-[1080px] text-left text-xs">
                 <thead class="{{ $tableHead }}">
                     <tr>
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage wait (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage wait (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery wait (s)</th>
@@ -646,21 +655,23 @@
                     @foreach ($controllerModes as $mode)
                         @php $row = $byModeAndPower["{$mode}|load_shedding"] ?? null; @endphp
                         @if ($row)
-                            <tr class="text-slate-700 dark:text-slate-300">
-                                <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
-                                    <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
-                                    {{ $modeLabels[$mode] }}
-                                </th>
-                                <td class="px-4 py-2 text-right">{{ $row['median_wait_time'] === null ? '—' : number_format($row['median_wait_time'], 1) }}</td>
-                                <td class="px-4 py-2 text-right">{{ $row['p95_wait_time'] === null ? '—' : number_format($row['p95_wait_time'], 1) }}</td>
-                                <td class="px-4 py-2 text-right">{{ $row['max_wait_time'] === null ? '—' : number_format($row['max_wait_time'], 1) }}</td>
-                                <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_pre_outage'] === null ? '—' : number_format($row['avg_wait_time_pre_outage'], 1) }}</td>
-                                <td class="px-4 py-2 text-right text-slate-400">{{ $row['avg_wait_time_during_outage'] === null ? '—' : number_format($row['avg_wait_time_during_outage'], 1) }}</td>
-                                <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_post_recovery'] === null ? '—' : number_format($row['avg_wait_time_post_recovery'], 1) }}</td>
-                                <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_pre_outage'] === null ? '—' : number_format($row['throughput_per_min_pre_outage'], 1) }}</td>
-                                <td class="px-4 py-2 text-right text-slate-400">{{ $row['throughput_per_min_during_outage'] === null ? '—' : number_format($row['throughput_per_min_during_outage'], 1) }}</td>
-                                <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_post_recovery'] === null ? '—' : number_format($row['throughput_per_min_post_recovery'], 1) }}</td>
-                            </tr>
+                            @foreach ($scopeSuffixes as $scope => $suffix)
+                                <tr class="text-slate-700 dark:text-slate-300 {{ $scope === 'total' ? '' : 'hidden' }}" data-scope="{{ $scope }}">
+                                    <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
+                                        <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
+                                        {{ $modeLabels[$mode] }}
+                                    </th>
+                                    <td class="px-4 py-2 text-right">{{ $row['median_wait_time'] === null ? '—' : number_format($row['median_wait_time'], 1) }}</td>
+                                    <td class="px-4 py-2 text-right">{{ $row['p95_wait_time'] === null ? '—' : number_format($row['p95_wait_time'], 1) }}</td>
+                                    <td class="px-4 py-2 text-right">{{ $row['max_wait_time'] === null ? '—' : number_format($row['max_wait_time'], 1) }}</td>
+                                    <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_pre_outage'.$suffix] === null ? '—' : number_format($row['avg_wait_time_pre_outage'.$suffix], 1) }}</td>
+                                    <td class="px-4 py-2 text-right text-slate-400">{{ $row['avg_wait_time_during_outage'.$suffix] === null ? '—' : number_format($row['avg_wait_time_during_outage'.$suffix], 1) }}</td>
+                                    <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_post_recovery'.$suffix] === null ? '—' : number_format($row['avg_wait_time_post_recovery'.$suffix], 1) }}</td>
+                                    <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_pre_outage'.$suffix] === null ? '—' : number_format($row['throughput_per_min_pre_outage'.$suffix], 1) }}</td>
+                                    <td class="px-4 py-2 text-right text-slate-400">{{ $row['throughput_per_min_during_outage'.$suffix] === null ? '—' : number_format($row['throughput_per_min_during_outage'.$suffix], 1) }}</td>
+                                    <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_post_recovery'.$suffix] === null ? '—' : number_format($row['throughput_per_min_post_recovery'.$suffix], 1) }}</td>
+                                </tr>
+                            @endforeach
                         @endif
                     @endforeach
                 </tbody>

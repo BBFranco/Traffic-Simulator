@@ -36,17 +36,29 @@ class ResultsController extends Controller
     private const SCOPES = ['' => 'total', '_arterial' => 'arterial', '_side_street' => 'side_street'];
 
     /**
-     * Total-scope-only columns (no `_arterial`/`_side_street` counterpart) - the
-     * pre/during/post outage segments and the full-run wait distribution added
-     * alongside the results-page audit's other fixes.
+     * Every metric that has a `_arterial`/`_side_street` counterpart alongside its
+     * unsuffixed (Total) column - shared by metricSelectRaw(), scopedMetricColumns(), and
+     * metricRow() so the three stay in lockstep.
      */
-    private const TOTAL_ONLY_METRICS = [
+    private const SCOPED_METRICS = [
+        'avg_wait_time',
+        'throughput_per_min',
+        'pct_cleared_without_stop',
+        'time_to_recovery_seconds',
+        'time_to_recovery_wait_seconds',
         'avg_wait_time_pre_outage',
         'avg_wait_time_during_outage',
         'avg_wait_time_post_recovery',
         'throughput_per_min_pre_outage',
         'throughput_per_min_during_outage',
         'throughput_per_min_post_recovery',
+    ];
+
+    /**
+     * Total-scope-only columns (no `_arterial`/`_side_street` counterpart) - the full-run
+     * wait distribution added alongside the results-page audit's other fixes.
+     */
+    private const TOTAL_ONLY_METRICS = [
         'median_wait_time',
         'p95_wait_time',
         'max_wait_time',
@@ -91,7 +103,15 @@ class ResultsController extends Controller
             $query->where('corridor_config', $corridorFilter);
         }
         if ($sensorFilter && $sensorFilter !== 'all') {
-            $query->where('sensor_mode', $sensorFilter);
+            // Only adaptive rows actually vary by sensor - fixed-time (sensor_mode always null)
+            // and green-wave (sensor_mode hardcoded to the matrix's 'inductive_loop' placeholder,
+            // see aggregatesBySensor()'s docblock) are baselines that must stay visible no matter
+            // which sensor is selected. A flat `where('sensor_mode', $sensorFilter)` here used to
+            // filter both of them out entirely whenever a specific (non-"all") sensor was picked,
+            // silently emptying every "vs fixed-time" comparison.
+            $query->where(function ($q) use ($sensorFilter) {
+                $q->where('controller_mode', '!=', 'adaptive')->orWhere('sensor_mode', $sensorFilter);
+            });
         }
 
         $aggregates = $this->aggregates((clone $query));
@@ -163,7 +183,7 @@ class ResultsController extends Controller
     private function metricSelectRaw(): string
     {
         $clauses = [];
-        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'] as $metric) {
+        foreach (self::SCOPED_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $clauses[] = "avg({$column}) as {$column}";
@@ -176,11 +196,11 @@ class ResultsController extends Controller
         return implode(', ', $clauses);
     }
 
-    /** Every scoped (Total/Arterial/Side-Streets) column of the four paired-comparison metrics. */
+    /** Every scoped (Total/Arterial/Side-Streets) column of every metric in SCOPED_METRICS. */
     private function scopedMetricColumns(): array
     {
         $columns = [];
-        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'] as $metric) {
+        foreach (self::SCOPED_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $columns[] = $metric.$suffix;
             }
@@ -242,10 +262,11 @@ class ResultsController extends Controller
 
     /**
      * Rounds every scoped metric column on an aggregate row - shared by aggregates() and
-     * aggregatesBySensor(). time_to_recovery_seconds* and time_to_recovery_wait_seconds* stay
-     * null-safe (no run in the group measured a recovery, e.g. all normal-power); the other
-     * three are never null on a populated row but a legacy pre-migration row can still average
-     * to null (see the scope-columns migration's docblock).
+     * aggregatesBySensor(). The recovery and outage-segment metrics stay null-safe (no run in
+     * the group measured a recovery/outage, e.g. all normal-power); avg_wait_time,
+     * throughput_per_min, and pct_cleared_without_stop are never null on a populated row but a
+     * legacy pre-migration row can still average to null (see the scope-columns migration's
+     * docblock).
      *
      * @return array<string, float|null>
      */
@@ -253,7 +274,7 @@ class ResultsController extends Controller
     {
         $result = [];
         $runs = (int) $row->runs;
-        foreach (['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'] as $metric) {
+        foreach (self::SCOPED_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
@@ -438,9 +459,7 @@ class ResultsController extends Controller
             // pattern here (e.g. a controller with a much lower pre-outage baseline has further,
             // proportionally, to climb back before it counts as "recovered"), so always render
             // this raw seconds value paired with the matching post-recovery segment average
-            // rather than alone - see the results-page audit. Total-scope only ($subject/
-            // $baseline are the same row across every SCOPES iteration, just read at a different
-            // suffix - post-recovery segments were never split by scope).
+            // rather than alone - see the results-page audit.
             //
             // Deliberately NOT gated behind $recoveryKnown/$recoveryWaitKnown (unlike the
             // percentage/improves fields above, which need BOTH sides to mean anything): a side
@@ -452,10 +471,10 @@ class ResultsController extends Controller
             'baseline_recovery_seconds' => $baseline[$recoveryKey],
             'recovery_wait_seconds' => $subject[$recoveryWaitKey],
             'baseline_recovery_wait_seconds' => $baseline[$recoveryWaitKey],
-            'post_recovery_avg_wait' => $subject['avg_wait_time_post_recovery'] ?? null,
-            'baseline_post_recovery_avg_wait' => $baseline['avg_wait_time_post_recovery'] ?? null,
-            'post_recovery_throughput' => $subject['throughput_per_min_post_recovery'] ?? null,
-            'baseline_post_recovery_throughput' => $baseline['throughput_per_min_post_recovery'] ?? null,
+            'post_recovery_avg_wait' => $subject['avg_wait_time_post_recovery'.$suffix] ?? null,
+            'baseline_post_recovery_avg_wait' => $baseline['avg_wait_time_post_recovery'.$suffix] ?? null,
+            'post_recovery_throughput' => $subject['throughput_per_min_post_recovery'.$suffix] ?? null,
+            'baseline_post_recovery_throughput' => $baseline['throughput_per_min_post_recovery'.$suffix] ?? null,
             // Sample size behind this row's own mean, and each side's 95% CI half-width
             // (mean +/- ci95) - not a CI on the delta itself, see metricSelectRaw()'s comment.
             'runs' => $subject['runs'],

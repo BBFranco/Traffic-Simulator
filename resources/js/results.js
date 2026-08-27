@@ -601,12 +601,28 @@ function highlightMatchingRecentRuns() {
     });
 }
 
+/**
+ * The per-condition-means and segmented data tables render all three scopes'
+ * rows up front (server-side, see results.blade.php) and just toggle which
+ * one is visible - same mechanism as applyItsTargetFilter()'s card toggling,
+ * but scanned only within these two tables so it doesn't fight that
+ * function's own data-scope handling on the comparison cards.
+ */
+function applyTableScopeFilter() {
+    const scope = selectedScope();
+    document.querySelectorAll('#per-condition-table [data-scope], #segmented-table [data-scope]').forEach((row) => {
+        row.classList.toggle('hidden', row.dataset.scope !== scope);
+    });
+}
+
 document.getElementById('filter-its-target')?.addEventListener('change', () => {
     applyItsTargetFilter();
     renderAll();
 });
 document.getElementById('filter-scope')?.addEventListener('change', () => {
     applyItsTargetFilter();
+    applyTableScopeFilter();
     renderAll();
 });
 applyItsTargetFilter();
+applyTableScopeFilter();
