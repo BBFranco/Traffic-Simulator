@@ -11,6 +11,25 @@ intersections each, joined by four signalised two-way cross-streets.
 
 ---
 
+## Screenshots
+
+**Simulator** — run, step, or fast-forward the corridor while comparing fixed-time,
+adaptive and green-wave control live.
+
+![Simulator view of the Hatfield Pretorius / Francis Baard corridor](public/images/screenshots/simulator.png)
+
+**Results** — aggregated results across hundreds of seeded batch runs, paired
+against the fixed-time baseline.
+
+![Results dashboard summary cards](public/images/screenshots/results-summary.png)
+
+**Recovery after a power cut** — how fast each controller mode gets wait time and
+throughput back to their pre-cut levels.
+
+![Recovery charts after a simulated power cut](public/images/screenshots/results-recovery.png)
+
+---
+
 ## What it does
 
 | Area | Details |

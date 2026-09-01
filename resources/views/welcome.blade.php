@@ -32,16 +32,14 @@
             </header>
 
             <main class="flex-1">
-                <div class="max-w-6xl mx-auto px-6 py-16 sm:py-24">
+                <div class="max-w-6xl mx-auto px-6 py-12 sm:py-16">
                     <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-900">
                         IoT-enabled smart traffic management
                     </span>
 
-                    <h1 class="mt-6 max-w-3xl text-3xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl dark:text-slate-50">
-                        Does adaptive signal control still help when the power goes out?
-                    </h1>
+                    <h1 class="sr-only">Smart Traffic Simulator</h1>
 
-                    <p class="mt-6 max-w-2xl text-base leading-relaxed text-slate-600 dark:text-slate-400">
+                    <p class="mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-400">
                         A browser-based traffic simulator that runs fixed-time, sensor-adaptive and green-wave
                         signal control over the same corridor and the same seeded traffic, then cuts the power
                         mid-run to see which assumptions survive. Modelled on Pretorius Street and Francis Baard
@@ -60,7 +58,7 @@
                         @endauth
                     </div>
 
-                    <dl class="mt-16 grid gap-4 sm:grid-cols-3">
+                    <dl class="mt-12 grid gap-4 sm:grid-cols-3">
                         @foreach ([
                             ['Fixed-time baseline', "Cycle length and phase splits from Webster's method (1958), so the \"dumb\" comparator is a legitimate implementation rather than a strawman."],
                             ['Sensor-adaptive control', 'A gap-extension heuristic over four sensor models, mirroring the sense-decide-execute loop used by SCATS and SCOOT.'],
@@ -72,11 +70,61 @@
                             </div>
                         @endforeach
                     </dl>
+
+                    <div class="mt-10 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        <svg class="h-4 w-4 animate-bounce" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clip-rule="evenodd" />
+                        </svg>
+                        See it in action
+                    </div>
+                </div>
+
+                <div class="max-w-6xl mx-auto px-6 pb-12 sm:pb-16">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/60">
+                        <img
+                            src="{{ asset('images/screenshots/simulator.png') }}"
+                            alt="Simulator view of the Hatfield Pretorius / Francis Baard corridor, showing eight signalised intersections and live per-arterial statistics"
+                            class="w-full rounded-lg border border-slate-200 dark:border-slate-800"
+                            loading="lazy"
+                        >
+                    </div>
+                    <p class="mt-3 text-center text-[13px] text-slate-500 dark:text-slate-500">
+                        The simulator: run, step, or fast-forward a corridor while comparing fixed-time, adaptive and green-wave control live.
+                    </p>
+
+                    <div class="mt-12 grid gap-6 sm:grid-cols-2">
+                        <div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/60">
+                                <img
+                                    src="{{ asset('images/screenshots/results-summary.png') }}"
+                                    alt="Results dashboard summary cards comparing adaptive control against the fixed-time baseline on wait time, throughput and no-stop rate"
+                                    class="w-full rounded-lg border border-slate-200 dark:border-slate-800"
+                                    loading="lazy"
+                                >
+                            </div>
+                            <p class="mt-3 text-center text-[13px] text-slate-500 dark:text-slate-500">
+                                Aggregated results across hundreds of seeded batch runs, paired against the fixed-time baseline.
+                            </p>
+                        </div>
+                        <div>
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/60">
+                                <img
+                                    src="{{ asset('images/screenshots/results-recovery.png') }}"
+                                    alt="Line charts showing average wait time and throughput recovering after a simulated power cut, comparing fixed-time, adaptive and green-wave control"
+                                    class="w-full rounded-lg border border-slate-200 dark:border-slate-800"
+                                    loading="lazy"
+                                >
+                            </div>
+                            <p class="mt-3 text-center text-[13px] text-slate-500 dark:text-slate-500">
+                                What happens when the power comes back: how fast each mode recovers to its pre-cut wait and throughput.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </main>
 
             <footer class="border-t border-slate-200 dark:border-slate-800">
-                <div class="max-w-6xl mx-auto px-6 py-6 text-xs text-slate-500">
+                <div class="max-w-6xl mx-auto px-6 py-6 text-center text-xs text-slate-500">
                     Vehicle dynamics use the Intelligent Driver Model (Treiber, Hennig &amp; Helbing, 2000).
                     Laravel {{ Illuminate\Foundation\Application::VERSION }} · PHP {{ PHP_VERSION }}
                 </div>
