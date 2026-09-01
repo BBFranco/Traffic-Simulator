@@ -68,7 +68,7 @@ class ResultsController extends Controller
 
     public function index(): View
     {
-        $payload = $this->buildPayload(request()->query('corridor'), request()->query('sensor'));
+        $payload = $this->buildPayload(request()->query('corridor'));
 
         return view('results', [
             'isFakeData' => $payload['totalRuns'] === 0,
@@ -76,13 +76,31 @@ class ResultsController extends Controller
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
             ...$payload,
+            ...$this->viewModel($payload),
         ]);
     }
 
-    /** JSON refresh for the batch-run button (build step 17) - same shape as the Blade payload, no page reload needed. */
+    /**
+     * JSON refresh for the batch-run button (build step 17) AND for the Corridor filter. Early
+     * on this only returned `aggregates`/`aggregatesBySensor`/`recoveryTimeline`, which just fed
+     * the chart trio - every other chunk of the page (the "vs fixed-time" cards, the
+     * per-condition/segmented table rows, Recent Runs) stayed rendered from whatever the initial
+     * GET happened to load, so switching Corridor silently left most of the page showing stale
+     * data - a real bug, not a cosmetic one, since those cards are the page's actual headline.
+     * Rather than re-deriving all of Blade's tone/formatting logic in JS (a second copy to keep
+     * in sync), this renders the same partials the initial page uses with fresh data and ships
+     * the HTML - results.js just swaps it in and re-applies the client-side togglers
+     * (Compare-against-fixed-time, Scope) on top.
+     */
     public function data(): JsonResponse
     {
-        $payload = $this->buildPayload(request()->query('corridor'), request()->query('sensor'));
+        $payload = $this->buildPayload(request()->query('corridor'));
+        $viewData = [
+            ...$payload,
+            ...$this->viewModel($payload),
+            'controllerModes' => self::CONTROLLER_MODES,
+            'powerStates' => self::POWER_STATES,
+        ];
 
         return response()->json([
             'aggregates' => $payload['aggregates'],
@@ -90,28 +108,252 @@ class ResultsController extends Controller
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
             'recoveryTimeline' => $payload['recoveryTimeline'],
+            'html' => [
+                'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
+                'metricSectionGroups' => view('results.partials.metric-section-groups', $viewData)->render(),
+                'perConditionRows' => view('results.partials.per-condition-rows', $viewData)->render(),
+                'segmentedRows' => view('results.partials.segmented-rows', $viewData)->render(),
+                'recentRunsRows' => view('results.partials.recent-runs-rows', $viewData)->render(),
+                'itsTargetOptions' => view('results.partials.its-target-options', $viewData)->render(),
+            ],
         ]);
+    }
+
+    /**
+     * Every display-only value derived from a payload (labels, colours, formatters, lookups) -
+     * shared between the full-page render and data()'s partial refresh so the two never drift
+     * out of sync with each other. Used to live inline in results.blade.php's top `@php` block;
+     * moved here once data() started needing the exact same derivations to render partials.
+     *
+     * @return array<string, mixed>
+     */
+    private function viewModel(array $payload): array
+    {
+        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $modeColours = ['fixed' => '#ea580c', 'adaptive' => '#8b5cf6', 'green_wave' => '#059669'];
+        $powerLabels = ['normal' => 'Normal power', 'load_shedding' => 'Load shedding'];
+        $sensorLabels = [
+            'none' => 'None (timer only)',
+            'inductive_loop' => 'Inductive loop',
+            'radar' => 'Radar',
+            'camera' => 'Camera',
+            'magnetometer' => 'Magnetometer',
+        ];
+
+        // Data-table breakdown: fixed-time and green-wave collapse to one row apiece (see
+        // aggregatesBySensor()'s docblock), adaptive gets one row per sensor mode.
+        $sensorOrder = ['inductive_loop', 'radar', 'camera', 'magnetometer'];
+        $byKeyBySensor = [];
+        foreach ($payload['aggregatesBySensor'] as $row) {
+            $byKeyBySensor["{$row['controller_mode']}|{$row['power_state']}"][] = $row;
+        }
+        foreach ($byKeyBySensor as $key => $rows) {
+            usort($rows, fn ($a, $b) => array_search($a['sensor_mode'], $sensorOrder, true) <=> array_search($b['sensor_mode'], $sensorOrder, true));
+            $byKeyBySensor[$key] = $rows;
+        }
+
+        // Mode+power lookup for the segmented/distribution table - Total scope only, no sensor
+        // breakdown (keeps that table to one row per mode+power).
+        $byModeAndPower = [];
+        foreach ($payload['aggregates'] as $row) {
+            $byModeAndPower["{$row['controller_mode']}|{$row['power_state']}"] = $row;
+        }
+
+        // "24.1" -> "24.1 ± 1.2" when a 95% CI half-width is available (>= 2 reps).
+        $fmtWithCi = fn (?float $value, ?float $ci95, int $decimals = 1) => $value === null
+            ? '—'
+            : number_format($value, $decimals).($ci95 === null ? '' : ' ± '.number_format($ci95, $decimals));
+
+        // Scope suffix convention shared with SCOPES and results.js's scopedMetric() - drives
+        // the per-condition-means and segmented tables, which render all three scopes' rows up
+        // front and let JS toggle which is visible (same data-scope mechanism the "vs
+        // fixed-time" cards already use).
+        $scopeSuffixes = ['total' => '', 'arterial' => '_arterial', 'side_street' => '_side_street'];
+
+        $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
+        $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
+        $select = 'rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+
+        // The "vs fixed-time" stat blocks: adaptive isn't one thing, it's whichever sensor is
+        // reading the intersection, so each sensor (plus a blended average) is its own
+        // selectable comparison target alongside green-wave - see pairedComparisons(). A
+        // comparison's delta can be null - a group made up entirely of pre-scope-migration rows
+        // (see the scope-columns migration's docblock), or (for recovery) simply not measured
+        // under normal power. Render a neutral placeholder rather than a fabricated number.
+        $fmtDelta = fn (?float $v, string $suffix) => $v === null ? '—' : ($v > 0 ? '+' : '').number_format($v, 1).$suffix;
+
+        // Recovery time on its own reads as "how good the controller is at recovering" - it
+        // isn't, it only clocks how long throughput takes to sustain its way back to baseline,
+        // saying nothing about where wait time actually settles afterwards. Always show it next
+        // to that steady-state figure so a short-but-still-elevated recovery can't pass as fully
+        // healed.
+        $fmtSecondsPair = fn (?float $subject, ?float $baseline, string $suffix = 's') => ($subject === null || $baseline === null)
+            ? '—'
+            : number_format($subject, 1).$suffix.' vs '.number_format($baseline, 1).$suffix;
+
+        // Recovery time itself (unlike the post-recovery steady-state above) can go unmeasured
+        // on either side: computeRecoverySeconds() returns null whenever a metric never sustains
+        // its way back to baseline before the run ends - most commonly fixed-time's own
+        // wait-time baseline, which this corridor's fixed-cycle signals don't fully clear within
+        // the measured post-restore window (a real result, not a data gap - see the
+        // results-page audit). Show each side on its own rather than collapsing the whole row to
+        // "-" the moment either side is missing, so a subject that DID recover isn't hidden by a
+        // baseline that didn't.
+        $fmtRecoverySide = fn (?float $v, string $suffix = 's') => $v === null ? 'did not recover in window' : number_format($v, 1).$suffix;
+
+        $comparisonKey = fn (array $c) => $c['mode'].'|'.($c['sensor_mode'] ?? '');
+        $comparisonLabel = function (array $c) use ($modeLabels, $sensorLabels) {
+            if ($c['mode'] !== 'adaptive') {
+                return $modeLabels[$c['mode']];
+            }
+
+            return $c['sensor_mode'] === 'average'
+                ? 'Adaptive — avg. of sensors'
+                : 'Adaptive — '.$sensorLabels[$c['sensor_mode']];
+        };
+
+        $comparisonOptions = [];
+        foreach ($payload['pairedComparisons'] as $c) {
+            $key = $comparisonKey($c);
+            if (isset($comparisonOptions[$key])) {
+                continue;
+            }
+            $comparisonOptions[$key] = ['key' => $key, 'label' => $comparisonLabel($c), 'mode' => $c['mode'], 'sensor_mode' => $c['sensor_mode']];
+        }
+        usort($comparisonOptions, function ($a, $b) use ($sensorOrder) {
+            $rank = function ($o) use ($sensorOrder) {
+                if ($o['mode'] === 'adaptive' && $o['sensor_mode'] === 'average') {
+                    return -1;
+                }
+
+                return $o['mode'] === 'adaptive' ? array_search($o['sensor_mode'], $sensorOrder, true) : 100;
+            };
+
+            return $rank($a) <=> $rank($b);
+        });
+
+        return [
+            'modeLabels' => $modeLabels,
+            'modeColours' => $modeColours,
+            'powerLabels' => $powerLabels,
+            'sensorLabels' => $sensorLabels,
+            'sensorOrder' => $sensorOrder,
+            'byKeyBySensor' => $byKeyBySensor,
+            'byModeAndPower' => $byModeAndPower,
+            'fmtWithCi' => $fmtWithCi,
+            'scopeSuffixes' => $scopeSuffixes,
+            'card' => $card,
+            'tableHead' => $tableHead,
+            'select' => $select,
+            'fmtDelta' => $fmtDelta,
+            'fmtSecondsPair' => $fmtSecondsPair,
+            'fmtRecoverySide' => $fmtRecoverySide,
+            'comparisonKey' => $comparisonKey,
+            'comparisonLabel' => $comparisonLabel,
+            'comparisonOptions' => $comparisonOptions,
+            'metricSectionGroups' => $this->metricSectionGroupsConfig(),
+        ];
+    }
+
+    /**
+     * Static config for the "More headline metrics" section groups (throughput, cleared,
+     * recovery x2) - doesn't depend on any run data, only on which comparison fields/labels each
+     * group headlines. Doesn't belong in buildPayload() (that's real query results); lives here
+     * because it's still part of what both the full page and the AJAX partial refresh need.
+     *
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function metricSectionGroupsConfig(): array
+    {
+        return [
+            [
+                [
+                    'heading' => 'Does ITS move more traffic?',
+                    'description' => 'Same paired comparison, headlining throughput instead of wait time. Higher is better.',
+                    'valueKey' => 'throughput_delta_pct',
+                    'improvesKey' => 'throughput_improves',
+                    'suffix' => '%',
+                    'improvedLabel' => 'more throughput',
+                    'worseLabel' => 'less throughput',
+                    'unitLabel' => 'vehicles cleared per minute',
+                    'secondary' => [
+                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                        ['label' => 'Cleared w/o stopping', 'key' => 'cleared_delta_pp', 'suffix' => ' pp'],
+                    ],
+                    'filter' => null,
+                ],
+            ],
+            [
+                [
+                    'heading' => 'Does ITS clear more traffic without stopping?',
+                    'description' => 'Share of vehicles that pass through without a full stop. Higher is better.',
+                    'valueKey' => 'cleared_delta_pp',
+                    'improvesKey' => 'cleared_improves',
+                    'suffix' => ' pp',
+                    'improvedLabel' => 'more cleared w/o stopping',
+                    'worseLabel' => 'fewer cleared w/o stopping',
+                    'unitLabel' => 'percentage-point change',
+                    'secondary' => [
+                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                        ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
+                    ],
+                    'filter' => null,
+                ],
+            ],
+            [
+                [
+                    'heading' => 'How fast does ITS recover from load shedding? - wait time',
+                    'description' => 'Time for wait time to drop back to its pre-cut level once power is restored. Lower is better.',
+                    'valueKey' => 'recovery_wait_delta_pct',
+                    'improvesKey' => 'recovery_wait_improves',
+                    'suffix' => '%',
+                    'improvedLabel' => 'faster recovery',
+                    'worseLabel' => 'slower recovery',
+                    'unitLabel' => 'time to recovery',
+                    'secondary' => [
+                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                        ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
+                    ],
+                    // Deliberately NOT requiring recovery_wait_delta_pct !== null here: fixed-time's
+                    // own wait-time baseline routinely never crosses the recovered threshold within
+                    // the measured window on this corridor (a real result - see $fmtRecoverySide's
+                    // comment above), which would otherwise silently hide every comparison against
+                    // it. The card itself renders that as "did not recover in window" instead.
+                    'filter' => fn ($c) => $c['power_state'] === 'load_shedding',
+                    // Recovery time alone can't be trusted (see $fmtSecondsPair's comment above) -
+                    // this card always renders it next to the post-recovery steady-state wait.
+                    'recoveryPairMetric' => 'wait',
+                ],
+                [
+                    'heading' => 'How fast does ITS recover from load shedding? - throughput',
+                    'description' => 'Time for throughput to climb back to its pre-cut level once power is restored. Lower is better.',
+                    'valueKey' => 'recovery_delta_pct',
+                    'improvesKey' => 'recovery_improves',
+                    'suffix' => '%',
+                    'improvedLabel' => 'faster recovery',
+                    'worseLabel' => 'slower recovery',
+                    'unitLabel' => 'time to recovery',
+                    'secondary' => [
+                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
+                        ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
+                    ],
+                    // Same reasoning as the wait card's filter above - kept consistent even though
+                    // throughput's own fixed-time baseline hasn't been observed to go unmeasured.
+                    'filter' => fn ($c) => $c['power_state'] === 'load_shedding',
+                    'recoveryPairMetric' => 'throughput',
+                ],
+            ],
+        ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function buildPayload(?string $corridorFilter, ?string $sensorFilter): array
+    private function buildPayload(?string $corridorFilter): array
     {
         $query = SimulationRun::query();
         if ($corridorFilter) {
             $query->where('corridor_config', $corridorFilter);
-        }
-        if ($sensorFilter && $sensorFilter !== 'all') {
-            // Only adaptive rows actually vary by sensor - fixed-time (sensor_mode always null)
-            // and green-wave (sensor_mode hardcoded to the matrix's 'inductive_loop' placeholder,
-            // see aggregatesBySensor()'s docblock) are baselines that must stay visible no matter
-            // which sensor is selected. A flat `where('sensor_mode', $sensorFilter)` here used to
-            // filter both of them out entirely whenever a specific (non-"all") sensor was picked,
-            // silently emptying every "vs fixed-time" comparison.
-            $query->where(function ($q) use ($sensorFilter) {
-                $q->where('controller_mode', '!=', 'adaptive')->orWhere('sensor_mode', $sensorFilter);
-            });
         }
 
         $aggregates = $this->aggregates((clone $query));
@@ -145,7 +387,7 @@ class ResultsController extends Controller
             'aggregates' => $aggregates,
             'aggregatesBySensor' => $aggregatesBySensor,
             'pairedComparisons' => $this->pairedComparisons($aggregates, $aggregatesBySensor),
-            'recoveryTimeline' => $this->dbRecoveryTimeline(),
+            'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter),
             'recentRuns' => $recentRuns,
             'totalRuns' => (clone $query)->count(),
         ];
@@ -510,9 +752,12 @@ class ResultsController extends Controller
      *
      * @return array{seconds: array<int, float>, series: array<string, array<string, array<int, ?float>>>, sheddingStart: ?float, sheddingEnd: ?float}|null
      */
-    private function dbRecoveryTimeline(): ?array
+    private function dbRecoveryTimeline(?string $corridorFilter): ?array
     {
-        $rows = SimulationRunRecoveryTick::query()->orderBy('tick')->get();
+        $rows = SimulationRunRecoveryTick::query()
+            ->when($corridorFilter, fn (Builder $q) => $q->where('corridor_config', $corridorFilter))
+            ->orderBy('tick')
+            ->get();
         if ($rows->isEmpty()) {
             return null;
         }

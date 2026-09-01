@@ -449,6 +449,7 @@ batchButton?.addEventListener('click', async () => {
                     finalizeRecoveryTickPayload(recoveryAcc, {
                         controllerMode: condition.controllerMode,
                         sensorMode: condition.sensorMode,
+                        corridorId: corridorConfig.id,
                         dt: DT,
                         powerOutageStartTick: POWER_OUTAGE_START_TICK,
                         powerOutageEndTick: POWER_OUTAGE_END_TICK,
@@ -531,7 +532,17 @@ async function postRecoveryTicks(payload) {
     }
 }
 
-/** Re-fetch the aggregate queries and redraw the charts - no full page reload (build step 17). */
+/**
+ * Re-fetch the aggregate queries and redraw the charts - no full page reload (build step 17).
+ *
+ * Corridor used to only refresh the bar-chart trio + recovery charts here, leaving
+ * the "vs fixed-time" cards, the per-condition/segmented table rows, and Recent Runs frozen at
+ * whatever the initial page load showed - the dropdown looked like a no-op even though the
+ * server-side query was genuinely filtered. `fresh.html` now carries the same Blade partials
+ * the initial page renders (see ResultsController::data()'s docblock), computed from the same
+ * filtered query - swap them in, then re-apply the client-side togglers (Compare-against-
+ * fixed-time, Scope) since the freshly-injected DOM starts without any `.hidden` state.
+ */
 async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     const url = params.toString() ? `${data.resultsDataUrl}?${params}` : data.resultsDataUrl;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -540,7 +551,40 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     const fresh = await response.json();
     Object.assign(data, fresh);
     rebuildByKey();
+
+    if (fresh.html) {
+        const setHtml = (id, html) => {
+            const el = document.getElementById(id);
+            if (el && html !== undefined) el.innerHTML = html;
+        };
+        setHtml('research-question-cards', fresh.html.researchQuestionCards);
+        setHtml('metric-section-groups', fresh.html.metricSectionGroups);
+
+        const perConditionBody = document.querySelector('#per-condition-table tbody');
+        if (perConditionBody) perConditionBody.innerHTML = fresh.html.perConditionRows;
+
+        const segmentedBody = document.querySelector('#segmented-table tbody');
+        if (segmentedBody) segmentedBody.innerHTML = fresh.html.segmentedRows;
+
+        const recentRunsBody = document.querySelector('#recent-runs-table tbody');
+        if (recentRunsBody) recentRunsBody.innerHTML = fresh.html.recentRunsRows;
+
+        // Preserve the current "Compare against fixed-time" selection across the option-list
+        // refresh where possible - a filtered corridor can occasionally not have every
+        // comparison target the unfiltered view did.
+        const itsSelect = document.getElementById('filter-its-target');
+        if (itsSelect) {
+            const prevValue = itsSelect.value;
+            itsSelect.innerHTML = fresh.html.itsTargetOptions;
+            if ([...itsSelect.options].some((option) => option.value === prevValue)) {
+                itsSelect.value = prevValue;
+            }
+        }
+    }
+
     renderAll();
+    applyItsTargetFilter();
+    applyTableScopeFilter();
     document.getElementById('fake-data-badge')?.classList.add('hidden');
     document.getElementById('fake-data-banner')?.classList.add('hidden');
 }
@@ -548,20 +592,16 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
 function currentFilterParams() {
     const params = new URLSearchParams();
     const corridor = document.getElementById('filter-corridor')?.value;
-    const sensor = document.getElementById('filter-sensor')?.value;
     if (corridor) params.set('corridor', corridor);
-    if (sensor && sensor !== 'all') params.set('sensor', sensor);
     return params;
 }
 
-for (const id of ['filter-corridor', 'filter-sensor']) {
-    document.getElementById(id)?.addEventListener('change', () => {
-        const params = currentFilterParams();
-        const query = params.toString();
-        history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
-        refreshAggregatesAndRerender(params);
-    });
-}
+document.getElementById('filter-corridor')?.addEventListener('change', () => {
+    const params = currentFilterParams();
+    const query = params.toString();
+    history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
+    refreshAggregatesAndRerender(params);
+});
 
 /* ------------------------------------------------------- ITS-target filter */
 

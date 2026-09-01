@@ -22,6 +22,7 @@ class StoreRecoveryTicksRequest extends FormRequest
             'controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
             // Null (fixed and green-wave never vary by sensor) or one of the four real modes.
             'sensor_mode' => ['nullable', 'in:inductive_loop,radar,camera,magnetometer'],
+            'corridor_config' => ['required', 'string', 'max:255'],
             'power_event_seconds' => ['required', 'numeric', 'min:0'],
             'power_outage_end_seconds' => ['required', 'numeric', 'gt:power_event_seconds'],
             'ticks' => ['required', 'array', 'min:1'],

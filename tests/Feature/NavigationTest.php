@@ -119,8 +119,7 @@ class NavigationTest extends TestCase
             ->assertSee('Show data table')
             ->assertSee('Recent runs')
             // The single filter row that scopes the page.
-            ->assertSee('id="filter-corridor"', false)
-            ->assertSee('id="filter-sensor"', false);
+            ->assertSee('id="filter-corridor"', false);
     }
 
     public function test_the_theme_defaults_to_light_and_the_header_offers_a_toggle(): void

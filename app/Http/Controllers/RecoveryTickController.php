@@ -19,16 +19,19 @@ class RecoveryTickController extends Controller
     {
         $controllerMode = $request->validated('controller_mode');
         $sensorMode = $request->validated('sensor_mode');
+        $corridorConfig = $request->validated('corridor_config');
 
         SimulationRunRecoveryTick::query()
             ->where('controller_mode', $controllerMode)
             ->where('sensor_mode', $sensorMode)
+            ->where('corridor_config', $corridorConfig)
             ->delete();
 
         $now = now();
         $rows = collect($request->validated('ticks'))->map(fn (array $tick) => [
             'controller_mode' => $controllerMode,
             'sensor_mode' => $sensorMode,
+            'corridor_config' => $corridorConfig,
             'tick' => $tick['tick'],
             'seconds' => $tick['seconds'],
             'throughput_per_min' => $tick['throughput_per_min'],

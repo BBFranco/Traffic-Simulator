@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable([
     'controller_mode',
     'sensor_mode',
+    'corridor_config',
     'tick',
     'seconds',
     'throughput_per_min',

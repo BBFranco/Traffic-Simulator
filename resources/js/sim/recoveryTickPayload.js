@@ -73,7 +73,7 @@ export function accumulateRecoveryTicks(acc, { rows, sideStreetRows }) {
 /** Averages an accumulator built by accumulateRecoveryTicks() into the `POST /api/recovery-ticks` payload shape. */
 export function finalizeRecoveryTickPayload(
     acc,
-    { controllerMode, sensorMode, dt, powerOutageStartTick, powerOutageEndTick }
+    { controllerMode, sensorMode, corridorId, dt, powerOutageStartTick, powerOutageEndTick }
 ) {
     const ticks = downsample([...acc.throughputArterialSum.keys()].sort((a, b) => a - b), MAX_CHART_POINTS);
 
@@ -81,6 +81,7 @@ export function finalizeRecoveryTickPayload(
         controller_mode: controllerMode,
         // fixed-time and green-wave never vary by sensor (matches simulation_runs' own column).
         sensor_mode: controllerMode === 'adaptive' ? sensorMode : null,
+        corridor_config: corridorId,
         power_event_seconds: round(powerOutageStartTick * dt, 1),
         power_outage_end_seconds: round(powerOutageEndTick * dt, 1),
         ticks: ticks.map((tick) => {

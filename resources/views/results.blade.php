@@ -1,113 +1,11 @@
 {{--
-    /results - Phase 1 shell.
-
-    Charts and tables are rendered against the hardcoded fake aggregates in
-    ResultsController. The shapes match what the real `simulation_runs` queries
-    return, so build step 22 swaps the data source and nothing else.
+    /results - real Eloquent aggregates against `simulation_runs`, computed by
+    ResultsController::buildPayload() and its viewModel()/metricSectionGroupsConfig()
+    helpers. The display-only derivations (labels, colours, formatters, lookups) live in the
+    controller rather than here so ResultsController::data()'s AJAX refresh can render the exact
+    same partials this page uses, with fresh data, instead of drifting out of sync with a second
+    copy of the same logic.
 --}}
-@php
-    $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
-    $modeColours = ['fixed' => '#ea580c', 'adaptive' => '#8b5cf6', 'green_wave' => '#059669'];
-    $powerLabels = ['normal' => 'Normal power', 'load_shedding' => 'Load shedding'];
-    $sensorLabels = [
-        'none' => 'None (timer only)',
-        'inductive_loop' => 'Inductive loop',
-        'radar' => 'Radar',
-        'camera' => 'Camera',
-        'magnetometer' => 'Magnetometer',
-    ];
-
-    // Data-table breakdown: fixed-time and green-wave collapse to one row apiece (see
-    // ResultsController::aggregatesBySensor()'s docblock), adaptive gets one row per sensor mode.
-    $sensorOrder = ['inductive_loop', 'radar', 'camera', 'magnetometer'];
-    $byKeyBySensor = [];
-    foreach ($aggregatesBySensor as $row) {
-        $byKeyBySensor["{$row['controller_mode']}|{$row['power_state']}"][] = $row;
-    }
-    foreach ($byKeyBySensor as $key => $rows) {
-        usort($rows, fn ($a, $b) => array_search($a['sensor_mode'], $sensorOrder, true) <=> array_search($b['sensor_mode'], $sensorOrder, true));
-        $byKeyBySensor[$key] = $rows;
-    }
-
-    // Mode+power lookup for the segmented/distribution table below - Total scope only,
-    // no sensor breakdown (keeps that table to one row per mode+power).
-    $byModeAndPower = [];
-    foreach ($aggregates as $row) {
-        $byModeAndPower["{$row['controller_mode']}|{$row['power_state']}"] = $row;
-    }
-
-    // "24.1" -> "24.1 ± 1.2" when a 95% CI half-width is available (>= 2 reps).
-    $fmtWithCi = fn (?float $value, ?float $ci95, int $decimals = 1) => $value === null
-        ? '—'
-        : number_format($value, $decimals).($ci95 === null ? '' : ' ± '.number_format($ci95, $decimals));
-
-    // Scope suffix convention shared with ResultsController::SCOPES and results.js's
-    // scopedMetric() - drives the per-condition-means and segmented tables below, which
-    // render all three scopes' rows up front and let JS toggle which is visible (same
-    // data-scope mechanism the "vs fixed-time" cards already use).
-    $scopeSuffixes = ['total' => '', 'arterial' => '_arterial', 'side_street' => '_side_street'];
-
-    $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
-    $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
-    $select = 'rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
-
-    // The "vs fixed-time" stat blocks: adaptive isn't one thing, it's whichever sensor is
-    // reading the intersection, so each sensor (plus a blended average) is its own selectable
-    // comparison target alongside green-wave - see ResultsController::pairedComparisons().
-    // A comparison's delta can be null - a group made up entirely of pre-scope-migration
-    // rows (see the scope-columns migration's docblock), or (for recovery) simply not
-    // measured under normal power. Render a neutral placeholder rather than a fabricated number.
-    $fmtDelta = fn (?float $v, string $suffix) => $v === null ? '—' : ($v > 0 ? '+' : '').number_format($v, 1).$suffix;
-
-    // Recovery time on its own reads as "how good the controller is at recovering" - it isn't,
-    // it only clocks how long throughput takes to sustain its way back to baseline, saying
-    // nothing about where wait time actually settles afterwards. Always show it next to that
-    // steady-state figure so a short-but-still-elevated recovery can't pass as fully healed.
-    $fmtSecondsPair = fn (?float $subject, ?float $baseline, string $suffix = 's') => ($subject === null || $baseline === null)
-        ? '—'
-        : number_format($subject, 1).$suffix.' vs '.number_format($baseline, 1).$suffix;
-
-    // Recovery time itself (unlike the post-recovery steady-state above) can go unmeasured on
-    // either side: computeRecoverySeconds() returns null whenever a metric never sustains its
-    // way back to baseline before the run ends - most commonly fixed-time's own wait-time
-    // baseline, which this corridor's fixed-cycle signals don't fully clear within the
-    // measured post-restore window (a real result, not a data gap - see the results-page
-    // audit). Show each side on its own rather than collapsing the whole row to "-" the moment
-    // either side is missing, so a subject that DID recover isn't hidden by a baseline that
-    // didn't.
-    $fmtRecoverySide = fn (?float $v, string $suffix = 's') => $v === null ? 'did not recover in window' : number_format($v, 1).$suffix;
-
-    $comparisonKey = fn (array $c) => $c['mode'].'|'.($c['sensor_mode'] ?? '');
-    $comparisonLabel = function (array $c) use ($modeLabels, $sensorLabels) {
-        if ($c['mode'] !== 'adaptive') {
-            return $modeLabels[$c['mode']];
-        }
-
-        return $c['sensor_mode'] === 'average'
-            ? 'Adaptive — avg. of sensors'
-            : 'Adaptive — '.$sensorLabels[$c['sensor_mode']];
-    };
-
-    $comparisonOptions = [];
-    foreach ($pairedComparisons as $c) {
-        $key = $comparisonKey($c);
-        if (isset($comparisonOptions[$key])) {
-            continue;
-        }
-        $comparisonOptions[$key] = ['key' => $key, 'label' => $comparisonLabel($c), 'mode' => $c['mode'], 'sensor_mode' => $c['sensor_mode']];
-    }
-    usort($comparisonOptions, function ($a, $b) use ($sensorOrder) {
-        $rank = function ($o) use ($sensorOrder) {
-            if ($o['mode'] === 'adaptive' && $o['sensor_mode'] === 'average') {
-                return -1;
-            }
-
-            return $o['mode'] === 'adaptive' ? array_search($o['sensor_mode'], $sensorOrder, true) : 100;
-        };
-
-        return $rank($a) <=> $rank($b);
-    });
-@endphp
 
 <x-app-layout title="Results" wide>
     <x-slot name="header">
@@ -155,7 +53,9 @@
         </div>
     </div>
 
-    {{-- ONE filter row, scoping everything below it. --}}
+    {{-- ONE filter row, scoping everything below it. The Scope select is client-side only,
+         same mechanism as "Compare against fixed-time" below - every chart already carries
+         all three scopes' numbers, so switching it never refetches. --}}
     <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
         <div>
             <label for="filter-corridor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Corridor</label>
@@ -167,22 +67,11 @@
             </select>
         </div>
         <div>
-            <label for="filter-sensor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Sensor mode</label>
-            <select id="filter-sensor" class="{{ $select }}">
-                <option value="all" {{ request('sensor', 'all') === 'all' ? 'selected' : '' }}>All sensor modes</option>
-                @foreach ($sensorLabels as $key => $label)
-                    <option value="{{ $key }}" {{ request('sensor') === $key ? 'selected' : '' }}>{{ $label }}</option>
-                @endforeach
+            <label for="filter-its-target" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Compare against fixed-time</label>
+            <select id="filter-its-target" class="{{ $select }}">
+                @include('results.partials.its-target-options')
             </select>
         </div>
-        <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
-            Filters scope every chart, table, and the batch-run corridor on this page.
-        </p>
-    </div>
-
-    {{-- Client-side only, same mechanism as "Compare against fixed-time" below - every chart
-         already carries all three scopes' numbers, so switching this never refetches. --}}
-    <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
         <div>
             <label for="filter-scope" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Scope</label>
             <select id="filter-scope" class="{{ $select }}">
@@ -192,339 +81,31 @@
             </select>
         </div>
         <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
-            Which roads' traffic every chart and stat block below measures.
+            Corridor filters every chart, table, and the batch-run corridor; compare-against picks
+            which ITS configuration the cards below are paired against fixed-time; scope picks
+            which roads' traffic they measure.
         </p>
     </div>
 
     {{-- ============================================ the research question --}}
-    <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-            <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
-            <p class="text-xs text-slate-500 dark:text-slate-400">
-                Paired comparison against Webster-timed fixed-time control on the same seeds, across every
-                stat block below.
-            </p>
-        </div>
-        <div>
-            <label for="filter-its-target" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Compare against fixed-time</label>
-            <select id="filter-its-target" class="{{ $select }}">
-                @foreach ($comparisonOptions as $option)
-                    <option value="{{ $option['key'] }}">{{ $option['label'] }}</option>
-                @endforeach
-            </select>
-        </div>
+    <div class="mb-4">
+        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+            Paired comparison against Webster-timed fixed-time control on the same seeds, across every
+            stat block below.
+        </p>
     </div>
 
     <section class="mb-8">
-        <div class="grid gap-3 sm:grid-cols-2">
-            @foreach ($pairedComparisons as $comparison)
-                @php
-                    $improves = $comparison['wait_improves'];
-                    $tone = match (true) {
-                        $improves === null => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40',
-                        $improves => 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]',
-                        default => 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]',
-                    };
-                    $figureTone = match (true) {
-                        $improves === null => 'text-slate-400 dark:text-slate-500',
-                        $improves => 'text-emerald-700 dark:text-emerald-300',
-                        default => 'text-rose-700 dark:text-rose-300',
-                    };
-                @endphp
-                <div class="rounded-lg border {{ $tone }} p-4" data-its-key="{{ $comparisonKey($comparison) }}" data-scope="{{ $comparison['scope'] }}">
-                    <div class="flex items-center gap-2">
-                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {{ $modeColours[$comparison['mode']] }}"></span>
-                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
-                        <span class="text-[10px] text-slate-500">vs fixed-time</span>
-                    </div>
-                    <div class="mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                        <span>{{ $powerLabels[$comparison['power_state']] }}</span>
-                        <span class="font-mono normal-case tracking-normal text-slate-400">n={{ $comparison['runs'] }} vs {{ $comparison['baseline_runs'] }}</span>
-                    </div>
-
-                    <div class="mt-3 flex items-baseline gap-2">
-                        <span class="text-3xl font-semibold leading-none {{ $figureTone }}">
-                            {{ $fmtDelta($comparison['wait_delta_pct'], '%') }}
-                        </span>
-                        <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $figureTone }}">
-                            @if ($improves === null)
-                                not measured yet
-                            @else
-                                <span aria-hidden="true">{{ $improves ? '▼' : '▲' }}</span>
-                                {{ $improves ? 'less waiting' : 'more waiting' }}
-                            @endif
-                        </span>
-                    </div>
-                    <p class="mt-0.5 text-[10px] text-slate-500">average wait per vehicle</p>
-
-                    <dl class="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-[11px] dark:border-slate-800">
-                        <div class="flex justify-between gap-2">
-                            <dt class="text-slate-500">Throughput</dt>
-                            <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                {{ $fmtDelta($comparison['throughput_delta_pct'], '%') }}
-                            </dd>
-                        </div>
-                        <div class="flex justify-between gap-2">
-                            <dt class="text-slate-500">Cleared w/o stopping</dt>
-                            <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                {{ $fmtDelta($comparison['cleared_delta_pp'], ' pp') }}
-                            </dd>
-                        </div>
-                    </dl>
-                </div>
-            @endforeach
+        <div class="grid gap-3 sm:grid-cols-2" id="research-question-cards">
+            @include('results.partials.research-question-cards')
         </div>
     </section>
 
     {{-- ============================================ more headline metrics --}}
-    @php
-        // Groups of sections rendered side by side (lg+) - a group of one is just a full-width
-        // section, same as before. The recovery pair is two independently-computed clocks (see
-        // runHeadless.js's computeRecoverySeconds()): one for wait time returning to baseline,
-        // one for throughput - kept as siblings so neither reads as "the" recovery number.
-        $metricSectionGroups = [
-            [
-                [
-                    'heading' => 'Does ITS move more traffic?',
-                    'description' => 'Same paired comparison, headlining throughput instead of wait time. Higher is better.',
-                    'valueKey' => 'throughput_delta_pct',
-                    'improvesKey' => 'throughput_improves',
-                    'suffix' => '%',
-                    'improvedLabel' => 'more throughput',
-                    'worseLabel' => 'less throughput',
-                    'unitLabel' => 'vehicles cleared per minute',
-                    'secondary' => [
-                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
-                        ['label' => 'Cleared w/o stopping', 'key' => 'cleared_delta_pp', 'suffix' => ' pp'],
-                    ],
-                    'filter' => null,
-                ],
-            ],
-            [
-                [
-                    'heading' => 'Does ITS clear more traffic without stopping?',
-                    'description' => 'Share of vehicles that pass through without a full stop. Higher is better.',
-                    'valueKey' => 'cleared_delta_pp',
-                    'improvesKey' => 'cleared_improves',
-                    'suffix' => ' pp',
-                    'improvedLabel' => 'more cleared w/o stopping',
-                    'worseLabel' => 'fewer cleared w/o stopping',
-                    'unitLabel' => 'percentage-point change',
-                    'secondary' => [
-                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
-                        ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
-                    ],
-                    'filter' => null,
-                ],
-            ],
-            [
-                [
-                    'heading' => 'How fast does ITS recover from load shedding? - wait time',
-                    'description' => 'Time for wait time to drop back to its pre-cut level once power is restored. Lower is better.',
-                    'valueKey' => 'recovery_wait_delta_pct',
-                    'improvesKey' => 'recovery_wait_improves',
-                    'suffix' => '%',
-                    'improvedLabel' => 'faster recovery',
-                    'worseLabel' => 'slower recovery',
-                    'unitLabel' => 'time to recovery',
-                    'secondary' => [
-                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
-                        ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
-                    ],
-                    // Deliberately NOT requiring recovery_wait_delta_pct !== null here: fixed-time's
-                    // own wait-time baseline routinely never crosses the recovered threshold within
-                    // the measured window on this corridor (a real result - see $fmtRecoverySide's
-                    // comment above), which would otherwise silently hide every comparison against
-                    // it. The card itself renders that as "did not recover in window" instead.
-                    'filter' => fn ($c) => $c['power_state'] === 'load_shedding',
-                    // Recovery time alone can't be trusted (see $fmtSecondsPair's comment above) -
-                    // this card always renders it next to the post-recovery steady-state wait.
-                    'recoveryPairMetric' => 'wait',
-                ],
-                [
-                    'heading' => 'How fast does ITS recover from load shedding? - throughput',
-                    'description' => 'Time for throughput to climb back to its pre-cut level once power is restored. Lower is better.',
-                    'valueKey' => 'recovery_delta_pct',
-                    'improvesKey' => 'recovery_improves',
-                    'suffix' => '%',
-                    'improvedLabel' => 'faster recovery',
-                    'worseLabel' => 'slower recovery',
-                    'unitLabel' => 'time to recovery',
-                    'secondary' => [
-                        ['label' => 'Avg wait', 'key' => 'wait_delta_pct', 'suffix' => '%'],
-                        ['label' => 'Throughput', 'key' => 'throughput_delta_pct', 'suffix' => '%'],
-                    ],
-                    // Same reasoning as the wait card's filter above - kept consistent even though
-                    // throughput's own fixed-time baseline hasn't been observed to go unmeasured.
-                    'filter' => fn ($c) => $c['power_state'] === 'load_shedding',
-                    'recoveryPairMetric' => 'throughput',
-                ],
-            ],
-        ];
-    @endphp
-
-    @foreach ($metricSectionGroups as $group)
-        @php
-            // Filter to the sections that actually have rows to show BEFORE deciding the
-            // wrapper's column count - a sibling with no data yet (e.g. time_to_recovery_wait_
-            // seconds on runs older than that column, see the memory note) must not still claim
-            // a grid column, or the one section that does render gets squeezed to half-width.
-            $renderableSections = array_values(array_filter(
-                array_map(
-                    fn ($section) => ['section' => $section, 'rows' => array_values(array_filter($pairedComparisons, $section['filter'] ?? fn ($c) => true))],
-                    $group
-                ),
-                fn ($entry) => count($entry['rows'])
-            ));
-        @endphp
-        @if (count($renderableSections))
-            <div class="mb-8 grid gap-4 {{ count($renderableSections) > 1 ? 'lg:grid-cols-2' : '' }}">
-                @foreach ($renderableSections as $entry)
-                    @php
-                        $section = $entry['section'];
-                        $rows = $entry['rows'];
-                    @endphp
-                    <section>
-                        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ $section['heading'] }}</h2>
-                        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">{{ $section['description'] }}</p>
-
-                        @php
-                            // How many cards can be visible AT ONCE, not how many $rows carries:
-                            // every sensor/scope combination is rendered into the DOM (JS toggles
-                            // `.hidden` on the ones that don't match the current "Compare against
-                            // fixed-time" + Scope selection - see applyItsTargetFilter()), but only
-                            // one row per power_state is ever visible at a time. A recovery section
-                            // only ever has load_shedding rows, so it's really a 1-visible-card grid
-                            // even though $rows itself can hold a dozen hidden siblings - sizing the
-                            // grid off count($rows) left it reserving a second, permanently-empty
-                            // column.
-                            $visiblePowerStates = count(array_unique(array_column($rows, 'power_state')));
-                        @endphp
-                        <div class="grid gap-3 {{ $visiblePowerStates > 1 ? 'sm:grid-cols-2' : '' }}">
-                            @foreach ($rows as $comparison)
-                                @php
-                                    $improves = $comparison[$section['improvesKey']];
-                                    $value = $comparison[$section['valueKey']];
-                                    $tone = match (true) {
-                                        $improves === null => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40',
-                                        $improves => 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]',
-                                        default => 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]',
-                                    };
-                                    $figureTone = match (true) {
-                                        $improves === null => 'text-slate-400 dark:text-slate-500',
-                                        $improves => 'text-emerald-700 dark:text-emerald-300',
-                                        default => 'text-rose-700 dark:text-rose-300',
-                                    };
-
-                                    // For the recovery cards specifically, a null delta usually means one
-                                    // side never crossed the recovered threshold within the measured
-                                    // window (see $fmtRecoverySide's comment) rather than a data gap - say
-                                    // so explicitly instead of the generic "not measured yet".
-                                    $recoveryPairMetric = $section['recoveryPairMetric'] ?? null;
-                                    $recoverySubjectSeconds = match ($recoveryPairMetric) {
-                                        'wait' => $comparison['recovery_wait_seconds'],
-                                        'throughput' => $comparison['recovery_seconds'],
-                                        default => null,
-                                    };
-                                    $recoveryBaselineSeconds = match ($recoveryPairMetric) {
-                                        'wait' => $comparison['baseline_recovery_wait_seconds'],
-                                        'throughput' => $comparison['baseline_recovery_seconds'],
-                                        default => null,
-                                    };
-                                @endphp
-                                <div class="rounded-lg border {{ $tone }} p-4" data-its-key="{{ $comparisonKey($comparison) }}" data-scope="{{ $comparison['scope'] }}">
-                                    <div class="flex items-center gap-2">
-                                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {{ $modeColours[$comparison['mode']] }}"></span>
-                                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
-                                        <span class="text-[10px] text-slate-500">vs fixed-time</span>
-                                    </div>
-                                    <div class="mt-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                                        <span>{{ $powerLabels[$comparison['power_state']] }}</span>
-                                        <span class="font-mono normal-case tracking-normal text-slate-400">n={{ $comparison['runs'] }} vs {{ $comparison['baseline_runs'] }}</span>
-                                    </div>
-
-                                    <div class="mt-3 flex items-baseline gap-2">
-                                        <span class="text-3xl font-semibold leading-none {{ $figureTone }}">
-                                            @if ($recoveryPairMetric)
-                                                {{-- The headline here is the SELECTED mode's own recovery time, not
-                                                     the delta vs fixed-time - fixed-time is supporting context (the
-                                                     "Recovery time (subject vs fixed-time)" row below), not the main
-                                                     attraction, and this stays meaningful even when fixed-time never
-                                                     recovered in the window and no delta can be computed at all. --}}
-                                                {{ $recoverySubjectSeconds === null ? '—' : number_format($recoverySubjectSeconds, 1).'s' }}
-                                            @else
-                                                {{ $fmtDelta($value, $section['suffix']) }}
-                                            @endif
-                                        </span>
-                                        <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $figureTone }}">
-                                            @if ($recoveryPairMetric)
-                                                @if ($recoverySubjectSeconds === null && $recoveryBaselineSeconds === null)
-                                                    neither side recovered in window
-                                                @elseif ($recoverySubjectSeconds === null)
-                                                    did not recover in window
-                                                @elseif ($recoveryBaselineSeconds === null)
-                                                    fixed-time did not recover in window
-                                                @elseif ($improves === null)
-                                                    not measured yet
-                                                @else
-                                                    <span aria-hidden="true">{{ $value >= 0 ? '▲' : '▼' }}</span>
-                                                    {{ $fmtDelta($value, '%') }} {{ $improves ? $section['improvedLabel'] : $section['worseLabel'] }} than fixed-time
-                                                @endif
-                                            @elseif ($improves === null)
-                                                not measured yet
-                                            @else
-                                                <span aria-hidden="true">{{ $value >= 0 ? '▲' : '▼' }}</span>
-                                                {{ $improves ? $section['improvedLabel'] : $section['worseLabel'] }}
-                                            @endif
-                                        </span>
-                                    </div>
-                                    <p class="mt-0.5 text-[10px] text-slate-500">{{ $section['unitLabel'] }}</p>
-
-                                    <dl class="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-[11px] dark:border-slate-800">
-                                        @foreach ($section['secondary'] as $secondary)
-                                            <div class="flex justify-between gap-2">
-                                                <dt class="text-slate-500">{{ $secondary['label'] }}</dt>
-                                                <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                                    {{ $fmtDelta($comparison[$secondary['key']], $secondary['suffix']) }}
-                                                </dd>
-                                            </div>
-                                        @endforeach
-                                        @if (($section['recoveryPairMetric'] ?? null) === 'wait')
-                                            <div class="flex justify-between gap-2">
-                                                <dt class="text-slate-500">Recovery time (subject vs fixed-time)</dt>
-                                                <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                                    {{ $fmtRecoverySide($recoverySubjectSeconds) }} vs {{ $fmtRecoverySide($recoveryBaselineSeconds) }}
-                                                </dd>
-                                            </div>
-                                            <div class="flex justify-between gap-2">
-                                                <dt class="text-slate-500">Post-recovery avg wait</dt>
-                                                <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                                    {{ $fmtSecondsPair($comparison['post_recovery_avg_wait'], $comparison['baseline_post_recovery_avg_wait']) }}
-                                                </dd>
-                                            </div>
-                                        @elseif (($section['recoveryPairMetric'] ?? null) === 'throughput')
-                                            <div class="flex justify-between gap-2">
-                                                <dt class="text-slate-500">Recovery time (subject vs fixed-time)</dt>
-                                                <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                                    {{ $fmtRecoverySide($recoverySubjectSeconds) }} vs {{ $fmtRecoverySide($recoveryBaselineSeconds) }}
-                                                </dd>
-                                            </div>
-                                            <div class="flex justify-between gap-2">
-                                                <dt class="text-slate-500">Post-recovery throughput</dt>
-                                                <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                                    {{ $fmtSecondsPair($comparison['post_recovery_throughput'], $comparison['baseline_post_recovery_throughput'], ' veh/min') }}
-                                                </dd>
-                                            </div>
-                                        @endif
-                                    </dl>
-                                </div>
-                            @endforeach
-                        </div>
-                    </section>
-                @endforeach
-            </div>
-        @endif
-    @endforeach
+    <div id="metric-section-groups">
+        @include('results.partials.metric-section-groups')
+    </div>
 
     {{-- ========================================================= bar trio --}}
     <section class="mb-8">
@@ -588,32 +169,7 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                        @foreach ($powerStates as $power)
-                            @foreach ($controllerModes as $mode)
-                                @php $rows = $byKeyBySensor["{$mode}|{$power}"] ?? []; @endphp
-                                @foreach ($rows as $row)
-                                    @foreach ($scopeSuffixes as $scope => $suffix)
-                                        <tr class="text-slate-700 dark:text-slate-300 {{ $scope === 'total' ? '' : 'hidden' }}" data-scope="{{ $scope }}">
-                                            <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
-                                                <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
-                                                {{ $modeLabels[$mode] }}
-                                            </th>
-                                            <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">{{ $powerLabels[$power] }}</td>
-                                            <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">
-                                                {{ $row['sensor_mode'] === null ? '—' : $sensorLabels[$row['sensor_mode']] }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
-                                            <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['avg_wait_time'.$suffix], $row['avg_wait_time'.$suffix.'_ci95']) }}</td>
-                                            <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['throughput_per_min'.$suffix], $row['throughput_per_min'.$suffix.'_ci95']) }}</td>
-                                            <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['pct_cleared_without_stop'.$suffix], $row['pct_cleared_without_stop'.$suffix.'_ci95']) }}</td>
-                                            <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
-                                                {{ $row['time_to_recovery_seconds'.$suffix] === null ? '—' : number_format($row['time_to_recovery_seconds'.$suffix], 1) }}
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                @endforeach
-                            @endforeach
-                        @endforeach
+                        @include('results.partials.per-condition-rows')
                     </tbody>
                 </table>
             </div>
@@ -652,28 +208,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                    @foreach ($controllerModes as $mode)
-                        @php $row = $byModeAndPower["{$mode}|load_shedding"] ?? null; @endphp
-                        @if ($row)
-                            @foreach ($scopeSuffixes as $scope => $suffix)
-                                <tr class="text-slate-700 dark:text-slate-300 {{ $scope === 'total' ? '' : 'hidden' }}" data-scope="{{ $scope }}">
-                                    <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">
-                                        <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$mode] }}"></span>
-                                        {{ $modeLabels[$mode] }}
-                                    </th>
-                                    <td class="px-4 py-2 text-right">{{ $row['median_wait_time'] === null ? '—' : number_format($row['median_wait_time'], 1) }}</td>
-                                    <td class="px-4 py-2 text-right">{{ $row['p95_wait_time'] === null ? '—' : number_format($row['p95_wait_time'], 1) }}</td>
-                                    <td class="px-4 py-2 text-right">{{ $row['max_wait_time'] === null ? '—' : number_format($row['max_wait_time'], 1) }}</td>
-                                    <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_pre_outage'.$suffix] === null ? '—' : number_format($row['avg_wait_time_pre_outage'.$suffix], 1) }}</td>
-                                    <td class="px-4 py-2 text-right text-slate-400">{{ $row['avg_wait_time_during_outage'.$suffix] === null ? '—' : number_format($row['avg_wait_time_during_outage'.$suffix], 1) }}</td>
-                                    <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_post_recovery'.$suffix] === null ? '—' : number_format($row['avg_wait_time_post_recovery'.$suffix], 1) }}</td>
-                                    <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_pre_outage'.$suffix] === null ? '—' : number_format($row['throughput_per_min_pre_outage'.$suffix], 1) }}</td>
-                                    <td class="px-4 py-2 text-right text-slate-400">{{ $row['throughput_per_min_during_outage'.$suffix] === null ? '—' : number_format($row['throughput_per_min_during_outage'.$suffix], 1) }}</td>
-                                    <td class="px-4 py-2 text-right">{{ $row['throughput_per_min_post_recovery'.$suffix] === null ? '—' : number_format($row['throughput_per_min_post_recovery'.$suffix], 1) }}</td>
-                                </tr>
-                            @endforeach
-                        @endif
-                    @endforeach
+                    @include('results.partials.segmented-rows')
                 </tbody>
             </table>
         </div>
@@ -737,12 +272,11 @@
             One row per completed batch run, most recent first - not filtered by the "Compare against
             fixed-time" selection above, so it can easily show a different sensor mode than whatever
             aggregate you're looking at. Rows matching the current selection are highlighted; the rest
-            are dimmed rather than hidden, so you can still audit recent activity generally. Use the
-            "Sensor mode" filter at the top of the page to actually restrict this table.
+            are dimmed rather than hidden, so you can still audit recent activity generally.
         </p>
 
         <div class="overflow-x-auto {{ $card }}">
-            <table class="w-full min-w-[860px] text-left text-xs">
+            <table id="recent-runs-table" class="w-full min-w-[860px] text-left text-xs">
                 <thead class="{{ $tableHead }}">
                     <tr>
                         <th scope="col" class="px-4 py-2.5 font-semibold">Run</th>
@@ -757,34 +291,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                    @foreach ($recentRuns as $run)
-                        <tr class="text-slate-700 transition dark:text-slate-300"
-                            data-run-controller-mode="{{ $run['controller_mode'] }}"
-                            data-run-sensor-mode="{{ $run['sensor_mode'] ?? '' }}">
-                            <td class="whitespace-nowrap px-4 py-2 font-mono text-slate-400 dark:text-slate-500">#{{ $run['id'] }}</td>
-                            <td class="whitespace-nowrap px-4 py-2 font-mono text-slate-500 dark:text-slate-400">{{ $run['seed'] }}</td>
-                            <td class="whitespace-nowrap px-4 py-2">
-                                <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$run['controller_mode']] }}"></span>
-                                {{ $modeLabels[$run['controller_mode']] }}
-                            </td>
-                            <td class="whitespace-nowrap px-4 py-2">
-                                @if ($run['power_state'] === 'load_shedding')
-                                    <span class="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">Load shedding</span>
-                                @else
-                                    <span class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">Normal</span>
-                                @endif
-                            </td>
-                            <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">
-                                {{ $run['sensor_mode'] === null ? '—' : $sensorLabels[$run['sensor_mode']] }}
-                            </td>
-                            <td class="px-4 py-2 text-right">{{ number_format($run['avg_wait_time'], 1) }}</td>
-                            <td class="px-4 py-2 text-right">{{ number_format($run['throughput_per_min'], 1) }}</td>
-                            <td class="px-4 py-2 text-right">{{ number_format($run['pct_cleared_without_stop'], 1) }}</td>
-                            <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
-                                {{ $run['time_to_recovery_seconds'] === null ? '—' : number_format($run['time_to_recovery_seconds'], 1) }}
-                            </td>
-                        </tr>
-                    @endforeach
+                    @include('results.partials.recent-runs-rows')
                 </tbody>
             </table>
         </div>

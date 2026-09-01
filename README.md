@@ -2,8 +2,8 @@
 
 Browser-based traffic simulator comparing **fixed-time**, **sensor-adaptive** and
 **green-wave** signal control on the same corridor and the same seeded traffic,
-then cutting the power mid-run to see which assumptions survive. outh
-African context.
+then cutting the power mid-run to see which assumptions survive. Modelled on a
+South African context.
 
 Default scenario: Pretorius Street (inbound) and Francis Baard Street (outbound)
 into Hatfield, Pretoria — two one-way 4-lane arterials, four signalised
@@ -11,16 +11,11 @@ intersections each, joined by four signalised two-way cross-streets.
 
 ---
 
-## Status: Phase 1 complete, Phase 2 substantially built
+## What it does
 
-The build was split shell-first / logic-second, deliberately. **Phase 1** (every
-page, every navigation path, every control, every visual output — nothing
-computing anything real) was finished 2026-08-18. **Phase 2** has since replaced
-the fakes behind almost every control with real simulation:
-
-| Area | State |
+| Area | Details |
 |---|---|
-| `/simulator` road layout | Drawn from `corridors/*.json` — surfaces, lane markings, stop lines, junction boxes, signal heads, pan/zoom. Unchanged since Phase 1. |
+| `/simulator` road layout | Drawn from `corridors/*.json` — surfaces, lane markings, stop lines, junction boxes, signal heads, pan/zoom |
 | Cars, IDM, lane changing | `resources/js/sim/car.js` + `engine.js` — IDM car-following, MOBIL-based lane changing, a 3-size truck mix with its own control slider |
 | Controllers | `resources/js/sim/controllers/` — `fixedTime.js` (Webster's method), `adaptive.js` (sensor-driven, 4 sensor fidelity modes), `greenWave.js`, `allWayStop.js` (load-shedding fallback) |
 | Sensors, load shedding | `sensors.js` — inductive loop / magnetometer / radar / camera fidelity degradation feeding `shouldExtendGreen()`; load-shedding forces all-way-stop |
@@ -29,16 +24,16 @@ the fakes behind almost every control with real simulation:
 | Batch runner, `simulation_runs` | `batch/runBatch.mjs` sweeps the full 12-condition experimental matrix (`experimentalMatrix.js`) and posts results via `POST /api/simulation-runs` / `/api/recovery-ticks` |
 | `/results` charts | Real charts against real `simulation_runs` / `simulation_run_recovery_ticks` queries in `ResultsController`, scoped Total / Arterial / Side-Streets, with paired fixed-time comparisons and recovery-time (both throughput- and wait-based) metrics |
 
-Layered on top of the numbered spec steps, added by direct user request rather
-than the spec document: lane changing + trucks, the Total/Arterial/Side-Streets
-scope split, wait-based recovery metrics alongside the original throughput-based
-ones, and per-scope pre/during/post-outage segment stats. A plateau detector
-(`resources/js/sim/plateau.js`, `batch/warmupDiagnostics.mjs`) confirmed the
-360s warm-up window is sufficient for every scope.
+On top of the core simulation: lane changing + trucks, the Total/Arterial/
+Side-Streets scope split, wait-based recovery metrics alongside the original
+throughput-based ones, and per-scope pre/during/post-outage segment stats. A
+plateau detector (`resources/js/sim/plateau.js`, `batch/warmupDiagnostics.mjs`)
+confirms the 360s warm-up window is sufficient for every scope.
 
-The discipline that still matters from Phase 1: real logic only replaces what
-sits *behind* the controls — it must not change layout, routing, or the
-controls themselves. `tests/Feature/NavigationTest.php` is the guard on that.
+`tests/Feature/NavigationTest.php` guards navigation, layout, and every
+control against regressions: log in, land on `/simulator`, see the layout and
+every control, switch to `/results`, see the charts and their table twins, log
+out.
 
 ---
 
@@ -46,12 +41,11 @@ controls themselves. `tests/Feature/NavigationTest.php` is the guard on that.
 
 Served by Laravel Herd at **http://traffic-simulator.test**.
 
-The project folder is `Traffic Simulator` (with a space), which Herd would
-otherwise serve as the unusable hostname `Traffic Simulator.test`. A directory
-junction gives it a clean name without needing admin rights:
+The project folder is `Traffic-Simulator`. A directory junction maps it to the
+`traffic-simulator` hostname without needing admin rights:
 
 ```
-mklink /J "%USERPROFILE%\.config\herd\config\valet\Sites\traffic-simulator" "%USERPROFILE%\Herd\Traffic Simulator"
+mklink /J "%USERPROFILE%\.config\herd\config\valet\Sites\traffic-simulator" "%USERPROFILE%\Herd\Traffic-Simulator"
 ```
 
 (`herd link traffic-simulator` does the same thing but needs elevation, because it
@@ -93,9 +87,9 @@ available — just set `DB_CONNECTION=sqlite`.
 php artisan test
 ```
 
-`tests/Feature/NavigationTest.php` encodes the Phase 1 milestone: log in, land on
-`/simulator`, see the layout and every control, switch to `/results`, see the
-charts and their table twins, log out. Phase 2 is not allowed to break it.
+`tests/Feature/NavigationTest.php` covers the full navigation path: log in,
+land on `/simulator`, see the layout and every control, switch to `/results`,
+see the charts and their table twins, log out.
 
 ---
 
@@ -106,13 +100,13 @@ Nothing about the road network is hardcoded. `corridors/*.json` drives it:
 | File | Purpose |
 |---|---|
 | `hatfield-pretorius-francisbaard.json` | The default scenario: 2 arterials × 4 intersections + 4 connectors |
-| `two-intersection-test.json` | Build step 11 — smallest config that still exercises the loader |
-| `single-intersection.json` | Build steps 6–10 — one 4-way junction, far easier to debug controllers on |
+| `two-intersection-test.json` | Smallest config that still exercises the loader |
+| `single-intersection.json` | One 4-way junction, far easier to debug controllers on |
 
 `SimulatorController` serves them at `GET /corridors/{id}`; the scenario picker
 fetches on change. They live at the project root rather than in `public/` or the
-JS bundle because the headless batch runner (build step 17) has to read the same
-files from disk — one source of truth for both the browser and Node.
+JS bundle because the headless batch runner has to read the same files from
+disk — one source of truth for both the browser and Node.
 
 **Geometry conventions** (see `resources/js/sim/corridor.js`):
 
@@ -128,8 +122,8 @@ files from disk — one source of truth for both the browser and Node.
 **245 m** apart; Francis Baard runs the same block sequence in reverse, being
 outbound/westbound. Because every block is the same length, the green-wave offset
 chain is a constant step — 245 m ÷ 13.89 m/s ≈ **17.6 s per intersection** at the
-50 km/h target speed — which makes the progression band unusually easy to verify
-by hand at build step 14.
+50 km/h target speed — which makes the progression band unusually easy to
+verify by hand.
 
 ---
 

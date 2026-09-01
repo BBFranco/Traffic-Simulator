@@ -190,6 +190,7 @@ async function main() {
                 finalizeRecoveryTickPayload(recoveryAcc, {
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
+                    corridorId: corridorConfig.id,
                     dt: args.dt,
                     powerOutageStartTick: args.powerOutageStartTick,
                     powerOutageEndTick: args.powerOutageEndTick,
