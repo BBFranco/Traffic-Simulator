@@ -33,6 +33,7 @@ import {
     lineEndLabels,
     xRangeBand,
 } from './charts/theme.js';
+import { Fireworks } from 'fireworks-js';
 import { onThemeChange } from './theme.js';
 import { runHeadless } from './sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
@@ -461,6 +462,7 @@ batchButton?.addEventListener('click', async () => {
         if (pending.length) await postSimulationRuns(pending);
 
         await refreshAggregatesAndRerender();
+        celebrateBatchComplete(totalRuns);
     } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Batch run failed', error);
@@ -482,6 +484,44 @@ batchButton?.addEventListener('click', async () => {
         batchProgressWrap?.classList.add('hidden');
     }
 });
+
+/** Success toast + a brief fireworks burst when the 360-run batch finishes. */
+function celebrateBatchComplete(totalRuns) {
+    const toast = document.getElementById('batch-complete-toast');
+    const toastLabel = document.getElementById('batch-complete-toast-label');
+    if (toastLabel) toastLabel.textContent = `Dataset generated — ${totalRuns} runs complete.`;
+    toast?.classList.remove('hidden');
+
+    const fireworksContainer = document.getElementById('fireworks-container');
+    if (fireworksContainer) {
+        fireworksContainer.classList.remove('hidden');
+        const fireworks = new Fireworks(fireworksContainer, {
+            autoresize: true,
+            opacity: 0.5,
+            acceleration: 1.05,
+            friction: 0.97,
+            gravity: 1.5,
+            particles: 90,
+            explosion: 5,
+            intensity: 30,
+            traceLength: 3,
+            traceSpeed: 10,
+            rocketsPoint: { min: 0, max: 100 },
+            lineWidth: { explosion: { min: 1, max: 3 }, trace: { min: 1, max: 2 } },
+            lineStyle: 'round',
+            hue: { min: 0, max: 360 },
+            delay: { min: 15, max: 30 },
+            sound: { enabled: false },
+        });
+        fireworks.start();
+        setTimeout(() => {
+            fireworks.stop();
+            fireworksContainer.classList.add('hidden');
+        }, 4000);
+    }
+
+    setTimeout(() => toast?.classList.add('hidden'), 6000);
+}
 
 function updateBatchProgress(completed, total, conditionKey) {
     const pct = Math.round((completed / total) * 100);
