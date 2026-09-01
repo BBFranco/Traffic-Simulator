@@ -23,7 +23,7 @@ class NavigationTest extends TestCase
         $this->get('/')
             ->assertOk()
             ->assertSee('Log in')
-            ->assertSee('Smart Traffic Simulator');
+            ->assertSee('ARTIS');
     }
 
     public function test_guests_are_redirected_away_from_the_app_pages(): void

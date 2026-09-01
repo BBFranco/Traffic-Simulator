@@ -4,9 +4,9 @@
             <div class="flex">
                 <div class="shrink-0 flex items-center gap-3">
                     <a href="{{ route('simulator') }}" class="flex items-center gap-3">
-                        <x-application-logo class="h-8 w-8" />
+                        <x-application-logo class="h-8 w-auto" />
                         <span class="hidden sm:block text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-                            {{ config('app.name') }}
+                            ARTIS
                         </span>
                     </a>
                 </div>

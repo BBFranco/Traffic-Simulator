@@ -1,4 +1,4 @@
-# Smart Traffic Simulator
+# ARTIS — Adaptive Road Traffic Intersection System
 
 Browser-based traffic simulator comparing **fixed-time**, **sensor-adaptive** and
 **green-wave** signal control on the same corridor and the same seeded traffic,

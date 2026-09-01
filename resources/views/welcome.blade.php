@@ -14,8 +14,8 @@
             <header class="border-b border-slate-200 dark:border-slate-800">
                 <div class="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
                     <div class="flex items-center gap-3">
-                        <x-application-logo class="h-8 w-8" />
-                        <span class="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">{{ config('app.name') }}</span>
+                        <x-application-logo class="h-8 w-auto" />
+                        <span class="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">ARTIS</span>
                     </div>
                     <nav class="flex items-center gap-2">
                         <x-theme-toggle />
@@ -37,7 +37,7 @@
                         IoT-enabled smart traffic management
                     </span>
 
-                    <h1 class="sr-only">Smart Traffic Simulator</h1>
+                    <h1 class="sr-only">ARTIS — Adaptive Road Traffic Intersection System</h1>
 
                     <p class="mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-400">
                         A browser-based traffic simulator that runs fixed-time, sensor-adaptive and green-wave

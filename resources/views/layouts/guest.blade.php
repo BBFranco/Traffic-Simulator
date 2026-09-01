@@ -18,8 +18,8 @@
         <div class="min-h-full flex flex-col items-center justify-center px-4 py-12">
             <div class="flex flex-col items-center gap-3">
                 <a href="/" class="flex items-center gap-3">
-                    <x-application-logo class="h-11 w-11" />
-                    <span class="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">{{ config('app.name') }}</span>
+                    <x-application-logo class="h-11 w-auto" />
+                    <span class="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">ARTIS</span>
                 </a>
                 <p class="max-w-sm text-center text-xs leading-relaxed text-slate-500">
                     Fixed-time vs. sensor-adaptive signal control under load shedding
