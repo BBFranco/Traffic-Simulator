@@ -386,7 +386,17 @@ const batchRunningBadge = document.getElementById('batch-running-badge');
 
 let batchRunning = false;
 
-batchButton?.addEventListener('click', async () => {
+batchButton?.addEventListener('click', () => openBatchModal());
+
+/**
+ * Runs the 360-run batch (unchanged from before the modal existed - only the
+ * corridorConfig passed in can now carry per-street demand overrides from the
+ * modal, see runBatchModal.js's docblock at the top of this section).
+ *
+ * @param {Record<string, {min: number, max: number, saturationFlowPerLanePerHour: number}>} demandOverrides
+ *   Keyed by street id (arterial or connector), spec §10-11.
+ */
+async function runBatch(demandOverrides) {
     if (batchRunning) return;
     batchRunning = true;
     batchButton.disabled = true;
@@ -400,7 +410,7 @@ batchButton?.addEventListener('click', async () => {
 
     try {
         const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
-        const corridorConfig = await fetchCorridor(corridorId);
+        const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
         const totalRuns = matrix.length * REPS_PER_CONDITION;
 
@@ -483,7 +493,7 @@ batchButton?.addEventListener('click', async () => {
         batchRunningBadge?.classList.add('hidden');
         batchProgressWrap?.classList.add('hidden');
     }
-});
+}
 
 /** Success toast + a brief fireworks burst when the 360-run batch finishes. */
 function celebrateBatchComplete(totalRuns) {
@@ -536,6 +546,127 @@ async function fetchCorridor(id) {
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error(`Failed to load corridor "${id}" (HTTP ${response.status}).`);
     return response.json();
+}
+
+/* ============================================================ batch modal (spec §10-11) */
+
+/** Every arterial + connector in a corridor config, in the same shape a demand row needs. */
+function streetsOf(corridorConfig) {
+    const arterials = (corridorConfig.arterials ?? []).map((a) => ({
+        id: a.id, name: a.shortName ?? a.name, demand: a.demand,
+    }));
+    const connectors = (corridorConfig.connectors ?? []).map((c) => ({
+        id: c.id, name: c.name, demand: c.demand,
+    }));
+    return [...arterials, ...connectors];
+}
+
+const batchModalBackdrop = document.getElementById('batch-modal-backdrop');
+const batchModalStreets = document.getElementById('batch-modal-streets');
+
+async function openBatchModal() {
+    if (batchRunning) return;
+    batchModalBackdrop?.classList.remove('hidden');
+    batchModalStreets.innerHTML = '<p class="text-xs text-slate-400">Loading corridor…</p>';
+
+    try {
+        const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
+        const corridorConfig = await fetchCorridor(corridorId);
+        renderBatchModalStreets(corridorConfig, corridorId);
+    } catch (error) {
+        batchModalStreets.innerHTML = `<p class="text-xs text-red-600 dark:text-red-400">${error.message}</p>`;
+    }
+}
+
+function closeBatchModal() {
+    batchModalBackdrop?.classList.add('hidden');
+}
+
+function renderBatchModalStreets(corridorConfig, corridorId) {
+    const streets = streetsOf(corridorConfig);
+
+    batchModalStreets.innerHTML = streets
+        .map((street) => {
+            const importOptions = data.trafficCounts
+                .filter((c) => c.corridor_config === corridorId && c.street === street.id)
+                .map((c) => `<option value="${c.id}">${c.label}</option>`)
+                .join('');
+
+            return `
+                <div class="rounded-md border border-slate-200 p-3 dark:border-slate-700" data-street-row data-street-id="${street.id}">
+                    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">${street.name}</span>
+                        <select data-field="import" class="rounded-md border-slate-300 bg-white py-1 text-[11px] text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                            <option value="">Import from Traffic Counter…</option>
+                            ${importOptions}
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <label class="text-[10px] text-slate-500">Min (veh/lane/min)
+                            <input type="number" step="0.1" data-field="min" value="${street.demand.spawnRatePerLanePerMinMin}"
+                                   class="mt-0.5 w-full rounded-md border-slate-300 bg-white py-1 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                        </label>
+                        <label class="text-[10px] text-slate-500">Max (veh/lane/min)
+                            <input type="number" step="0.1" data-field="max" value="${street.demand.spawnRatePerLanePerMinMax}"
+                                   class="mt-0.5 w-full rounded-md border-slate-300 bg-white py-1 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                        </label>
+                        <label class="text-[10px] text-slate-500">Saturation flow (veh/lane/hr)
+                            <input type="number" step="1" data-field="saturation" value="${street.demand.saturationFlowPerLanePerHour}"
+                                   class="mt-0.5 w-full rounded-md border-slate-300 bg-white py-1 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                        </label>
+                    </div>
+                    <p class="mt-1.5 text-[10px] text-slate-400">${street.demand.fluctuationPeriodS}s sinusoid period (fixed, not calibrated)</p>
+                </div>`;
+        })
+        .join('');
+}
+
+// Selecting an import fills that street's min/max from the fitted mid/amplitude
+// (spec §10) - fields stay editable afterwards, same as the manual defaults.
+batchModalStreets?.addEventListener('change', (event) => {
+    const select = event.target.closest('select[data-field="import"]');
+    if (!select) return;
+    const row = select.closest('[data-street-row]');
+    const count = data.trafficCounts.find((c) => String(c.id) === select.value);
+    if (!count) return;
+
+    row.querySelector('input[data-field="min"]').value = (count.fitted_mid - count.fitted_amplitude).toFixed(2);
+    row.querySelector('input[data-field="max"]').value = (count.fitted_mid + count.fitted_amplitude).toFixed(2);
+});
+
+document.getElementById('batch-modal-close')?.addEventListener('click', closeBatchModal);
+document.getElementById('batch-modal-cancel')?.addEventListener('click', closeBatchModal);
+batchModalBackdrop?.addEventListener('click', (event) => {
+    if (event.target === batchModalBackdrop) closeBatchModal();
+});
+
+document.getElementById('batch-modal-confirm')?.addEventListener('click', () => {
+    const overrides = {};
+    batchModalStreets.querySelectorAll('[data-street-row]').forEach((row) => {
+        overrides[row.dataset.streetId] = {
+            min: Number(row.querySelector('input[data-field="min"]').value),
+            max: Number(row.querySelector('input[data-field="max"]').value),
+            saturationFlowPerLanePerHour: Number(row.querySelector('input[data-field="saturation"]').value),
+        };
+    });
+    closeBatchModal();
+    runBatch(overrides);
+});
+
+/** Clones corridorConfig and overwrites each street's demand with the modal's values. */
+function applyDemandOverrides(corridorConfig, overrides) {
+    const clone = structuredClone(corridorConfig);
+    for (const street of [...(clone.arterials ?? []), ...(clone.connectors ?? [])]) {
+        const override = overrides[street.id];
+        if (!override) continue;
+        street.demand = {
+            ...street.demand,
+            spawnRatePerLanePerMinMin: override.min,
+            spawnRatePerLanePerMinMax: override.max,
+            saturationFlowPerLanePerHour: override.saturationFlowPerLanePerHour,
+        };
+    }
+    return clone;
 }
 
 async function postSimulationRuns(payloads) {

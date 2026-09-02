@@ -5,6 +5,7 @@ use App\Http\Controllers\RecoveryTickController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\SimulationRunController;
 use App\Http\Controllers\SimulatorController;
+use App\Http\Controllers\TrafficCounterController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -39,6 +40,15 @@ Route::middleware('auth')->group(function () {
     // JSON refresh for the batch-run button (build step 17) - re-render charts
     // in place after a batch completes, no full page reload.
     Route::get('/results/data', [ResultsController::class, 'data'])->name('results.data');
+
+    // Traffic Counter tab (spec §2) - unlike /api/simulation-runs and
+    // /api/recovery-ticks below, these stay inside 'auth' + CSRF: they're driven
+    // by a logged-in user's browser session uploading a video, not a headless CLI.
+    Route::get('/traffic-counter', [TrafficCounterController::class, 'index'])->name('traffic-counter');
+    Route::post('/api/traffic-counts', [TrafficCounterController::class, 'store'])->name('traffic-counts.store');
+    Route::get('/api/traffic-counts/{trafficCount}', [TrafficCounterController::class, 'status'])->name('traffic-counts.status');
+    Route::get('/api/traffic-counts/{trafficCount}/data', [TrafficCounterController::class, 'data'])->name('traffic-counts.data');
+    Route::get('/api/traffic-counts/{trafficCount}/video', [TrafficCounterController::class, 'video'])->name('traffic-counts.video');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

@@ -110,6 +110,27 @@ php artisan test
 land on `/simulator`, see the layout and every control, switch to `/results`,
 see the charts and their table twins, log out.
 
+### Traffic Counter tab
+
+Third tab, right of Results. Uploads real traffic video, counts vehicles
+crossing a user-drawn line, and fits a sinusoid to the observed flow to
+sanity-check (or optionally calibrate, via the Results page's batch modal)
+the simulator's synthetic demand. Two things this needs that the rest of the
+app doesn't:
+
+- **A queue worker**, since video processing takes real time and runs as a
+  queued job (`ProcessTrafficCount`) rather than synchronously:
+  ```
+  php artisan queue:work
+  ```
+  (`QUEUE_CONNECTION=database` is already set in `.env`.)
+- **Python + ffmpeg** on PATH for the detection pipeline the job shells out to
+  (`scripts/traffic_counter/count_vehicles.py`, YOLOv8 via Ultralytics):
+  ```
+  pip install -r scripts/traffic_counter/requirements.txt
+  ```
+  Set `PYTHON_BIN` in `.env` if `python` on PATH isn't the right interpreter.
+
 ---
 
 ## Layout is data, not code

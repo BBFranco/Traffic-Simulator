@@ -23,7 +23,7 @@
                 </span>
 
                 <span id="batch-running-badge" class="hidden inline-flex items-center gap-2 rounded-md border border-sky-400 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-800 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300">
-                    <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                    <x-traffic-loader class="h-3.5 w-10" />
                     Running
                 </span>
 
@@ -34,6 +34,44 @@
             </div>
         </div>
     </x-slot>
+
+    {{--
+        Batch run modal (Traffic Counter spec §10-11). Opens on the button above instead
+        of running immediately; per-street demand defaults come from the selected
+        corridor's own JSON, editable, with an optional import from a finished Traffic
+        Counter upload for that exact corridor+street. Confirming runs the batch exactly
+        as before - experimentalMatrix.js and the seeded RNG are untouched, only the
+        `mid`/`amplitude` -> `min`/`max` demand numbers fed into the cloned corridor
+        config the run actually uses.
+    --}}
+    <div id="batch-modal-backdrop" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4">
+        <div class="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <div class="mb-3 flex items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Generate dataset - demand parameters</h2>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Per-street sinusoidal demand for the 360-run batch against the corridor selected above.
+                        All fields editable; import a finished Traffic Counter upload to overwrite mid/amplitude
+                        from a least-squares fit of field counts.
+                    </p>
+                </div>
+                <button type="button" id="batch-modal-close" class="shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" aria-label="Close">
+                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" /></svg>
+                </button>
+            </div>
+
+            <div id="batch-modal-streets" class="space-y-3"></div>
+
+            <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <button type="button" id="batch-modal-cancel" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                    Cancel
+                </button>
+                <button type="button" id="batch-modal-confirm" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
+                    Run batch (360 runs)
+                </button>
+            </div>
+        </div>
+    </div>
 
     <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
         <strong class="font-semibold">Nothing below is measured yet.</strong>
@@ -314,6 +352,7 @@
             'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
             'resultsDataUrl' => route('results.data'),
             'defaultCorridorId' => $corridors[0]['id'] ?? null,
+            'trafficCounts' => $trafficCounts,
         ];
     @endphp
     <script type="application/json" id="results-data">@json($chartPayload)</script>

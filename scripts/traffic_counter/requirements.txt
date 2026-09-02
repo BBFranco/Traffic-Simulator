@@ -1,0 +1,7 @@
+ultralytics>=8.2
+opencv-python>=4.9
+numpy>=1.26
+# ByteTrack's linear assignment step needs this - without it, ultralytics auto-installs it
+# via pip on first use, which is slow and (before the stdout-redirect fix in
+# count_vehicles.py) polluted the JSON stdout contract with install-progress noise.
+lap>=0.5

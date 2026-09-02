@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
+use App\Models\TrafficCount;
 use App\Support\CorridorRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -75,6 +76,7 @@ class ResultsController extends Controller
             'corridors' => $this->corridors->index(),
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
+            'trafficCounts' => $this->trafficCountsForImport(),
             ...$payload,
             ...$this->viewModel($payload),
         ]);
@@ -117,6 +119,32 @@ class ResultsController extends Controller
                 'itsTargetOptions' => view('results.partials.its-target-options', $viewData)->render(),
             ],
         ]);
+    }
+
+    /**
+     * Finished Traffic Counter uploads, for the batch modal's per-street "Import from
+     * Traffic Counter" dropdown (Traffic Counter spec §10) - grouped by corridor+street
+     * client-side in results.js, since the modal only shows the currently selected
+     * corridor's rows. `fitted_mid`/`fitted_amplitude` are already computed by
+     * ProcessTrafficCount (spec §6); nothing recomputed here.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function trafficCountsForImport(): array
+    {
+        return TrafficCount::query()
+            ->where('status', 'done')
+            ->latest()
+            ->get(['id', 'label', 'corridor_config', 'street', 'fitted_mid', 'fitted_amplitude'])
+            ->map(fn (TrafficCount $count) => [
+                'id' => $count->id,
+                'label' => $count->label ?? "Count #{$count->id}",
+                'corridor_config' => $count->corridor_config,
+                'street' => $count->street,
+                'fitted_mid' => $count->fitted_mid,
+                'fitted_amplitude' => $count->fitted_amplitude,
+            ])
+            ->all();
     }
 
     /**
