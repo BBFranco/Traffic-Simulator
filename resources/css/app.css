@@ -1,3 +1,24 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* <x-traffic-loader>'s chase animation - each lens dims/scales down then pops back to full
+   size and brightness, staggered per-dot via inline animation-delay so red -> amber -> green
+   chase across in sequence rather than pulsing in unison. */
+@keyframes traffic-loader-pulse {
+    0%, 100% {
+        opacity: 0.28;
+        transform: scale(0.7);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.traffic-loader-dot {
+    /* fill-box: each circle scales around its own center, not the <svg> viewport's origin. */
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: traffic-loader-pulse 1.2s ease-in-out infinite;
+}
