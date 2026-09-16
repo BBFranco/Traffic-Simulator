@@ -419,9 +419,42 @@ onThemeChange((theme) => {
 
 /* -------------------------------------------------------------- recent counts list */
 
+const RECENT_COUNTS_LIMIT = 10;
 const recentCountsList = document.getElementById('recent-counts-list');
 
+function badgeClass(status) {
+    return (
+        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ' +
+        (status === 'done'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+            : status === 'failed'
+              ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300'
+              : 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300')
+    );
+}
+
+function recentCountRowHtml(id, label, status) {
+    return `
+        <li class="group flex items-center gap-1" data-count-id="${id}">
+            <button type="button" data-count-id="${id}"
+                    class="recent-count-row flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                <span class="truncate">${label}</span>
+                <span class="${badgeClass(status)}">${status}</span>
+            </button>
+            <button type="button" data-delete-count-id="${id}" title="Delete count"
+                    class="delete-count-row shrink-0 rounded px-1.5 py-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400">
+                &times;
+            </button>
+        </li>`;
+}
+
 recentCountsList?.addEventListener('click', (event) => {
+    const deleteButton = event.target.closest('.delete-count-row');
+    if (deleteButton) {
+        deleteCount(Number(deleteButton.dataset.deleteCountId));
+        return;
+    }
+
     const row = event.target.closest('.recent-count-row');
     if (!row) return;
     const id = Number(row.dataset.countId);
@@ -436,18 +469,51 @@ recentCountsList?.addEventListener('click', (event) => {
     }
 });
 
+/** Deletes a count and reflects the removal in whichever list(s) reference it. */
+async function deleteCount(id) {
+    if (!window.confirm('Delete this count? This removes its video and results permanently.')) return;
+
+    try {
+        const url = data.deleteUrlTemplate.replace('__ID__', id);
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+        });
+        if (!response.ok) throw new Error(`Failed to delete count (HTTP ${response.status}).`);
+
+        if (lastLoadedCount?.id === id) {
+            resultsPanel.classList.add('hidden');
+            resultsEmpty.classList.remove('hidden');
+            resultsEmpty.textContent = 'Upload a video, or pick a finished count from the list, to see its flow stats here.';
+            lastLoadedCount = null;
+            lastLoadedBuckets = null;
+        }
+
+        recentCountsList.querySelector(`li[data-count-id="${id}"]`)?.remove();
+        if (!recentCountsList.children.length) {
+            recentCountsList.innerHTML = '<li class="text-slate-400">No counts uploaded yet.</li>';
+        }
+
+        if (masterTableOpen) {
+            // If deleting emptied the current page (and it wasn't page 1), fall
+            // back a page rather than showing a dangling empty one.
+            const targetPage = masterTablePage > 1 && masterTableBody.children.length === 1
+                ? masterTablePage - 1
+                : masterTablePage;
+            await loadMasterTablePage(targetPage);
+        }
+    } catch (error) {
+        showUploadError(error.message);
+    }
+}
+
 function addRecentCountRow(id, label, status) {
     const empty = recentCountsList.querySelector('li:only-child');
     if (empty && !empty.querySelector('button')) empty.remove();
-
-    const li = document.createElement('li');
-    li.innerHTML = `
-        <button type="button" data-count-id="${id}"
-                class="recent-count-row flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60">
-            <span class="truncate">${label}</span>
-            <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">${status}</span>
-        </button>`;
-    recentCountsList.prepend(li);
+    recentCountsList.insertAdjacentHTML('afterbegin', recentCountRowHtml(id, label, status));
+    while (recentCountsList.children.length > RECENT_COUNTS_LIMIT) {
+        recentCountsList.lastElementChild.remove();
+    }
 }
 
 function updateRecentCountRowStatus(id, status) {
@@ -455,11 +521,148 @@ function updateRecentCountRowStatus(id, status) {
     if (!row) return;
     const badge = row.querySelector('span:last-child');
     badge.textContent = status;
-    badge.className =
-        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ' +
-        (status === 'done'
-            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-            : status === 'failed'
-              ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300'
-              : 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300');
+    badge.className = badgeClass(status);
 }
+
+/* -------------------------------------------------------------------- master table */
+
+const masterTableToggle = document.getElementById('master-table-toggle');
+const counterView = document.getElementById('counter-view');
+const masterTableView = document.getElementById('master-table-view');
+const masterTableBody = document.getElementById('master-table-body');
+const masterTablePageLabel = document.getElementById('master-table-page-label');
+const masterTableEmpty = document.getElementById('master-table-empty');
+const masterTablePages = document.getElementById('master-table-pages');
+
+let masterTableOpen = false;
+let masterTablePage = 1;
+let masterTableLastPage = 1;
+
+masterTableToggle?.addEventListener('click', () => {
+    masterTableOpen = !masterTableOpen;
+    counterView.classList.toggle('hidden', masterTableOpen);
+    masterTableView.classList.toggle('hidden', !masterTableOpen);
+    masterTableToggle.textContent = masterTableOpen ? 'Back to counter' : 'View master table';
+    if (masterTableOpen) loadMasterTablePage(masterTablePage).catch((error) => showUploadError(error.message));
+});
+
+function fmtDate(value) {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+/** Resolves corridor/street ids to their display names (corridor lookup is local; street needs its config, cached by fetchCorridor). */
+async function masterTableRowHtml(item) {
+    const corridorName = corridorsById.get(item.corridor_config)?.name ?? item.corridor_config;
+    let streetName = item.street;
+    try {
+        const config = await fetchCorridor(item.corridor_config);
+        streetName = streetsOf(config).find((s) => s.id === item.street)?.name ?? item.street;
+    } catch {
+        // Unknown/removed corridor config - fall back to the raw street id.
+    }
+
+    const eyeIcon = `
+        <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.147.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>`;
+    const trashIcon = `
+        <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" />
+        </svg>`;
+
+    return `
+        <tr data-count-id="${item.id}" class="divide-x divide-slate-200 dark:divide-slate-800">
+            <td class="max-w-[200px] truncate px-2 py-2">${item.label ?? `Count #${item.id}`}</td>
+            <td class="px-2 py-2">${corridorName}</td>
+            <td class="px-2 py-2">${streetName}</td>
+            <td class="px-2 py-2"><span class="${badgeClass(item.status)}">${item.status}</span></td>
+            <td class="whitespace-nowrap px-2 py-2">${fmtDate(item.created_at)}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${item.observation_duration_seconds ?? '—'}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${item.vehicles_detected ?? '—'}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${item.total_vehicles ?? '—'}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${item.cars_count ?? '—'}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${item.trucks_count ?? '—'}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${item.unclassified_count ?? '—'}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${fmt(item.mean_flow)}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${fmt(item.peak_5min_flow)}</td>
+            <td class="px-2 py-2 text-right tabular-nums">${fmt(item.fitted_r_squared, 3)}</td>
+            <td class="px-2 py-2">${item.annotated_video_path ? '<span class="text-emerald-600 dark:text-emerald-400">Yes</span>' : '—'}</td>
+            <td class="px-2 py-2">
+                <div class="flex justify-end gap-1.5">
+                    ${
+                        item.status === 'done'
+                            ? `<button type="button" data-master-view-id="${item.id}" title="View results" class="master-view-row rounded bg-sky-600 p-1 text-white hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400">${eyeIcon}</button>`
+                            : ''
+                    }
+                    <button type="button" data-delete-count-id="${item.id}" title="Delete count" class="delete-count-row rounded bg-red-600 p-1 text-white hover:bg-red-500 dark:bg-red-500 dark:hover:bg-red-400">${trashIcon}</button>
+                </div>
+            </td>
+        </tr>`;
+}
+
+async function loadMasterTablePage(page) {
+    const url = new URL(data.listUrl, window.location.origin);
+    url.searchParams.set('page', page);
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`Failed to load counts (HTTP ${response.status}).`);
+    const body = await response.json();
+
+    masterTablePage = body.current_page;
+    masterTableLastPage = Math.max(body.last_page, 1);
+
+    masterTableEmpty.classList.toggle('hidden', body.data.length > 0);
+    masterTableBody.innerHTML = (await Promise.all(body.data.map(masterTableRowHtml))).join('');
+    masterTablePageLabel.textContent = `Page ${masterTablePage} of ${masterTableLastPage}`;
+    renderMasterTablePages();
+}
+
+/** Page numbers to show around the current page: first, last, and a window of 3 centred on current. */
+function pageNumbersAround(current, last) {
+    const pages = new Set([1, last, current - 1, current, current + 1]);
+    return [...pages].filter((n) => n >= 1 && n <= last).sort((a, b) => a - b);
+}
+
+function renderMasterTablePages() {
+    let previous = 0;
+    masterTablePages.innerHTML = pageNumbersAround(masterTablePage, masterTableLastPage)
+        .map((n) => {
+            const gap = n - previous > 1 ? '<span class="px-1 text-slate-400">…</span>' : '';
+            previous = n;
+            const active = n === masterTablePage;
+            return `${gap}<button type="button" data-page="${n}"
+                class="master-table-page-button rounded px-2 py-1 ${
+                    active
+                        ? 'bg-sky-600 font-semibold text-white dark:bg-sky-500'
+                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/60'
+                }">${n}</button>`;
+        })
+        .join('');
+}
+
+masterTablePages?.addEventListener('click', (event) => {
+    const button = event.target.closest('.master-table-page-button');
+    if (!button) return;
+    const page = Number(button.dataset.page);
+    if (page !== masterTablePage) loadMasterTablePage(page).catch((error) => showUploadError(error.message));
+});
+
+masterTableBody?.addEventListener('click', (event) => {
+    const deleteButton = event.target.closest('.delete-count-row');
+    if (deleteButton) {
+        deleteCount(Number(deleteButton.dataset.deleteCountId));
+        return;
+    }
+
+    const viewButton = event.target.closest('.master-view-row');
+    if (viewButton) {
+        const id = Number(viewButton.dataset.masterViewId);
+        masterTableToggle.click();
+        loadCount(id).catch((error) => {
+            resultsEmpty.classList.remove('hidden');
+            resultsEmpty.textContent = error.message;
+        });
+    }
+});

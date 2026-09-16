@@ -46,9 +46,11 @@ Route::middleware('auth')->group(function () {
     // by a logged-in user's browser session uploading a video, not a headless CLI.
     Route::get('/traffic-counter', [TrafficCounterController::class, 'index'])->name('traffic-counter');
     Route::post('/api/traffic-counts', [TrafficCounterController::class, 'store'])->name('traffic-counts.store');
+    Route::get('/api/traffic-counts', [TrafficCounterController::class, 'list'])->name('traffic-counts.list');
     Route::get('/api/traffic-counts/{trafficCount}', [TrafficCounterController::class, 'status'])->name('traffic-counts.status');
     Route::get('/api/traffic-counts/{trafficCount}/data', [TrafficCounterController::class, 'data'])->name('traffic-counts.data');
     Route::get('/api/traffic-counts/{trafficCount}/video', [TrafficCounterController::class, 'video'])->name('traffic-counts.video');
+    Route::delete('/api/traffic-counts/{trafficCount}', [TrafficCounterController::class, 'destroy'])->name('traffic-counts.destroy');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

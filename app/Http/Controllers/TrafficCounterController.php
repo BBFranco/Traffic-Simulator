@@ -7,6 +7,7 @@ use App\Jobs\ProcessTrafficCount;
 use App\Models\TrafficCount;
 use App\Support\CorridorRepository;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -30,12 +31,33 @@ class TrafficCounterController extends Controller
     public function index(): View
     {
         $corridors = $this->corridors->index();
-        $counts = TrafficCount::query()->latest()->limit(20)->get();
+        // orderByDesc('id'), not latest(): several counts created within the
+        // same second (timestamp precision) would otherwise tie-break in
+        // whatever order the DB happens to return them.
+        $counts = TrafficCount::query()->orderByDesc('id')->limit(10)->get();
 
         return view('traffic-counter', [
             'corridors' => $corridors,
             'defaultCorridorId' => $corridors[0]['id'] ?? null,
             'recentCounts' => $counts,
+        ]);
+    }
+
+    /**
+     * JSON page of every count ever made, for the "master table" view (all
+     * columns worth showing there) - unlike the sidebar's `recentCounts`,
+     * which is just the last 10 with no paging.
+     */
+    public function list(Request $request): JsonResponse
+    {
+        $counts = TrafficCount::query()->orderByDesc('id')->paginate(
+            20, ['*'], 'page', $request->integer('page', 1)
+        );
+
+        return response()->json([
+            'data' => $counts->items(),
+            'current_page' => $counts->currentPage(),
+            'last_page' => $counts->lastPage(),
         ]);
     }
 
@@ -122,5 +144,19 @@ class TrafficCounterController extends Controller
         abort_unless($trafficCount->annotated_video_path, Response::HTTP_NOT_FOUND);
 
         return response()->file(Storage::disk('local')->path($trafficCount->annotated_video_path));
+    }
+
+    /** Buckets cascade-delete with the parent row (see traffic_count_buckets migration). */
+    public function destroy(TrafficCount $trafficCount): JsonResponse
+    {
+        if ($trafficCount->video_path) {
+            Storage::disk('local')->delete($trafficCount->video_path);
+        }
+        if ($trafficCount->annotated_video_path) {
+            Storage::disk('local')->delete($trafficCount->annotated_video_path);
+        }
+        $trafficCount->delete();
+
+        return response()->json(['deleted' => true]);
     }
 }

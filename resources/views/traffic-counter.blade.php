@@ -12,21 +12,27 @@
     $select = 'w-full rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
     $input = 'w-full rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
     $label = 'mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500';
-    $tableHead = 'bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/40';
+    $tableHead = 'bg-slate-200 text-[10px] uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300';
 @endphp
 
 <x-app-layout title="Traffic Counter" wide>
     <x-slot name="header">
-        <div>
-            <h1 class="text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100">Traffic Counter</h1>
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Upload real footage, count vehicles crossing a line, and compare the observed flow against
-                this corridor's assumed synthetic demand.
-            </p>
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100">Traffic Counter</h1>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Upload real footage, count vehicles crossing a line, and compare the observed flow against
+                    this corridor's assumed synthetic demand.
+                </p>
+            </div>
+            <button type="button" id="master-table-toggle"
+                    class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
+                View master table
+            </button>
         </div>
     </x-slot>
 
-    <div class="grid gap-6 xl:grid-cols-[380px_1fr]">
+    <div id="counter-view" class="grid gap-6 xl:grid-cols-[380px_1fr]">
         {{-- ============================================================ upload --}}
         <section class="{{ $card }} p-4">
             <h2 class="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">New count</h2>
@@ -89,9 +95,9 @@
                 <h3 class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Recent counts</h3>
                 <ul id="recent-counts-list" class="space-y-1 text-xs">
                     @forelse ($recentCounts as $count)
-                        <li>
+                        <li class="group flex items-center gap-1" data-count-id="{{ $count->id }}">
                             <button type="button" data-count-id="{{ $count->id }}"
-                                    class="recent-count-row flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                                    class="recent-count-row flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60">
                                 <span class="truncate">{{ $count->label ?? ('Count #'.$count->id) }}</span>
                                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase
                                     {{ match($count->status) {
@@ -99,6 +105,10 @@
                                         'failed' => 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300',
                                         default => 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
                                     } }}">{{ $count->status }}</span>
+                            </button>
+                            <button type="button" data-delete-count-id="{{ $count->id }}" title="Delete count"
+                                    class="delete-count-row shrink-0 rounded px-1.5 py-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400">
+                                &times;
                             </button>
                         </li>
                     @empty
@@ -155,15 +165,54 @@
         </section>
     </div>
 
+    {{-- ================================================================ master table --}}
+    <div id="master-table-view" class="hidden {{ $card }} p-4">
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">All counts</h2>
+        </div>
+        <div class="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-800">
+            <table class="w-full min-w-[1000px] border-collapse text-left text-xs">
+                <thead class="{{ $tableHead }}">
+                    <tr class="divide-x divide-slate-200 dark:divide-slate-800">
+                        <th class="px-2 py-2">Label</th>
+                        <th class="px-2 py-2">Corridor</th>
+                        <th class="px-2 py-2">Street</th>
+                        <th class="px-2 py-2">Status</th>
+                        <th class="px-2 py-2">Uploaded</th>
+                        <th class="px-2 py-2 text-right">Duration (s)</th>
+                        <th class="px-2 py-2 text-right">Detected</th>
+                        <th class="px-2 py-2 text-right">Counted</th>
+                        <th class="px-2 py-2 text-right">Cars</th>
+                        <th class="px-2 py-2 text-right">Trucks</th>
+                        <th class="px-2 py-2 text-right">Unclass.</th>
+                        <th class="px-2 py-2 text-right">Mean flow</th>
+                        <th class="px-2 py-2 text-right">Peak 5-min</th>
+                        <th class="px-2 py-2 text-right">R²</th>
+                        <th class="px-2 py-2">Video</th>
+                        <th class="px-2 py-2 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="master-table-body" class="divide-y divide-slate-200 dark:divide-slate-800"></tbody>
+            </table>
+        </div>
+        <div id="master-table-empty" class="hidden mt-3 text-center text-[11px] text-slate-400">No counts uploaded yet.</div>
+        <div class="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+            <div id="master-table-pages" class="flex items-center gap-1"></div>
+            <span id="master-table-page-label"></span>
+        </div>
+    </div>
+
     @php
         $bootPayload = [
             'corridors' => $corridors,
             'defaultCorridorId' => $defaultCorridorId,
             'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
             'storeUrl' => route('traffic-counts.store'),
+            'listUrl' => route('traffic-counts.list'),
             'statusUrlTemplate' => route('traffic-counts.status', ['trafficCount' => '__ID__']),
             'dataUrlTemplate' => route('traffic-counts.data', ['trafficCount' => '__ID__']),
             'videoUrlTemplate' => route('traffic-counts.video', ['trafficCount' => '__ID__']),
+            'deleteUrlTemplate' => route('traffic-counts.destroy', ['trafficCount' => '__ID__']),
         ];
     @endphp
     <script type="application/json" id="traffic-counter-data">@json($bootPayload)</script>
