@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -50,5 +51,15 @@ class TrafficCount extends Model
     public function buckets(): HasMany
     {
         return $this->hasMany(TrafficCountBucket::class);
+    }
+
+    /** Status badge colouring for the recent-counts list. */
+    protected function statusBadgeClasses(): Attribute
+    {
+        return Attribute::get(fn () => match ($this->status) {
+            'done' => 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+            'failed' => 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300',
+            default => 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+        });
     }
 }

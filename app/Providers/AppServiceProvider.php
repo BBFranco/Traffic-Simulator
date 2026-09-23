@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\View\Composers\SimulatorComposer;
+use App\View\Composers\TrafficCounterComposer;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        View::composer('simulator', SimulatorComposer::class);
+        View::composer('traffic-counter', TrafficCounterComposer::class);
     }
 }

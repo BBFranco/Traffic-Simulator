@@ -71,12 +71,26 @@ class ResultsController extends Controller
     {
         $payload = $this->buildPayload(request()->query('corridor'));
 
+        $corridors = $this->corridors->index();
+        $trafficCounts = $this->trafficCountsForImport();
+
         return view('results', [
             'isFakeData' => $payload['totalRuns'] === 0,
-            'corridors' => $this->corridors->index(),
+            'corridors' => $corridors,
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
-            'trafficCounts' => $this->trafficCountsForImport(),
+            'trafficCounts' => $trafficCounts,
+            'chartPayload' => [
+                'aggregates' => $payload['aggregates'],
+                'aggregatesBySensor' => $payload['aggregatesBySensor'],
+                'controllerModes' => self::CONTROLLER_MODES,
+                'powerStates' => self::POWER_STATES,
+                'recoveryTimeline' => $payload['recoveryTimeline'],
+                'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
+                'resultsDataUrl' => route('results.data'),
+                'defaultCorridorId' => $corridors[0]['id'] ?? null,
+                'trafficCounts' => $trafficCounts,
+            ],
             ...$payload,
             ...$this->viewModel($payload),
         ]);
@@ -279,7 +293,135 @@ class ResultsController extends Controller
             'comparisonKey' => $comparisonKey,
             'comparisonLabel' => $comparisonLabel,
             'comparisonOptions' => $comparisonOptions,
-            'metricSectionGroups' => $this->metricSectionGroupsConfig(),
+            'renderableMetricSectionGroups' => $this->metricSectionRenderGroups(
+                $this->metricSectionGroupsConfig(),
+                $payload['pairedComparisons']
+            ),
+        ];
+    }
+
+    /**
+     * Card border colour for a subject-vs-baseline comparison - null means "not measured
+     * yet" (neutral), true/false is an improvement/regression. Shared by the "vs
+     * fixed-time" cards and the headline metric cards so both tone the same way.
+     */
+    private function toneClasses(?bool $improves): string
+    {
+        return match (true) {
+            $improves === null => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40',
+            $improves => 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]',
+            default => 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]',
+        };
+    }
+
+    /** Headline-figure text colour, paired with {@see toneClasses()}'s border/background. */
+    private function figureToneClasses(?bool $improves): string
+    {
+        return match (true) {
+            $improves === null => 'text-slate-400 dark:text-slate-500',
+            $improves => 'text-emerald-700 dark:text-emerald-300',
+            default => 'text-rose-700 dark:text-rose-300',
+        };
+    }
+
+    /**
+     * Render-ready structure for metric-section-groups.blade.php - filtering sections down
+     * to ones with rows, the resulting column counts, and each card's tone/value/recovery
+     * derivations. Used to live as nested @php blocks in that partial; moved here so the
+     * view stays presentation-only (project convention: no @php blocks in Blade).
+     *
+     * @param  array<int, array<int, array<string, mixed>>>  $metricSectionGroups
+     * @param  array<int, array<string, mixed>>  $pairedComparisons
+     * @return array<int, array{columns: int, sections: array<int, array<string, mixed>>}>
+     */
+    private function metricSectionRenderGroups(array $metricSectionGroups, array $pairedComparisons): array
+    {
+        $groups = [];
+
+        foreach ($metricSectionGroups as $group) {
+            $renderableSections = array_values(array_filter(
+                array_map(
+                    fn (array $section) => [
+                        'section' => $section,
+                        'rows' => array_values(array_filter($pairedComparisons, $section['filter'] ?? fn ($c) => true)),
+                    ],
+                    $group
+                ),
+                fn (array $entry) => count($entry['rows'])
+            ));
+
+            if (! count($renderableSections)) {
+                continue;
+            }
+
+            $groups[] = [
+                'columns' => count($renderableSections) > 1 ? 2 : 1,
+                'sections' => array_map(
+                    fn (array $entry) => $this->metricRenderSection($entry['section'], $entry['rows']),
+                    $renderableSections
+                ),
+            ];
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param  array<string, mixed>  $section
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<string, mixed>
+     */
+    private function metricRenderSection(array $section, array $rows): array
+    {
+        $recoveryPairMetric = $section['recoveryPairMetric'] ?? null;
+
+        return [
+            'heading' => $section['heading'],
+            'description' => $section['description'],
+            'unitLabel' => $section['unitLabel'],
+            'secondary' => $section['secondary'],
+            // Cards visible AT ONCE, not count($rows) - see the original partial's comment on
+            // why a recovery section (always load_shedding-only) stays a 1-visible-card grid.
+            'visiblePowerStates' => count(array_unique(array_column($rows, 'power_state'))),
+            'cards' => array_map(
+                fn (array $comparison) => $this->metricRenderCard($section, $recoveryPairMetric, $comparison),
+                $rows
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $section
+     * @param  array<string, mixed>  $comparison
+     * @return array<string, mixed>
+     */
+    private function metricRenderCard(array $section, ?string $recoveryPairMetric, array $comparison): array
+    {
+        $improves = $comparison[$section['improvesKey']];
+
+        return [
+            'comparison' => $comparison,
+            'tone' => $this->toneClasses($improves),
+            'figureTone' => $this->figureToneClasses($improves),
+            'value' => $comparison[$section['valueKey']],
+            'suffix' => $section['suffix'],
+            'improves' => $improves,
+            'improvedLabel' => $section['improvedLabel'],
+            'worseLabel' => $section['worseLabel'],
+            'recoveryPairMetric' => $recoveryPairMetric,
+            // For the recovery cards, a null side usually means it never crossed the recovered
+            // threshold within the measured window rather than a data gap - see
+            // $fmtRecoverySide's comment above.
+            'recoverySubjectSeconds' => match ($recoveryPairMetric) {
+                'wait' => $comparison['recovery_wait_seconds'],
+                'throughput' => $comparison['recovery_seconds'],
+                default => null,
+            },
+            'recoveryBaselineSeconds' => match ($recoveryPairMetric) {
+                'wait' => $comparison['baseline_recovery_wait_seconds'],
+                'throughput' => $comparison['baseline_recovery_seconds'],
+                default => null,
+            },
         ];
     }
 
@@ -694,6 +836,7 @@ class ResultsController extends Controller
         $clearedKnown = $subject[$clearedKey] !== null && $baseline[$clearedKey] !== null;
         $recoveryKnown = $subject[$recoveryKey] !== null && $baseline[$recoveryKey] !== null;
         $recoveryWaitKnown = $subject[$recoveryWaitKey] !== null && $baseline[$recoveryWaitKey] !== null;
+        $waitImproves = $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null;
 
         return [
             'mode' => $mode,
@@ -714,7 +857,9 @@ class ResultsController extends Controller
             'recovery_wait_delta_pct' => $recoveryWaitKnown
                 ? $this->pctChange($baseline[$recoveryWaitKey], $subject[$recoveryWaitKey])
                 : null,
-            'wait_improves' => $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null,
+            'wait_improves' => $waitImproves,
+            'wait_tone' => $this->toneClasses($waitImproves),
+            'wait_figure_tone' => $this->figureToneClasses($waitImproves),
             'throughput_improves' => $throughputKnown ? $subject[$throughputKey] > $baseline[$throughputKey] : null,
             'cleared_improves' => $clearedKnown ? $subject[$clearedKey] > $baseline[$clearedKey] : null,
             'recovery_improves' => $recoveryKnown

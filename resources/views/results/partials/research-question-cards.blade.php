@@ -4,20 +4,7 @@
     become a partial rather than staying inline).
 --}}
 @foreach ($pairedComparisons as $comparison)
-    @php
-        $improves = $comparison['wait_improves'];
-        $tone = match (true) {
-            $improves === null => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40',
-            $improves => 'border-emerald-300 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/[0.06]',
-            default => 'border-rose-300 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/[0.06]',
-        };
-        $figureTone = match (true) {
-            $improves === null => 'text-slate-400 dark:text-slate-500',
-            $improves => 'text-emerald-700 dark:text-emerald-300',
-            default => 'text-rose-700 dark:text-rose-300',
-        };
-    @endphp
-    <div class="rounded-lg border {{ $tone }} p-4" data-its-key="{{ $comparisonKey($comparison) }}" data-scope="{{ $comparison['scope'] }}">
+    <div class="rounded-lg border {{ $comparison['wait_tone'] }} p-4" data-its-key="{{ $comparisonKey($comparison) }}" data-scope="{{ $comparison['scope'] }}">
         <div class="flex items-center gap-2">
             <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {{ $modeColours[$comparison['mode']] }}"></span>
             <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">{{ $comparisonLabel($comparison) }}</span>
@@ -29,15 +16,15 @@
         </div>
 
         <div class="mt-3 flex items-baseline gap-2">
-            <span class="text-3xl font-semibold leading-none {{ $figureTone }}">
+            <span class="text-3xl font-semibold leading-none {{ $comparison['wait_figure_tone'] }}">
                 {{ $fmtDelta($comparison['wait_delta_pct'], '%') }}
             </span>
-            <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $figureTone }}">
-                @if ($improves === null)
+            <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $comparison['wait_figure_tone'] }}">
+                @if ($comparison['wait_improves'] === null)
                     not measured yet
                 @else
-                    <span aria-hidden="true">{{ $improves ? '▼' : '▲' }}</span>
-                    {{ $improves ? 'less waiting' : 'more waiting' }}
+                    <span aria-hidden="true">{{ $comparison['wait_improves'] ? '▼' : '▲' }}</span>
+                    {{ $comparison['wait_improves'] ? 'less waiting' : 'more waiting' }}
                 @endif
             </span>
         </div>

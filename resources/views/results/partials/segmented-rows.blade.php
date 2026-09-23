@@ -1,7 +1,6 @@
 {{-- Load-shedding segmented table body - shared by the initial render and ResultsController::data()'s AJAX refresh. --}}
 @foreach ($controllerModes as $mode)
-    @php $row = $byModeAndPower["{$mode}|load_shedding"] ?? null; @endphp
-    @if ($row)
+    @if ($row = $byModeAndPower["{$mode}|load_shedding"] ?? null)
         @foreach ($scopeSuffixes as $scope => $suffix)
             <tr class="text-slate-700 dark:text-slate-300 {{ $scope === 'total' ? '' : 'hidden' }}" data-scope="{{ $scope }}">
                 <th scope="row" class="whitespace-nowrap px-4 py-2 font-medium text-slate-900 dark:text-slate-200">

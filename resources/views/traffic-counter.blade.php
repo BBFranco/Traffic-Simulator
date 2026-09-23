@@ -7,14 +7,6 @@
     type="application/json">` boot payload, parsed once by traffic-counter.js.
 --}}
 
-@php
-    $card = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/60';
-    $select = 'w-full rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
-    $input = 'w-full rounded-md border-slate-300 bg-white py-1.5 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
-    $label = 'mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500';
-    $tableHead = 'bg-slate-200 text-[10px] uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300';
-@endphp
-
 <x-app-layout title="Traffic Counter" wide>
     <x-slot name="header">
         <div class="flex items-center justify-between gap-4">
@@ -99,12 +91,7 @@
                             <button type="button" data-count-id="{{ $count->id }}"
                                     class="recent-count-row flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60">
                                 <span class="truncate">{{ $count->label ?? ('Count #'.$count->id) }}</span>
-                                <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase
-                                    {{ match($count->status) {
-                                        'done' => 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
-                                        'failed' => 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300',
-                                        default => 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
-                                    } }}">{{ $count->status }}</span>
+                                <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase {{ $count->statusBadgeClasses }}">{{ $count->status }}</span>
                             </button>
                             <button type="button" data-delete-count-id="{{ $count->id }}" title="Delete count"
                                     class="delete-count-row shrink-0 rounded px-1.5 py-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400">
@@ -202,19 +189,6 @@
         </div>
     </div>
 
-    @php
-        $bootPayload = [
-            'corridors' => $corridors,
-            'defaultCorridorId' => $defaultCorridorId,
-            'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
-            'storeUrl' => route('traffic-counts.store'),
-            'listUrl' => route('traffic-counts.list'),
-            'statusUrlTemplate' => route('traffic-counts.status', ['trafficCount' => '__ID__']),
-            'dataUrlTemplate' => route('traffic-counts.data', ['trafficCount' => '__ID__']),
-            'videoUrlTemplate' => route('traffic-counts.video', ['trafficCount' => '__ID__']),
-            'deleteUrlTemplate' => route('traffic-counts.destroy', ['trafficCount' => '__ID__']),
-        ];
-    @endphp
     <script type="application/json" id="traffic-counter-data">@json($bootPayload)</script>
 
     @vite('resources/js/traffic-counter.js')

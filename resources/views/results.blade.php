@@ -342,19 +342,6 @@
         </div>
     </section>
 
-    @php
-        $chartPayload = [
-            'aggregates' => $aggregates,
-            'aggregatesBySensor' => $aggregatesBySensor,
-            'controllerModes' => $controllerModes,
-            'powerStates' => $powerStates,
-            'recoveryTimeline' => $recoveryTimeline,
-            'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
-            'resultsDataUrl' => route('results.data'),
-            'defaultCorridorId' => $corridors[0]['id'] ?? null,
-            'trafficCounts' => $trafficCounts,
-        ];
-    @endphp
     <script type="application/json" id="results-data">@json($chartPayload)</script>
 
     @vite('resources/js/results.js')

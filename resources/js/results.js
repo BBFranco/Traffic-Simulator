@@ -553,13 +553,26 @@ async function fetchCorridor(id) {
 /** Every arterial + connector in a corridor config, in the same shape a demand row needs. */
 function streetsOf(corridorConfig) {
     const arterials = (corridorConfig.arterials ?? []).map((a) => ({
-        id: a.id, name: a.shortName ?? a.name, demand: a.demand,
+        id: a.id, name: a.shortName ?? a.name, demand: a.demand, type: 'arterial',
     }));
     const connectors = (corridorConfig.connectors ?? []).map((c) => ({
-        id: c.id, name: c.name, demand: c.demand,
+        id: c.id, name: c.name, demand: c.demand, type: 'cross-street',
     }));
     return [...arterials, ...connectors];
 }
+
+/** Badge styling per street type - the only thing that visually told the batch modal's
+ * cards apart before this was their (identical) border colour. */
+const STREET_TYPE_BADGES = {
+    arterial: {
+        label: 'Arterial',
+        classes: 'border border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300',
+    },
+    'cross-street': {
+        label: 'Cross-street',
+        classes: 'border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
+    },
+};
 
 const batchModalBackdrop = document.getElementById('batch-modal-backdrop');
 const batchModalStreets = document.getElementById('batch-modal-streets');
@@ -586,20 +599,21 @@ function renderBatchModalStreets(corridorConfig, corridorId) {
     const streets = streetsOf(corridorConfig);
 
     batchModalStreets.innerHTML = streets
-        .map((street) => {
+        .map((street, index) => {
             const importOptions = data.trafficCounts
                 .filter((c) => c.corridor_config === corridorId && c.street === street.id)
                 .map((c) => `<option value="${c.id}">${c.label}</option>`)
                 .join('');
+            const badge = STREET_TYPE_BADGES[street.type];
+            // Zebra striping so adjacent cards stay visually separate even when their
+            // borders alone don't read clearly (e.g. stacked full-width on narrow screens).
+            const stripeClass = index % 2 === 1 ? 'bg-slate-50 dark:bg-slate-800/40' : 'bg-white dark:bg-slate-900';
 
             return `
-                <div class="rounded-md border border-slate-200 p-3 dark:border-slate-700" data-street-row data-street-id="${street.id}">
-                    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">${street.name}</span>
-                        <select data-field="import" class="rounded-md border-slate-300 bg-white py-1 text-[11px] text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                            <option value="">Import from Traffic Counter…</option>
-                            ${importOptions}
-                        </select>
+                <div class="rounded-md border border-slate-200 p-3 dark:border-slate-700 ${stripeClass}" data-street-row data-street-id="${street.id}">
+                    <div class="mb-2 flex items-center gap-2">
+                        <span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${badge.classes}">${badge.label}</span>
+                        <span class="min-w-0 flex-1 truncate text-xs font-semibold text-slate-900 dark:text-slate-100">${street.name}</span>
                     </div>
                     <div class="grid grid-cols-3 gap-2">
                         <label class="text-[10px] text-slate-500">Min (veh/lane/min)
@@ -615,7 +629,14 @@ function renderBatchModalStreets(corridorConfig, corridorId) {
                                    class="mt-0.5 w-full rounded-md border-slate-300 bg-white py-1 text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
                         </label>
                     </div>
-                    <p class="mt-1.5 text-[10px] text-slate-400">${street.demand.fluctuationPeriodS}s sinusoid period (fixed, not calibrated)</p>
+                    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+                        <p class="text-[10px] text-slate-400">${street.demand.fluctuationPeriodS}s sinusoid period (fixed, not calibrated)</p>
+                        ${importOptions ? `
+                        <select data-field="import" class="rounded-md border-slate-300 bg-white py-1 text-[11px] text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                            <option value="">Import from Traffic Counter…</option>
+                            ${importOptions}
+                        </select>` : ''}
+                    </div>
                 </div>`;
         })
         .join('');
