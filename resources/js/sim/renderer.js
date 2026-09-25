@@ -22,6 +22,10 @@
  * separates by dE 23 under protanopia. Accents mark; they never carry text -
  * labels stay in a text token with a coloured dot beside them.
  */
+import { laneArrowShapes, laneArrowTargets } from '../renderers/laneArrows.js';
+import { turnLaneShapes } from '../renderers/turnLaneShapes.js';
+import { carShapeFor } from './carShapes.js';
+
 export const ARTERIAL_ACCENTS = ['#0284c7', '#ea580c', '#8b5cf6', '#059669'];
 
 /**
@@ -63,14 +67,25 @@ const PALETTES = {
         // read as a line of identical clones. Brake lights (carStopped) always
         // override this - the stop/go signal has to stay legible regardless of
         // which body colour a given car happens to be.
+        median: '#b3bcc7',
         carPalette: ['#1e293b', '#334155', '#3f3527', '#1f3a4d'],
         // One colour per truck size (small/medium/large, see car.js's
         // TRUCK_VEHICLE_TYPES) - warm tones deliberately distinct from the cool
         // car palette above, so a truck reads as a different vehicle class at a
         // glance, not just a bigger car. Darkens with size.
         truckPalette: ['#b45309', '#9a3412', '#7c2d12'],
+        // Buses: green, clear of both the car and the truck tones.
+        bus: '#15803d',
+        // Random events only: the weaving BMW, and the minibus taxis (white, as
+        // in the 3D view) so you can pick them out pulling over.
+        bmw: '#7e22ce',
+        taxi: '#f8fafc',
         carStopped: '#dc2626',
         carEdge: 'rgba(255, 255, 255, 0.65)',
+        // Lane-arrow editor: clickable spots, the one under the cursor, and lanes edited but not yet saved.
+        laneEditTarget: 'rgba(2, 132, 199, 0.18)',
+        laneEditHover: '#0284c7',
+        laneEditDirty: '#d97706',
     },
     dark: {
         void: '#080d16',
@@ -94,10 +109,17 @@ const PALETTES = {
         highlight: '#facc15',
         hud: 'rgba(226, 232, 240, 0.7)',
         junctionInner: 'rgba(226, 232, 240, 0.10)',
+        median: '#4b586f',
         carPalette: ['#e2e8f0', '#cbd5e1', '#e8dcc8', '#c9dcea'],
         truckPalette: ['#fcd34d', '#fb923c', '#f97316'],
+        bus: '#4ade80',
+        bmw: '#c084fc',
+        taxi: '#ffffff',
         carStopped: '#f87171',
         carEdge: 'rgba(8, 13, 22, 0.65)',
+        laneEditTarget: 'rgba(56, 189, 248, 0.2)',
+        laneEditHover: '#38bdf8',
+        laneEditDirty: '#fbbf24',
     },
 };
 
@@ -199,13 +221,21 @@ export class Camera {
 /* ---------------------------------------------------------------- renderer */
 
 export class LayoutRenderer {
-    constructor(canvas) {
+    /** `pixelRatio` pins the backing-store resolution (e.g. print export) instead of following the screen. */
+    constructor(canvas, { pixelRatio = null } = {}) {
         this.canvas = canvas;
+        this.pixelRatio = pixelRatio;
         this.ctx = canvas.getContext('2d');
         this.camera = new Camera();
         this.layout = null;
         this.dpr = 1;
         this.hoverNodeId = null;
+        /**
+         * Lane-arrow editor state while it's open (simulator.js), else null:
+         * `{ targets, hover, isDirty(approach, lane) }` - see laneArrows.js's
+         * laneArrowTargets(). Arrows are then drawn at every zoom, on top.
+         */
+        this.laneEditor = null;
         /** Per-frame simulation state (build step 2+): live cars and signal phases, set by simulator.js each frame. */
         this.dynamic = { cars: [], signals: new Map() };
         this.options = {
@@ -218,7 +248,10 @@ export class LayoutRenderer {
 
     setLayout(layout, { refit = true } = {}) {
         this.layout = layout;
+        this.laneArrows = laneArrowShapes(layout);
+        this.turnLanes = turnLaneShapes(layout);
         this.hoverNodeId = null;
+        this.laneEditor = null;
         this.resize({ refit });
         return this;
     }
@@ -244,7 +277,7 @@ export class LayoutRenderer {
         const rect = this.canvas.getBoundingClientRect();
         const width = Math.max(1, Math.round(rect.width));
         const height = Math.max(1, Math.round(rect.height));
-        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+        this.dpr = this.pixelRatio ?? Math.min(window.devicePixelRatio || 1, 2);
 
         this.canvas.width = Math.round(width * this.dpr);
         this.canvas.height = Math.round(height * this.dpr);
@@ -266,6 +299,35 @@ export class LayoutRenderer {
         if (!this.layout) return;
         this.camera.fit(this.layout.bounds);
         this.draw();
+    }
+
+    /** Opens (`isDirty` given) or closes (null) the lane-arrow editor overlay. */
+    setLaneEditor(isDirty) {
+        this.laneEditor = isDirty && this.layout ? { targets: laneArrowTargets(this.layout), hover: null, isDirty } : null;
+        this.draw();
+    }
+
+    /** Re-derives the painted arrows after a lane's lane use changed. */
+    refreshLaneArrows() {
+        this.laneArrows = laneArrowShapes(this.layout);
+        this.draw();
+    }
+
+    /** The editor's lane arrow nearest a screen point (within about a lane's reach), or null. */
+    hitTestLaneArrow(screenPt) {
+        if (!this.laneEditor) return null;
+        const radiusPx = Math.max(10, this.layout.laneWidthM * 0.6 * this.camera.scale);
+        let best = null;
+        let bestDist = radiusPx;
+        for (const target of this.laneEditor.targets) {
+            const s = this.camera.toScreen(target.point);
+            const d = Math.hypot(s.x - screenPt.x, s.y - screenPt.y);
+            if (d < bestDist) {
+                bestDist = d;
+                best = target;
+            }
+        }
+        return best;
     }
 
     /** Nearest intersection within `radiusPx` of a screen point, or null. */
@@ -311,10 +373,12 @@ export class LayoutRenderer {
         // Asphalt first, then markings, then junction boxes on top so no lane
         // marking bleeds through a junction, then furniture and labels.
         this.drawRoadSurfaces();
+        this.drawTurnLaneSurfaces();
         if (this.options.showLaneMarkings) this.drawRoadMarkings();
         this.drawJunctions();
         this.drawStopLines();
         this.drawCars();
+        if (this.laneEditor) this.drawLaneEditor();
         if (this.options.showSignalHeads) this.drawSignalHeads();
         if (this.options.showDistances) this.drawDistanceAnnotations();
         if (this.options.showLabels) this.drawLabels();
@@ -368,6 +432,8 @@ export class LayoutRenderer {
                 to: arterial.endPoint,
                 widthM: arterial.roadWidthM,
                 lanes: arterial.lanes,
+                laneWidthM: arterial.laneWidthM,
+                medianWidthM: 0,
                 twoWay: false,
                 heading: arterial.heading,
                 // Set only for a curved arterial. The curve's own sample points cover
@@ -386,6 +452,8 @@ export class LayoutRenderer {
                 to: connector.endPoint,
                 widthM: connector.roadWidthM,
                 lanes: connector.lanes,
+                laneWidthM: connector.laneWidthM,
+                medianWidthM: connector.medianWidthM,
                 twoWay: connector.twoWay,
                 heading: connector.heading,
                 // Set only for a curved connector (a ramp) - drawing code below
@@ -403,6 +471,8 @@ export class LayoutRenderer {
                     to: node.crossStub.endPoint,
                     widthM: node.crossRoadWidthM,
                     lanes: node.crossLanes,
+                    laneWidthM: node.crossRoadWidthM / node.crossLanes,
+                    medianWidthM: 0,
                     twoWay: node.crossTwoWay,
                     heading: node.crossAxis,
                     ref: node,
@@ -416,7 +486,7 @@ export class LayoutRenderer {
         const { ctx } = this;
         const { scale } = this.camera;
 
-        this.eachRoad(({ from, to, widthM, curvePoints }) => {
+        this.eachRoad(({ from, to, widthM, medianWidthM, heading, curvePoints }) => {
             const w = Math.max(2, widthM * scale);
             ctx.lineCap = 'butt';
             ctx.lineJoin = 'round';
@@ -430,7 +500,52 @@ export class LayoutRenderer {
             ctx.lineWidth = w;
             this.pathRoad(from, to, curvePoints);
             ctx.stroke();
+
+            // Median island down the middle of a divided street (drawJunctions() paints over it inside each junction).
+            if (medianWidthM > 0) {
+                const normal = { x: -heading.y, y: heading.x };
+                this.strokeOffsetLine(from, to, normal, 0, PALETTE.median, Math.max(1, medianWidthM * scale), null, curvePoints);
+            }
         });
+    }
+
+    /** Turn lanes (turnLaneShapes.js) - over the road surface, so a median-side one replaces the median island where it runs. */
+    drawTurnLaneSurfaces() {
+        const { ctx } = this;
+        if (!this.turnLanes.surfaces.length) return;
+        ctx.save();
+        ctx.fillStyle = PALETTE.asphalt;
+        ctx.strokeStyle = PALETTE.asphalt;
+        ctx.lineWidth = 1;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        for (const quad of this.turnLanes.surfaces) {
+            const [first, ...rest] = quad.map((point) => this.camera.toScreen(point));
+            ctx.moveTo(first.x, first.y);
+            for (const p of rest) ctx.lineTo(p.x, p.y);
+            ctx.closePath();
+        }
+        ctx.fill();
+        ctx.stroke(); // closes the hairline seam against the road it widens
+        ctx.restore();
+    }
+
+    /** Each turn lane's outer edge and taper, in the road edge-line style. */
+    drawTurnLaneEdges() {
+        const { ctx } = this;
+        if (!this.turnLanes.edges.length) return;
+        ctx.save();
+        ctx.strokeStyle = PALETTE.edgeLine;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (const [a, b] of this.turnLanes.edges) {
+            const p = this.camera.toScreen(a);
+            const q = this.camera.toScreen(b);
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(q.x, q.y);
+        }
+        ctx.stroke();
+        ctx.restore();
     }
 
     /** Traces a straight `from`->`to` line, or a polyline through `curvePoints` (a curved ramp) when given - both in screen space. */
@@ -470,10 +585,11 @@ export class LayoutRenderer {
         const { scale } = this.camera;
         if (scale < 0.7) return; // markings would be sub-pixel mush
 
-        this.eachRoad(({ from, to, widthM, lanes, twoWay, heading, curvePoints }) => {
+        this.drawTurnLaneEdges();
+        this.eachRoad(({ from, to, widthM, lanes, laneWidthM, medianWidthM, twoWay, heading, curvePoints }) => {
             const normal = { x: -heading.y, y: heading.x };
             const half = widthM / 2;
-            const laneWidthM = widthM / lanes;
+            const halfMedian = medianWidthM / 2;
 
             // Edge lines always; anything drawn between lanes only once a lane is
             // wide enough on screen to read as a lane rather than as noise.
@@ -483,12 +599,19 @@ export class LayoutRenderer {
             if (laneWidthM * scale < 7) return;
 
             if (twoWay) {
-                // Solid centreline separating the two directions of travel.
-                this.strokeOffsetLine(from, to, normal, 0, PALETTE.centreLine, 1.6, null, curvePoints);
+                if (medianWidthM > 0) {
+                    // Kerb lines either side of the median island (drawRoadSurfaces() fills it).
+                    for (const off of [-halfMedian, halfMedian]) {
+                        this.strokeOffsetLine(from, to, normal, off, PALETTE.edgeLine, 1, null, curvePoints);
+                    }
+                } else {
+                    // Solid centreline separating the two directions of travel.
+                    this.strokeOffsetLine(from, to, normal, 0, PALETTE.centreLine, 1.6, null, curvePoints);
+                }
                 // Interior lane divisions within each direction.
                 const perSide = lanes / 2;
                 for (let i = 1; i < perSide; i += 1) {
-                    const off = i * laneWidthM;
+                    const off = halfMedian + i * laneWidthM;
                     this.strokeOffsetLine(from, to, normal, off, PALETTE.laneDash, 1.2, [7, 9], curvePoints);
                     this.strokeOffsetLine(from, to, normal, -off, PALETTE.laneDash, 1.2, [7, 9], curvePoints);
                 }
@@ -500,7 +623,40 @@ export class LayoutRenderer {
             }
         });
 
-        if (scale >= 2.2) this.drawDirectionArrows();
+        if (scale >= 2.2) {
+            this.drawDirectionArrows();
+            if (!this.laneEditor) this.drawLaneUseArrows();
+        }
+    }
+
+    /** Painted turn arrows before each stop line - what each lane may do there (laneArrows.js). */
+    drawLaneUseArrows(shapes = this.laneArrows, colour = PALETTE.stopLine) {
+        const { ctx } = this;
+        const { scale } = this.camera;
+        ctx.save();
+        // Stop-line colour, heavier than the generic direction arrows, so a lane's turn rules stand out.
+        ctx.strokeStyle = colour;
+        ctx.fillStyle = colour;
+        ctx.lineWidth = Math.max(1.5, scale * 0.4);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (const [a, b] of shapes.lines) {
+            const p = this.camera.toScreen(a);
+            const q = this.camera.toScreen(b);
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(q.x, q.y);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        for (const triangle of shapes.heads) {
+            const [p, q, r] = triangle.map((point) => this.camera.toScreen(point));
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(q.x, q.y);
+            ctx.lineTo(r.x, r.y);
+            ctx.closePath();
+        }
+        ctx.fill();
+        ctx.restore();
     }
 
     strokeOffsetLine(from, to, normal, offsetM, colour, lineWidth, dash, curvePoints = null) {
@@ -540,10 +696,10 @@ export class LayoutRenderer {
         }
         for (const connector of this.layout.connectors) {
             if (connector.curve) continue; // curved-ramp arrow placement is a follow-up polish, not load-bearing
-            const perSide = Math.max(1, Math.floor(connector.lanes / 2));
-            const offsets = laneCentreOffsetsFor(connector.roadWidthM, connector.lanes, true).slice(0, perSide);
+            const offsets = laneCentreOffsetsFor(connector.roadWidthM, connector.lanes, connector.twoWay, connector.laneWidthM);
             const length = connector.spanM + connector.stubLengthM * 2;
             this.arrowsAlong(connector.startPoint, length, connector.heading, offsets, spacingM);
+            if (!connector.twoWay) continue; // a one-way street only runs start -> end
             this.arrowsAlong(
                 connector.endPoint,
                 length,
@@ -706,7 +862,7 @@ export class LayoutRenderer {
             ctx.save();
             ctx.translate(p.x, p.y);
             ctx.rotate(Math.atan2(car.heading.y, car.heading.x));
-            ctx.fillStyle = car.stopped ? PALETTE.carStopped : vehicleFillColour(car);
+            ctx.fillStyle = car.stopped ? PALETTE.carStopped : vehicleFillColour(car, this.dynamic.randomEvents);
             roundRect(ctx, -lengthPx / 2, -widthPx / 2, lengthPx, widthPx, cornerPx);
             ctx.fill();
             ctx.stroke();
@@ -965,6 +1121,40 @@ export class LayoutRenderer {
         ctx.textAlign = prevAlign;
     }
 
+    /** Lane-arrow editor overlay: a spot on every clickable arrow, the hovered one ringed, unsaved edits in their own colour. */
+    drawLaneEditor() {
+        const { ctx } = this;
+        const { targets, hover, isDirty } = this.laneEditor;
+        const r = Math.max(6, this.layout.laneWidthM * 0.45 * this.camera.scale);
+
+        ctx.save();
+        ctx.fillStyle = PALETTE.laneEditTarget;
+        ctx.beginPath();
+        for (const target of targets) {
+            const p = this.camera.toScreen(target.point);
+            ctx.moveTo(p.x + r, p.y);
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.restore();
+
+        this.drawLaneUseArrows(laneArrowShapes(this.layout, (approach, lane) => !isDirty(approach, lane)));
+        this.drawLaneUseArrows(laneArrowShapes(this.layout, isDirty), PALETTE.laneEditDirty);
+
+        if (!hover) return;
+        ctx.save();
+        ctx.strokeStyle = PALETTE.laneEditHover;
+        ctx.lineWidth = 2;
+        for (const target of targets) {
+            if (target.approach !== hover.approach || target.lane !== hover.lane) continue;
+            const p = this.camera.toScreen(target.point);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r + 1, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
     drawHover() {
         if (!this.hoverNodeId) return;
         const node = this.layout.nodesById.get(this.hoverNodeId);
@@ -1035,8 +1225,7 @@ export class LayoutRenderer {
 
 /* ------------------------------------------------------------------ helpers */
 
-function laneCentreOffsetsFor(roadWidthM, lanes, twoWay) {
-    const laneWidthM = roadWidthM / lanes;
+function laneCentreOffsetsFor(roadWidthM, lanes, twoWay, laneWidthM = roadWidthM / lanes) {
     const offsets = [];
     const count = twoWay ? Math.max(1, Math.floor(lanes / 2)) : lanes;
     for (let i = 0; i < count; i += 1) {
@@ -1048,15 +1237,18 @@ function laneCentreOffsetsFor(roadWidthM, lanes, twoWay) {
 /** Small/medium/large - must match car.js's TRUCK_VEHICLE_TYPES order, which is what PALETTE.truckPalette is indexed by. Kept local rather than imported so this file stays a pure consumer of plain snapshot objects (see the file header). */
 const TRUCK_SIZE_INDEX = { truck_small: 0, truck_medium: 1, truck_large: 2 };
 
-/** Body colour for a moving (non-stopped) vehicle: truck size palette for trucks, the usual per-car sprite-variety palette otherwise. */
-function vehicleFillColour(car) {
+/** Body colour for a moving (non-stopped) vehicle: truck size palette for trucks, green for buses, the random-events colours for the BMW and taxis, the usual per-car sprite-variety palette otherwise. */
+function vehicleFillColour(car, randomEvents) {
     const truckIndex = TRUCK_SIZE_INDEX[car.vehicleType];
     if (truckIndex != null) return PALETTE.truckPalette[truckIndex];
+    if (car.vehicleType === 'bus') return PALETTE.bus;
+    if (car.vehicleType === 'bmw') return PALETTE.bmw;
+    if (randomEvents && car.vehicleType === 'car' && carShapeFor(car.id) === 'taxi') return PALETTE.taxi;
     return PALETTE.carPalette[(car.colourIndex ?? 0) % PALETTE.carPalette.length];
 }
 
 /** Lens index (0 red, 1 amber, 2 green) that should be lit for this approach, or -1 for unlit/dark. */
-function litLensIndexFor(approach, signal) {
+export function litLensIndexFor(approach, signal) {
     if (!signal || signal.dark) return -1;
     const green = approach.kind === 'arterial' ? signal.arterialGreen : signal.crossGreen;
     const yellow = approach.kind === 'arterial' ? signal.arterialYellow : signal.crossYellow;

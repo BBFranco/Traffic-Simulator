@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * rationale.
  */
 #[Fillable([
+    'batch_id',
     'seed',
     'controller_mode',
     'power_state',

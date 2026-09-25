@@ -27,10 +27,7 @@ export const STOPPED_SPEED_MPS = 0.3;
  */
 const MAX_DECEL_MPS2 = 9;
 
-/** How long a cross-routing turn (build step 9) takes to visually sweep from the old heading/position to the new one. */
-const TURN_ANIM_DURATION_S = 1.2;
-
-/** How long a MOBIL lane change (engine.js) takes to visually glide sideways from the old lane offset to the new one - physics/collision uses the new lane immediately, only the render position eases, same split as TURN_ANIM_DURATION_S above. */
+/** How long a MOBIL lane change (engine.js) takes to visually glide sideways from the old lane offset to the new one - physics/collision uses the new lane immediately, only the render position eases. */
 const LANE_CHANGE_ANIM_DURATION_S = 0.8;
 
 /**
@@ -89,6 +86,40 @@ export const VEHICLE_TYPES = {
         idmOverrides: { a: 0.8, b: 1.5 },
         mobilOverrides: { politeness: 0.35, changeThresholdMps2: 0.6, maxSafeDecelMps2: 2.8 },
     },
+    // 12 m rigid city bus - the bus-mix slider (engine.js's setBusRatio()). Same
+    // heavy-vehicle reasoning as the trucks above, pitched between the medium
+    // and large truck: a full bus is heavy but geared for stop-start work.
+    bus: {
+        lengthM: 12,
+        widthM: 2.55,
+        desiredSpeedFactor: 0.85,
+        idmOverrides: { a: 1.0, b: 1.7 },
+        mobilOverrides: { politeness: 0.3, changeThresholdMps2: 0.5, maxSafeDecelMps2: 3.0 },
+    },
+    // Random-events mode only (engine.js's setRandomEvents()) - never spawned in
+    // batch runs. `extraSpeedKph` is added on top of the road's target speed;
+    // `laneChangeCooldownS` replaces engine.js's usual settle time between changes.
+    // The BMW: 20 over, short headway, and a negative change threshold with zero
+    // politeness, so it takes any safe gap - even one that gains it nothing.
+    bmw: {
+        lengthM: 4.8,
+        widthM: 1.9,
+        desiredSpeedFactor: 1.0,
+        extraSpeedKph: 20,
+        laneChangeCooldownS: 1.5,
+        idmOverrides: { a: 2.0, T: 0.9 },
+        mobilOverrides: { politeness: 0, changeThresholdMps2: -0.1, maxSafeDecelMps2: 5 },
+    },
+    // The Ranger double cab: sits in the fastest lane (engine.js's
+    // _preferredLane()) on a tailgater's headway and standstill gap.
+    ranger: {
+        lengthM: 5.4,
+        widthM: 1.95,
+        desiredSpeedFactor: 1.0,
+        extraSpeedKph: 10,
+        idmOverrides: { T: 0.5, s0: 1.0 },
+        mobilOverrides: { politeness: 0 },
+    },
 };
 
 /** Truck size keys in small-to-large order - what the truck-mix slider rolls between and what renderer.js's truck palette is indexed by. */
@@ -111,11 +142,13 @@ export class Car {
         speedMps,
         desiredSpeedMps,
         colourIndex = 0,
-        turnAnim = null,
+        turnPath = null,
         startupDelayS = 0,
         vehicleType = 'car',
+        id = null,
     }) {
-        this.id = nextCarId++;
+        /** Pass `id` to carry a vehicle's identity over when it's rebuilt - a car starting its turn (engine.js) - so it keeps its look in the renderers. */
+        this.id = id ?? nextCarId++;
         this.road = road;
         this.lane = lane;
         this.distanceM = distanceM;
@@ -124,7 +157,7 @@ export class Car {
         /** Sprite variety (build step 11) - which body colour in the renderer's palette this car uses. Ignored for trucks, which colour by size instead - see renderer.js. */
         this.colourIndex = colourIndex;
 
-        /** 'car' | 'truck_small' | 'truck_medium' | 'truck_large' - see VEHICLE_TYPES above. */
+        /** 'car' | 'truck_small' | 'truck_medium' | 'truck_large' | 'bus' | 'bmw' | 'ranger' - see VEHICLE_TYPES above. */
         this.vehicleType = vehicleType;
         const spec = VEHICLE_TYPES[vehicleType] ?? VEHICLE_TYPES.car;
         this.lengthM = spec.lengthM;
@@ -136,6 +169,18 @@ export class Car {
 
         /** Seconds left before this car is allowed to evaluate another MOBIL lane change - see engine.js's _tryChangeLane(). Stops unrealistic tick-by-tick weaving. */
         this.laneChangeCooldownS = 0;
+        /** Set for one tick when a vehicle alongside in the lane this car must reach blocks it - it eases off to drop in behind (engine.js's _tryMandatoryLaneChange()). */
+        this.mergeDropBack = false;
+
+        /**
+         * Random-events taxis only (engine.js's _taxiPickupObstacle()): the
+         * distance at which this taxi next looks for a spot to stop, and the
+         * stop it's pulling over for or dwelling at - `{ atM, dwellLeftS }`,
+         * where `atM` is where its front bumper stops and `dwellLeftS` is null
+         * until it has actually stopped there.
+         */
+        this.nextPickupM = null;
+        this.pickup = null;
 
         /**
          * Cosmetic-only sideways glide for a MOBIL lane change (engine.js),
@@ -164,9 +209,16 @@ export class Car {
         this.stoppedForSignal = false;
         this.totalWaitS = 0;
 
-        // Cross-routing bookkeeping only (build step 9): which connector-bearing
-        // node id this car has already rolled the diversion dice for, so it
-        // doesn't re-roll every tick while sitting in the decision window.
+        /**
+         * The movement this car intends at the next intersection -
+         * `{ nodeId, movement: 'left'|'straight'|'right', option }` - chosen as
+         * soon as that node becomes the next one ahead, so the car has the whole
+         * block to get into a lane that allows it (engine.js's turn lanes).
+         */
+        this.turnPlan = null;
+
+        // Which node this car has already committed its movement at (right at
+        // the stop line), so it isn't re-resolved every tick in that window.
         this.crossRollNodeId = null;
 
         /** Index into this arterial's ordered node list of the next stop line this car hasn't crossed yet - see SimulationEngine#_recordNodeClears(). */
@@ -185,61 +237,79 @@ export class Car {
         this.releasedNodeIds = new Set();
 
         /**
-         * Cosmetic-only turn sweep (build step 9 polish): a car diverted from
-         * arterial to connector changes `road`/`lane`/`distanceM` instantly for
-         * physics purposes, which is correct, but rendering that raw position/
-         * heading is a teleport - there's no lane geometry connecting an
-         * arterial lane to a connector lane, so nothing to actually drive along.
-         * Instead the RENDERED point/heading eases from where the car physically
-         * was at the moment of the turn ({fromPoint, fromHeading, controlPoint},
-         * captured by the caller before swapping `road` - controlPoint is the
-         * intersection corner the turn bows through) to wherever the physics
-         * puts it now. See carRenderPoint()/carRenderHeading() below and
-         * stepCar()'s elapsedS advance.
+         * Set while the car is driving its turn through a junction (engine.js's
+         * turning pass): a curve from its arterial lane at the stop line to its
+         * lane on the cross street (buildTurnPath()). While set, `distanceM` is
+         * the distance travelled ALONG THAT CURVE, and `road`/`lane` are where
+         * the car joins once it reaches the end.
          */
-        this.turnAnim = turnAnim;
+        this.turnPath = turnPath;
     }
-}
-
-/** Metres/radians-free lerp of a unit heading vector, renormalised - fine for the short, mostly-90-degree sweep a turn covers. */
-function lerpHeading(a, b, t) {
-    const x = a.x + (b.x - a.x) * t;
-    const y = a.y + (b.y - a.y) * t;
-    const len = Math.hypot(x, y) || 1;
-    return { x: x / len, y: y / len };
 }
 
 const easeInOut = (t) => t * t * (3 - 2 * t);
 
-/**
- * Where to actually draw `car` this frame - mid-sweep during a turn, otherwise
- * identical to carWorldPoint(). The sweep is a quadratic Bezier through the
- * turn's `controlPoint` (the intersection corner the car is actually turning
- * at), not a straight lerp - a straight line from an arterial's kerb lane to
- * a connector's entry lane cuts diagonally across whatever other lanes sit
- * between them, which reads as the car crossing traffic rather than turning.
- * Bowing the path through the corner keeps it visually on the intersection
- * throughout, the way an actual turn looks.
- */
-export function carRenderPoint(car) {
-    const target = carWorldPoint(car);
-    if (!car.turnAnim) return target;
+const TURN_PATH_SAMPLES = 24;
 
-    const t = easeInOut(Math.min(1, car.turnAnim.elapsedS / TURN_ANIM_DURATION_S));
-    const { fromPoint, controlPoint } = car.turnAnim;
-    const u = 1 - t;
-    return {
-        x: u * u * fromPoint.x + 2 * u * t * controlPoint.x + t * t * target.x,
-        y: u * u * fromPoint.y + 2 * u * t * controlPoint.y + t * t * target.y,
-    };
+/**
+ * The curve a turning car drives through a junction: a quadratic Bezier from
+ * `from` (its arterial lane at the stop line) to `to` (its cross-street lane
+ * just past the junction), bowing through the corner where the two lanes'
+ * centrelines meet - so the car sweeps round the corner inside the junction
+ * instead of cutting across other lanes. An arc-length table lets the car be
+ * placed by distance travelled, which is what its physics integrates.
+ */
+export function buildTurnPath(from, fromHeading, to, toHeading) {
+    const corner = turnCorner(from, fromHeading, to, toHeading);
+    const cumulative = [0];
+    let previous = from;
+    for (let i = 1; i <= TURN_PATH_SAMPLES; i += 1) {
+        const point = bezierPoint(from, corner, to, i / TURN_PATH_SAMPLES);
+        cumulative.push(cumulative[i - 1] + Math.hypot(point.x - previous.x, point.y - previous.y));
+        previous = point;
+    }
+    return { from, corner, to, cumulative, lengthM: cumulative[TURN_PATH_SAMPLES] };
 }
 
-/** Heading to draw `car` with this frame - mid-sweep during a turn, otherwise its road's own (possibly curved) heading at its current position. */
+/** Where the line `from` + t*fromHeading meets the line through `to` along toHeading - the corner a turn bows through. */
+export function turnCorner(from, fromHeading, to, toHeading) {
+    const d = { x: to.x - from.x, y: to.y - from.y };
+    const det = fromHeading.x * toHeading.y - fromHeading.y * toHeading.x;
+    if (Math.abs(det) <= 1e-3) return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const t = Math.max(0, (d.x * toHeading.y - d.y * toHeading.x) / det);
+    return { x: from.x + fromHeading.x * t, y: from.y + fromHeading.y * t };
+}
+
+function bezierPoint(p0, c, p2, t) {
+    const u = 1 - t;
+    return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p2.x, y: u * u * p0.y + 2 * u * t * c.y + t * t * p2.y };
+}
+
+/** Point and heading `distanceM` along a turn path. */
+export function turnPathPointAt(path, distanceM) {
+    const s = Math.min(Math.max(distanceM, 0), path.lengthM);
+    let i = 1;
+    while (i < TURN_PATH_SAMPLES && path.cumulative[i] < s) i += 1;
+    const segment = path.cumulative[i] - path.cumulative[i - 1] || 1;
+    const t = (i - 1 + (s - path.cumulative[i - 1]) / segment) / TURN_PATH_SAMPLES;
+    const u = 1 - t;
+    const tangent = {
+        x: 2 * u * (path.corner.x - path.from.x) + 2 * t * (path.to.x - path.corner.x),
+        y: 2 * u * (path.corner.y - path.from.y) + 2 * t * (path.to.y - path.corner.y),
+    };
+    const len = Math.hypot(tangent.x, tangent.y) || 1;
+    return { point: bezierPoint(path.from, path.corner, path.to, t), heading: { x: tangent.x / len, y: tangent.y / len } };
+}
+
+/** Where to draw `car` this frame: on its turn path while turning, otherwise its lane position. */
+export function carRenderPoint(car) {
+    return car.turnPath ? turnPathPointAt(car.turnPath, car.distanceM).point : carWorldPoint(car);
+}
+
+/** Heading to draw `car` with this frame - along its turn path while turning, otherwise its road's own (possibly curved) heading. */
 export function carRenderHeading(car) {
-    const heading = roadPointAt(car.road, car.distanceM).heading;
-    if (!car.turnAnim) return heading;
-    const t = easeInOut(Math.min(1, car.turnAnim.elapsedS / TURN_ANIM_DURATION_S));
-    return lerpHeading(car.turnAnim.fromHeading, heading, t);
+    if (car.turnPath) return turnPathPointAt(car.turnPath, car.distanceM).heading;
+    return roadPointAt(car.road, car.distanceM).heading;
 }
 
 /** Resets the id counter - call between headless batch runs so ids stay small and stable. */
@@ -247,29 +317,35 @@ export function resetCarIdCounter() {
     nextCarId = 1;
 }
 
-/** Per-lane offsets (metres) along the LEFT normal, kerb lane first - same convention as corridor.js approaches. */
-export function laneOffsetsFor(roadWidthM, lanes, laneWidthM) {
-    const offsets = [];
-    for (let i = 0; i < lanes; i += 1) {
-        offsets.push(roadWidthM / 2 - (i + 0.5) * laneWidthM);
-    }
-    return offsets;
+/**
+ * Offset (metres) along the LEFT normal of lane slot `lane` on `road` - same
+ * convention as corridor.js approaches. Slots run kerb first: `road.kerbSlots`
+ * (0 or 1) turn-lane slots outside the kerb lane, then the road's own lanes,
+ * then any median-side turn-lane slot (engine.js's lane layouts).
+ */
+function laneOffset(road, lane) {
+    return road.roadWidthM / 2 - (lane - (road.kerbSlots ?? 0) + 0.5) * road.laneWidthM;
+}
+
+/** Centre of `lane` on `road` at `distanceM` - no lane-change glide. */
+export function lanePoint(road, lane, distanceM) {
+    const { point, heading } = roadPointAt(road, distanceM);
+    return { point: addVector(point, leftNormal(heading), laneOffset(road, lane)), heading };
 }
 
 export function carWorldPoint(car) {
     const { road } = car;
-    const offsets = laneOffsetsFor(road.roadWidthM, road.lanes, road.laneWidthM);
     const { point: base, heading } = roadPointAt(road, car.distanceM);
     const normal = leftNormal(heading);
 
-    let lateralOffsetM = offsets[car.lane];
+    let lateralOffsetM = laneOffset(road, car.lane);
     if (car.laneChangeAnim) {
         // Glide the RENDERED lateral offset from the old lane to the new one -
         // car.lane already switched the instant the change was decided
         // (engine.js's _tryChangeLane()), so physics/collision never waits on
         // this, only the drawn position eases sideways instead of teleporting.
         const t = easeInOut(Math.min(1, car.laneChangeAnim.elapsedS / LANE_CHANGE_ANIM_DURATION_S));
-        const fromOffsetM = offsets[car.laneChangeAnim.fromLane];
+        const fromOffsetM = laneOffset(road, car.laneChangeAnim.fromLane);
         lateralOffsetM = fromOffsetM + (lateralOffsetM - fromOffsetM) * t;
     }
 
@@ -298,19 +374,41 @@ export function carWorldPoint(car) {
  * `car`'s own half remains, so its FRONT bumper - not its centre - is what
  * settles near the line.
  */
-export function carAcceleration(car, ahead) {
+export function carAcceleration(car, ahead, desiredSpeedMps = car.desiredSpeedMps) {
     const v = car.speedMps;
     const params = car.idmParams;
 
     if (!ahead) {
         // No leader: IDM's free-flow term only (the (sStar/s)^2 interaction term
         // vanishes as the gap goes to infinity).
-        return params.a * (1 - Math.pow(v / car.desiredSpeedMps, params.delta));
+        return params.a * (1 - Math.pow(v / desiredSpeedMps, params.delta));
     }
     const occupiedLengthM = ((ahead.lengthM ?? 0) + car.lengthM) / 2;
     const gap = Math.max(ahead.distanceM - occupiedLengthM - car.distanceM, 0.1);
     const dv = v - ahead.speedMps;
-    return idmAcceleration(v, car.desiredSpeedMps, dv, gap, params);
+    return idmAcceleration(v, desiredSpeedMps, dv, gap, params);
+}
+
+/**
+ * Speed a car entering the road should arrive at, given what's ahead of it in
+ * its lane: its desired speed, or - when the leader is too close for that -
+ * the fastest speed at which IDM's own desired gap sStar(v, dv) = s0 + v*T +
+ * v*dv/(2*sqrt(a*b)) (equations.js) still fits the actual gap. Solving
+ * sStar = gap with dv = v - vLeader is the quadratic
+ *   k*v^2 + (T - k*vLeader)*v + (s0 - gap) = 0,  k = 1/(2*sqrt(a*b)),
+ * whose positive root is taken. A car spawned at full speed onto the tail of
+ * a queue backed up to the road's entry otherwise starts deep inside that
+ * gap and emergency-brakes into the car ahead.
+ */
+export function entrySpeedBehind(car, ahead) {
+    if (!ahead) return car.desiredSpeedMps;
+    const { a, b, s0, T } = car.idmParams;
+    const gap = ahead.distanceM - ((ahead.lengthM ?? 0) + car.lengthM) / 2 - car.distanceM;
+    if (gap <= s0) return 0;
+    const k = 1 / (2 * Math.sqrt(a * b));
+    const linear = T - k * ahead.speedMps;
+    const v = (-linear + Math.sqrt(linear * linear + 4 * k * (gap - s0))) / (2 * k);
+    return Math.min(car.desiredSpeedMps, v);
 }
 
 /**
@@ -319,9 +417,14 @@ export function carAcceleration(car, ahead) {
  * @param ahead    { distanceM, speedMps, isSignal } of whatever is in front
  *                 in this lane, or null for free flow (no leader at all).
  */
-export function stepCar(car, ahead, dt) {
+/**
+ * `maxAccelMps2` caps IDM's output - engine.js uses it for a car easing off to
+ * slot in behind a vehicle in its turn lane. `speedLimitMps` lowers IDM's
+ * desired speed for this step - a car slowing for, and driving, a turn.
+ */
+export function stepCar(car, ahead, dt, maxAccelMps2 = Infinity, speedLimitMps = Infinity) {
     const v = car.speedMps;
-    let accel = carAcceleration(car, ahead);
+    let accel = Math.min(carAcceleration(car, ahead, Math.min(car.desiredSpeedMps, speedLimitMps)), maxAccelMps2);
     accel = Math.max(accel, -MAX_DECEL_MPS2);
 
     // Reaction-lag gate: a stationary car that's just become free to move
@@ -355,11 +458,6 @@ export function stepCar(car, ahead, dt) {
 
     car.speedMps = newSpeed;
     car.distanceM += newSpeed * dt;
-
-    if (car.turnAnim) {
-        car.turnAnim.elapsedS += dt;
-        if (car.turnAnim.elapsedS >= TURN_ANIM_DURATION_S) car.turnAnim = null;
-    }
 
     if (car.laneChangeAnim) {
         car.laneChangeAnim.elapsedS += dt;

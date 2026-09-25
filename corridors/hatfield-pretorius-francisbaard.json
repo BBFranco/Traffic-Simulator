@@ -26,9 +26,12 @@
       "oneWay": true,
       "direction": "westbound",
       "lanes": 4,
-      "targetSpeedKph": 50,
+      "targetSpeedKph": 60,
       "mode": "fixed",
-      "origin": { "xM": 735, "yM": 0 },
+      "origin": {
+        "xM": 735,
+        "yM": 0
+      },
       "approachLengthM": 300,
       "exitLengthM": 220,
       "demand": {
@@ -38,10 +41,26 @@
         "saturationFlowPerLanePerHour": 1900
       },
       "intersections": [
-        { "id": "fb_1", "name": "Francis Baard & Festival", "distanceToNextM": 245 },
-        { "id": "fb_2", "name": "Francis Baard & Hilda", "distanceToNextM": 245 },
-        { "id": "fb_3", "name": "Francis Baard & Grosvenor", "distanceToNextM": 245 },
-        { "id": "fb_4", "name": "Francis Baard & Jan Shoba", "distanceToNextM": null }
+        {
+          "id": "fb_1",
+          "name": "Francis Baard & Festival",
+          "distanceToNextM": 245
+        },
+        {
+          "id": "fb_2",
+          "name": "Francis Baard & Hilda",
+          "distanceToNextM": 245
+        },
+        {
+          "id": "fb_3",
+          "name": "Francis Baard & Grosvenor",
+          "distanceToNextM": 245
+        },
+        {
+          "id": "fb_4",
+          "name": "Francis Baard & Jan Shoba",
+          "distanceToNextM": null
+        }
       ]
     },
     {
@@ -51,9 +70,12 @@
       "oneWay": true,
       "direction": "eastbound",
       "lanes": 4,
-      "targetSpeedKph": 50,
+      "targetSpeedKph": 60,
       "mode": "fixed",
-      "origin": { "xM": 0, "yM": 164 },
+      "origin": {
+        "xM": 0,
+        "yM": 164
+      },
       "approachLengthM": 300,
       "exitLengthM": 220,
       "demand": {
@@ -63,10 +85,32 @@
         "saturationFlowPerLanePerHour": 1900
       },
       "intersections": [
-        { "id": "pt_1", "name": "Pretorius & Jan Shoba", "distanceToNextM": 245 },
-        { "id": "pt_2", "name": "Pretorius & Grosvenor", "distanceToNextM": 245 },
-        { "id": "pt_3", "name": "Pretorius & Hilda", "distanceToNextM": 245 },
-        { "id": "pt_4", "name": "Pretorius & Festival", "distanceToNextM": null }
+        {
+          "id": "pt_1",
+          "name": "Pretorius & Jan Shoba",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left",
+            "left_straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "pt_2",
+          "name": "Pretorius & Grosvenor",
+          "distanceToNextM": 245
+        },
+        {
+          "id": "pt_3",
+          "name": "Pretorius & Hilda",
+          "distanceToNextM": 245
+        },
+        {
+          "id": "pt_4",
+          "name": "Pretorius & Festival",
+          "distanceToNextM": null
+        }
       ]
     }
   ],
@@ -74,9 +118,13 @@
     {
       "id": "conn_jan_shoba",
       "name": "Jan Shoba St",
+      "targetSpeedKph": 60,
       "lanes": 2,
       "twoWay": true,
-      "linksArterialNodes": ["pt_1", "fb_4"],
+      "linksArterialNodes": [
+        "pt_1",
+        "fb_4"
+      ],
       "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
@@ -89,9 +137,13 @@
     {
       "id": "conn_grosvenor",
       "name": "Grosvenor St",
+      "targetSpeedKph": 60,
       "lanes": 2,
       "twoWay": true,
-      "linksArterialNodes": ["pt_2", "fb_3"],
+      "linksArterialNodes": [
+        "pt_2",
+        "fb_3"
+      ],
       "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
@@ -104,9 +156,13 @@
     {
       "id": "conn_hilda",
       "name": "Hilda St",
+      "targetSpeedKph": 60,
       "lanes": 2,
       "twoWay": true,
-      "linksArterialNodes": ["pt_3", "fb_2"],
+      "linksArterialNodes": [
+        "pt_3",
+        "fb_2"
+      ],
       "crossChance": 0.22,
       "mode": "fixed",
       "demand": {
@@ -119,9 +175,13 @@
     {
       "id": "conn_festival",
       "name": "Festival St",
+      "targetSpeedKph": 60,
       "lanes": 2,
       "twoWay": true,
-      "linksArterialNodes": ["pt_4", "fb_1"],
+      "linksArterialNodes": [
+        "pt_4",
+        "fb_1"
+      ],
       "crossChance": 0.22,
       "mode": "fixed",
       "demand": {

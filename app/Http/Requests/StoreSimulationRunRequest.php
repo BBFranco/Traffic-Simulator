@@ -21,6 +21,8 @@ class StoreSimulationRunRequest extends FormRequest
     {
         return [
             'runs' => ['required', 'array', 'min:1'],
+            // Every run of one batch shares an id - /results shows only each corridor's latest batch.
+            'runs.*.batch_id' => ['required', 'uuid'],
             'runs.*.seed' => ['required', 'integer'],
             'runs.*.controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
             'runs.*.power_state' => ['required', 'in:normal,load_shedding'],

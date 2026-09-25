@@ -35,6 +35,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { runHeadless } from '../resources/js/sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experimentalMatrix.js';
@@ -126,6 +127,7 @@ async function main() {
     const corridorConfig = JSON.parse(fs.readFileSync(corridorPath, 'utf8'));
 
     const matrix = buildExperimentalMatrix();
+    const batchId = randomUUID();
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
     let mismatches = 0;
@@ -163,7 +165,7 @@ async function main() {
             }
 
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary));
+                pendingPosts.push(toApiPayload(summary, batchId));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to

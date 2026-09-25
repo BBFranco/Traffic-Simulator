@@ -4,8 +4,9 @@
  * (snake_case, matching the `simulation_runs` migration columns exactly).
  * Shared by the CLI batch driver and the /results page's batch-run button.
  */
-export function toApiPayload(summary) {
+export function toApiPayload(summary, batchId) {
     return {
+        batch_id: batchId,
         seed: summary.seed,
         controller_mode: summary.controllerMode,
         power_state: summary.powerState,

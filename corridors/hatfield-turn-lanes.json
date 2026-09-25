@@ -1,0 +1,238 @@
+{
+  "id": "hatfield-turn-lanes",
+  "sortOrder": 3,
+  "name": "Hatfield Grid · dedicated turn lanes",
+  "description": "Same Hatfield Pretorius / Francis Baard grid, with lane-use markings at every intersection: kerb lane left + straight, middle lanes straight, median lane straight + right. At Pretorius & Jan Shoba the kerb lane is left-turn only. Cars pick their movement a block ahead and change into a lane that allows it.",
+  "meta": {
+    "geometryUnits": "metres",
+    "axes": "x increases east, y increases south (screen convention)",
+    "crossStreetOrder": "West to east along Pretorius (inbound/eastbound): Jan Shoba, Grosvenor, Hilda, Festival. Francis Baard runs the same block sequence in reverse, being outbound/westbound.",
+    "distanceSource": "Uniform 245 m block spacing, as specified. Because every block is the same length, the green wave offset chain is a constant step: 245 m / 13.89 m/s = 17.6 s per intersection at the 50 km/h target speed.",
+    "demandSource": "Sinusoidal fluctuation between min and max, 300 s period, midpoint equal to the flat demand this scenario used before fluctuation was added.",
+    "laneUse": "laneUse lists one entry per arterial lane, kerb lane (leftmost, SA) first: left, straight, right, joined by _ (e.g. straight_right), or all."
+  },
+  "defaults": {
+    "laneWidthM": 3.5,
+    "carLengthM": 4.5,
+    "crossStreetStubLengthM": 70,
+    "sensorMode": "inductive_loop",
+    "connectorMode": "fixed",
+    "handedness": "left"
+  },
+  "arterials": [
+    {
+      "id": "francisbaard",
+      "name": "Francis Baard Street (outbound)",
+      "shortName": "Francis Baard",
+      "oneWay": true,
+      "direction": "westbound",
+      "lanes": 4,
+      "targetSpeedKph": 60,
+      "mode": "fixed",
+      "origin": {
+        "xM": 735,
+        "yM": 0
+      },
+      "approachLengthM": 300,
+      "exitLengthM": 220,
+      "demand": {
+        "spawnRatePerLanePerMinMin": 3,
+        "spawnRatePerLanePerMinMax": 15,
+        "fluctuationPeriodS": 300,
+        "saturationFlowPerLanePerHour": 1900
+      },
+      "intersections": [
+        {
+          "id": "fb_1",
+          "name": "Francis Baard & Festival",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "fb_2",
+          "name": "Francis Baard & Hilda",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "fb_3",
+          "name": "Francis Baard & Grosvenor",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "fb_4",
+          "name": "Francis Baard & Jan Shoba",
+          "distanceToNextM": null,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pretorius",
+      "name": "Pretorius Street (inbound)",
+      "shortName": "Pretorius",
+      "oneWay": true,
+      "direction": "eastbound",
+      "lanes": 4,
+      "targetSpeedKph": 60,
+      "mode": "fixed",
+      "origin": {
+        "xM": 0,
+        "yM": 164
+      },
+      "approachLengthM": 300,
+      "exitLengthM": 220,
+      "demand": {
+        "spawnRatePerLanePerMinMin": 3,
+        "spawnRatePerLanePerMinMax": 15,
+        "fluctuationPeriodS": 300,
+        "saturationFlowPerLanePerHour": 1900
+      },
+      "intersections": [
+        {
+          "id": "pt_1",
+          "name": "Pretorius & Jan Shoba",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "pt_2",
+          "name": "Pretorius & Grosvenor",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "pt_3",
+          "name": "Pretorius & Hilda",
+          "distanceToNextM": 245,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        },
+        {
+          "id": "pt_4",
+          "name": "Pretorius & Festival",
+          "distanceToNextM": null,
+          "laneUse": [
+            "left_straight",
+            "straight",
+            "straight",
+            "straight_right"
+          ]
+        }
+      ]
+    }
+  ],
+  "connectors": [
+    {
+      "id": "conn_jan_shoba",
+      "name": "Jan Shoba St",
+      "targetSpeedKph": 60,
+      "lanes": 2,
+      "twoWay": true,
+      "linksArterialNodes": [
+        "pt_1",
+        "fb_4"
+      ],
+      "crossChance": 0.22,
+      "mode": "fixed",
+      "demand": {
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
+        "saturationFlowPerLanePerHour": 1800
+      }
+    },
+    {
+      "id": "conn_grosvenor",
+      "name": "Grosvenor St",
+      "targetSpeedKph": 60,
+      "lanes": 2,
+      "twoWay": true,
+      "linksArterialNodes": [
+        "pt_2",
+        "fb_3"
+      ],
+      "crossChance": 0.22,
+      "mode": "fixed",
+      "demand": {
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
+        "saturationFlowPerLanePerHour": 1800
+      }
+    },
+    {
+      "id": "conn_hilda",
+      "name": "Hilda St",
+      "targetSpeedKph": 60,
+      "lanes": 2,
+      "twoWay": true,
+      "linksArterialNodes": [
+        "pt_3",
+        "fb_2"
+      ],
+      "crossChance": 0.22,
+      "mode": "fixed",
+      "demand": {
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
+        "saturationFlowPerLanePerHour": 1800
+      }
+    },
+    {
+      "id": "conn_festival",
+      "name": "Festival St",
+      "targetSpeedKph": 60,
+      "lanes": 2,
+      "twoWay": true,
+      "linksArterialNodes": [
+        "pt_4",
+        "fb_1"
+      ],
+      "crossChance": 0.22,
+      "mode": "fixed",
+      "demand": {
+        "spawnRatePerLanePerMinMin": 1,
+        "spawnRatePerLanePerMinMax": 7,
+        "fluctuationPeriodS": 300,
+        "saturationFlowPerLanePerHour": 1800
+      }
+    }
+  ]
+}

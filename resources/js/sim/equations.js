@@ -95,13 +95,25 @@ export function mobilShouldChangeLane(
     { accSelfBefore, accSelfAfter, accNewFollowerBefore, accNewFollowerAfter, accOldFollowerBefore, accOldFollowerAfter },
     params = MOBIL_DEFAULTS
 ) {
-    if (accNewFollowerAfter < -params.maxSafeDecelMps2) return false; // safety criterion
+    if (!mobilIsSafe(accNewFollowerAfter, params)) return false;
 
     const incentive =
         accSelfAfter -
         accSelfBefore +
         params.politeness * (accNewFollowerAfter - accNewFollowerBefore + (accOldFollowerAfter - accOldFollowerBefore));
     return incentive > params.changeThresholdMps2;
+}
+
+/**
+ * MOBIL's safety criterion on its own: the new follower may not be forced to
+ * brake harder than bSafe. A MANDATORY lane change (a car that has to reach a
+ * lane its planned movement is allowed from - engine.js's turn lanes) uses only
+ * this and skips the incentive test, the standard treatment for route-forced
+ * changes in Kesting, Treiber & Helbing (2007), section 3.3: the driver must
+ * change, so the only question is whether the gap is safe.
+ */
+export function mobilIsSafe(accNewFollowerAfter, params = MOBIL_DEFAULTS) {
+    return accNewFollowerAfter >= -params.maxSafeDecelMps2;
 }
 
 export const MOBIL_DEFAULTS = {

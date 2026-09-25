@@ -176,6 +176,11 @@ File: `resources/js/sim/car.js` (`VEHICLE_TYPES`)
   `truckRatio` via `engine.setTruckRatio()`; each spawn independently rolls
   `car` vs. uniformly one of the three truck sizes. The renderer draws each
   truck size in a distinct colour from the car palette.
+- The **bus-mix slider** (0–30%) sets `busRatio` via `engine.setBusRatio()`
+  for a single 12 m `bus` type (heavy-vehicle IDM/MOBIL values between the
+  medium and large truck). Buses take the band just above `truckRatio` on the
+  same RNG draw, so 0% buses leaves the RNG sequence unchanged; batch runs and
+  replays always use 0% trucks and buses.
 
 ---
 

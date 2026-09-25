@@ -17,7 +17,12 @@
                     <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['throughput_per_min'.$suffix], $row['throughput_per_min'.$suffix.'_ci95']) }}</td>
                     <td class="px-4 py-2 text-right">{{ $fmtWithCi($row['pct_cleared_without_stop'.$suffix], $row['pct_cleared_without_stop'.$suffix.'_ci95']) }}</td>
                     <td class="px-4 py-2 text-right text-slate-500 dark:text-slate-400">
-                        {{ $row['time_to_recovery_seconds'.$suffix] === null ? '—' : number_format($row['time_to_recovery_seconds'.$suffix], 1) }}
+                        @if ($power === 'normal')
+                            —
+                        @else
+                            {{ $row['time_to_recovery_seconds'.$suffix] === null ? 'n/a' : number_format($row['time_to_recovery_seconds'.$suffix], 1) }}
+                            <span class="text-[10px] text-slate-400">({{ $row['time_to_recovery_seconds'.$suffix.'_recovered'] }}/{{ $row['runs'] }})</span>
+                        @endif
                     </td>
                 </tr>
             @endforeach

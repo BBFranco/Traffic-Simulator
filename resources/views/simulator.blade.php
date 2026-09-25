@@ -9,9 +9,12 @@
         {{-- ============================================================ RAIL --}}
         <aside class="w-full lg:w-[336px] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r dark:border-slate-800 dark:bg-slate-900">
 
-            <x-control-section title="Scenario" subtitle="Layouts come from corridors/*.json - nothing about the road network is hardcoded.">
+            <x-control-section title="Scenario" info="Pick the road network and the random seed the run starts from.">
                 <div>
-                    <label for="corridor-select" class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Corridor layout</label>
+                    <div class="mb-1 flex items-center gap-1.5">
+                        <label for="corridor-select" class="text-xs font-medium text-slate-700 dark:text-slate-300">Corridor layout</label>
+                        <x-info-tip id="corridor-description" />
+                    </div>
                     <select id="corridor-select" class="{{ $select }}">
                         @foreach ($corridors as $corridor)
                             <option value="{{ $corridor['id'] }}" @selected($corridor['id'] === $defaultCorridorId)>
@@ -19,7 +22,6 @@
                             </option>
                         @endforeach
                     </select>
-                    <p id="corridor-description" class="mt-2 text-[11px] leading-relaxed text-slate-500"></p>
                     <dl id="corridor-facts" class="mt-2 grid grid-cols-3 gap-1 text-center"></dl>
 
                     {{-- A config the loader rejects has to say so here. Failing only
@@ -35,10 +37,10 @@
                 </div>
 
                 <div>
-                    <label for="seed-input" class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                        Seed
-                        <span class="font-normal text-slate-500">· same seed + config = identical run</span>
-                    </label>
+                    <div class="mb-1 flex items-center gap-1.5">
+                        <label for="seed-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">Seed</label>
+                        <x-info-tip text="The same seed and settings always produce exactly the same run." />
+                    </div>
                     <div class="flex gap-2">
                         <input id="seed-input" type="number" min="0" step="1" value="20260818"
                                class="w-full rounded-md border-slate-300 bg-white py-1.5 font-mono text-xs text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
@@ -50,7 +52,7 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Replay a batch run" subtitle="Loads one representative run from the dissertation dataset (same seed, controller mode, sensor, and - for load shedding - the exact outage timing) and plays it back automatically.">
+            <x-control-section title="Replay a batch run" info="Plays back a run from the results dataset with its exact seed, controller, sensor and outage timing.">
                 <div id="replay-empty-state" class="hidden text-[11px] leading-relaxed text-slate-500">
                     No batch runs found yet. Generate a dataset on the
                     <a href="{{ route('results') }}" class="font-medium text-sky-600 hover:underline dark:text-sky-400">Results page</a>
@@ -74,17 +76,17 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Signal control" subtitle="Each arterial runs its own mode, so one can be coordinated while the other is not and the footer compares them live. Every intersection on an arterial - including its cross-street - follows that arterial's mode.">
+            <x-control-section title="Signal control" info="Each arterial has its own controller. Its cross-streets follow the same mode, and the stats below compare the arterials live.">
                 {{-- Populated from the loaded corridor: one row per arterial. --}}
                 <div id="arterial-mode-controls" class="space-y-3"></div>
             </x-control-section>
 
-            <x-control-section title="Sensing" subtitle="A sensor mode is modelled as what the controller is allowed to see, not as hardware.">
+            <x-control-section title="Sensing" info="What the signal controller can detect. Hover an option for details.">
                 <div class="space-y-1.5" id="sensor-mode-group">
                     @foreach ($sensorModes as $key => $mode)
-                        <label class="group flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5 transition hover:border-slate-300 has-[:checked]:border-sky-500/60 has-[:checked]:bg-sky-50 dark:hover:border-slate-700 dark:has-[:checked]:bg-sky-500/5">
+                        <label data-tip="{{ $mode['sees'] }}" class="group flex cursor-pointer items-center gap-2.5 {{ $inset }} px-2.5 py-2 transition hover:border-slate-300 has-[:checked]:border-sky-500/60 has-[:checked]:bg-sky-50 dark:hover:border-slate-700 dark:has-[:checked]:bg-sky-500/5">
                             <input type="radio" name="sensorMode" value="{{ $key }}" @checked($key === 'inductive_loop')
-                                   class="mt-0.5 {{ $radio }}">
+                                   class="{{ $radio }}">
                             <span class="min-w-0 flex-1">
                                 <span class="flex items-center justify-between gap-2">
                                     <span class="text-xs font-medium text-slate-800 dark:text-slate-200">{{ $mode['label'] }}</span>
@@ -92,14 +94,13 @@
                                         {{ $mode['power'] }}
                                     </span>
                                 </span>
-                                <span class="mt-0.5 block text-[10px] leading-relaxed text-slate-500">{{ $mode['sees'] }}</span>
                             </span>
                         </label>
                     @endforeach
                 </div>
             </x-control-section>
 
-            <x-control-section title="Power" subtitle="On a cut the lights go dark and intersections fall back to all-way-stop - the sim keeps running, it does not freeze.">
+            <x-control-section title="Power" info="During a power cut the lights go dark and intersections become all-way stops. Traffic keeps moving.">
                 <button type="button" id="load-shedding-toggle" data-active="false"
                         class="w-full rounded-md border px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition
                                border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100
@@ -113,8 +114,10 @@
                 <label class="flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5">
                     <input type="checkbox" id="scheduled-outages" class="mt-0.5 {{ $checkbox }}">
                     <span class="min-w-0 flex-1">
-                        <span class="block text-xs font-medium text-slate-800 dark:text-slate-200">Scheduled rotating outages</span>
-                        <span class="mt-0.5 block text-[10px] leading-relaxed text-slate-500">ESKOM-style: repeat the cut on a fixed on/off cycle instead of one manual event.</span>
+                        <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                            Scheduled rotating outages
+                            <x-info-tip text="Eskom-style load shedding: the power goes off on a repeating schedule." />
+                        </span>
                         <span class="mt-2 flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-slate-400">
                             <input type="number" id="outage-off-minutes" value="2" min="1" max="60" class="w-14 {{ $tinyInput }}">
                             min dark, every
@@ -127,26 +130,52 @@
                 <label class="flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5">
                     <input type="checkbox" id="battery-backed-sensors" checked class="mt-0.5 {{ $checkbox }}">
                     <span class="min-w-0 flex-1">
-                        <span class="block text-xs font-medium text-slate-800 dark:text-slate-200">Battery-backed low-power sensors</span>
-                        <span class="mt-0.5 block text-[10px] leading-relaxed text-slate-500">Loops and magnetometers survive the cut; camera and radar drop out regardless. This is the hybrid-sensing hook.</span>
+                        <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                            Battery-backed sensors
+                            <x-info-tip text="Loops and magnetometers keep working during a cut. Cameras and radar always drop out." />
+                        </span>
                     </span>
                 </label>
             </x-control-section>
 
-            <x-control-section title="Demand" subtitle="Per-lane spawn rate. Raise one arterial to make it the busy one for a demo.">
+            <x-control-section title="Demand" info="How many vehicles enter each road per lane per minute. Demand swings between min and max over time.">
                 <div id="demand-controls" class="space-y-3"></div>
             </x-control-section>
 
-            <x-control-section title="Vehicles" subtitle="Trucks drive slower and brake harder than cars (small/medium/large rig), which is what makes cars change lanes around them.">
+            <x-control-section title="Vehicles">
                 <div>
                     <div class="mb-1 flex items-baseline justify-between gap-2">
-                        <label for="truck-ratio-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">Truck mix</label>
+                        <span class="flex items-center gap-1.5">
+                            <label for="truck-ratio-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">Truck mix</label>
+                            <x-info-tip text="Share of new vehicles that are trucks, split across three sizes. Trucks are slower, so cars change lanes around them." />
+                        </span>
                         <span class="font-mono text-[11px] text-slate-600 dark:text-slate-400"><span id="truck-ratio-value">0</span>%</span>
                     </div>
                     <input type="range" id="truck-ratio-input" min="0" max="50" step="1" value="0"
                            class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500">
-                    <p class="mt-1.5 text-[10px] leading-relaxed text-slate-500">Share of newly spawned vehicles that are trucks, split evenly across the three sizes.</p>
                 </div>
+
+                <div>
+                    <div class="mb-1 flex items-baseline justify-between gap-2">
+                        <span class="flex items-center gap-1.5">
+                            <label for="bus-ratio-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">Bus mix</label>
+                            <x-info-tip text="Share of new vehicles that are 12 m city buses. Like trucks, they are slower and change lanes less, and they are never used in batch runs or replays." />
+                        </span>
+                        <span class="font-mono text-[11px] text-slate-600 dark:text-slate-400"><span id="bus-ratio-value">0</span>%</span>
+                    </div>
+                    <input type="range" id="bus-ratio-input" min="0" max="30" step="1" value="0"
+                           class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500">
+                </div>
+
+                <label class="flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5">
+                    <input type="checkbox" id="random-events" class="mt-0.5 {{ $checkbox }}">
+                    <span class="min-w-0 flex-1">
+                        <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                            Random events
+                            <x-info-tip text="Just for fun, never used in batch runs or replays. Adds a rare purple BMW that drives 20 km/h over the limit and keeps weaving between lanes, Ford Ranger double cabs that sit in the fastest lane tailgating, and makes the minibus taxis keep to the left lane and stop to pick up passengers, holding up traffic behind them." />
+                        </span>
+                    </span>
+                </label>
             </x-control-section>
 
             <div class="space-y-3 px-4 py-4">
@@ -161,6 +190,12 @@
 
         {{-- ========================================================== CANVAS --}}
         <div class="flex min-w-0 flex-1 flex-col">
+
+            {{-- Transport bar + canvas + stats footer. This wrapper is the element that
+                 goes browser full screen, so the controls, the map and the live stats fill
+                 the screen together; simulator.js mirrors document.fullscreenElement into
+                 data-fullscreen. --}}
+            <div id="sim-stage" data-fullscreen="false" class="group/stage flex min-h-0 flex-1 flex-col bg-slate-50 dark:bg-slate-950">
 
             {{-- Transport bar --}}
             <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900/70">
@@ -189,9 +224,15 @@
 
                 <div class="flex items-center gap-2">
                     <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Speed</span>
-                    <div class="w-72">
-                        <x-segmented control="speed" size="sm" value="1"
-                                     :options="['0.25' => '0.25×', '0.5' => '0.5×', '1' => '1×', '2' => '2×', '4' => '4×', '8' => '8×', '16' => '16×']" />
+                    <div class="w-64">
+                        <x-segmented control="speed" size="sm" value="1" :options="$speedOptions" />
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">View</span>
+                    <div class="w-24">
+                        <x-segmented control="view" size="sm" value="2d" :options="$viewOptions" />
                     </div>
                 </div>
 
@@ -222,11 +263,11 @@
                 {{-- View controls --}}
                 <div class="pointer-events-none absolute left-3 top-3 flex flex-col gap-2">
                     <div class="pointer-events-auto flex overflow-hidden rounded-md border border-slate-300 bg-white/90 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
-                        <button type="button" id="zoom-out" title="Zoom out" class="px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">−</button>
+                        <button type="button" id="zoom-out" data-view-only="2d" title="Zoom out" class="px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">−</button>
                         <button type="button" id="zoom-fit" title="Fit network" class="border-x border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Fit</button>
-                        <button type="button" id="zoom-in" title="Zoom in" class="px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">+</button>
+                        <button type="button" id="zoom-in" data-view-only="2d" title="Zoom in" class="px-2.5 py-1.5 text-xs text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">+</button>
                     </div>
-                    <div class="pointer-events-auto rounded-md border border-slate-300 bg-white/90 p-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
+                    <div data-view-only="2d" class="pointer-events-auto rounded-md border border-slate-300 bg-white/90 p-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
                         <span class="mb-1.5 block text-[9px] font-semibold uppercase tracking-wider text-slate-500">Layers</span>
                         <div class="space-y-1">
                             @foreach ([
@@ -245,8 +286,27 @@
                     </div>
                 </div>
 
+                <div class="absolute right-3 top-3">
+                    <button type="button" id="fullscreen-enter" title="Full screen"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white/90 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 backdrop-blur transition hover:bg-slate-100 group-data-[fullscreen=true]/stage:hidden dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300 dark:hover:bg-slate-800">
+                        <span aria-hidden="true">⛶</span> Full screen
+                    </button>
+                    <button type="button" id="fullscreen-exit" title="Exit full screen (Esc)"
+                            class="hidden items-center gap-1.5 rounded-md border border-slate-300 bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm backdrop-blur transition hover:bg-slate-100 group-data-[fullscreen=true]/stage:inline-flex dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800">
+                        <span aria-hidden="true">✕</span> Exit full screen
+                    </button>
+                </div>
+
                 <div class="pointer-events-none absolute bottom-3 right-3 rounded-md border border-slate-200 bg-white/85 px-2.5 py-1.5 text-[10px] text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85">
-                    Drag to pan · scroll to zoom · double-click an intersection to centre it
+                    <span data-view-only="2d">Drag to pan · scroll to zoom · double-click an intersection to centre it</span>
+                    <span data-view-only="3d" class="hidden">Drag to orbit · right-drag to pan · scroll to zoom</span>
+                </div>
+
+                {{-- 3D view outage indicator (the 2D map shows the same state via the power pill) --}}
+                <div id="outage-overlay"
+                     class="pointer-events-none absolute left-1/2 top-3 hidden -translate-x-1/2 {{ $pillBase }} border-rose-300 bg-rose-50/95 text-rose-700 shadow-sm dark:border-rose-500/40 dark:bg-rose-950/80 dark:text-rose-300">
+                    <span class="h-1.5 w-1.5 rounded-full bg-rose-500 dark:bg-rose-400"></span>
+                    All-way stop · power out
                 </div>
 
                 {{-- Hover readout --}}
@@ -258,7 +318,7 @@
             <footer class="shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
                     <h2 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Live statistics</h2>
-                    <span class="text-[10px] text-slate-500">One column per arterial · updates every 0.5&nbsp;s once the engine is wired</span>
+                    <span class="text-[10px] text-slate-500">One column per arterial</span>
                 </div>
 
                 {{-- A fixed max-height + internal scroll on the arterial-column grid, not the
@@ -286,6 +346,7 @@
                     </div>
                 </div>
             </footer>
+            </div>
         </div>
     </div>
 

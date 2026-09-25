@@ -13,7 +13,7 @@
             <div>
                 <h1 class="text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100">Results</h1>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Aggregates across {{ number_format($totalRuns) }} batch runs · 30 seeded reps per condition
+                    Latest batch per corridor · {{ number_format($totalRuns) }} runs · 30 seeded reps per condition{{ $batchGeneratedAt ? ' · generated '.$batchGeneratedAt : '' }}
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
@@ -26,6 +26,15 @@
                     <x-traffic-loader class="h-3.5 w-10" />
                     Running
                 </span>
+
+                <button type="button" id="export-pdf-button" {{ $isFakeData ? 'disabled' : '' }}
+                        title="Download every scope and controller variant for the selected corridor as a PDF report"
+                        class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700">
+                    <svg class="h-4 w-4 text-rose-600 dark:text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                    </svg>
+                    <span id="export-pdf-label">Export PDF</span>
+                </button>
 
                 <button type="button" id="batch-run-button"
                         class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
@@ -210,7 +219,7 @@
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s, ± 95% CI)</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min, ± 95% CI)</th>
                             <th scope="col" class="px-4 py-2 text-right font-semibold">Cleared w/o stop (%, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Recovery (s)</th>
+                            <th scope="col" class="px-4 py-2 text-right font-semibold">Recovery - thru (s, recovered/runs)</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
@@ -292,7 +301,7 @@
         <figure class="min-w-0 {{ $card }} p-4">
             <figcaption class="mb-1">
                 <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery - wait time</span>
-                <span class="text-[10px] text-slate-500">seconds back to pre-cut wait · lower is better</span>
+                <span class="text-[10px] text-slate-500">seconds back to pre-cut wait · lower is better · mean of recovered runs only (recovered/runs)</span>
             </figcaption>
             <div class="relative h-[280px] w-full">
                 <canvas id="chart-recovery-time-wait"></canvas>
@@ -302,7 +311,7 @@
         <figure class="min-w-0 {{ $card }} p-4">
             <figcaption class="mb-1">
                 <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery - throughput</span>
-                <span class="text-[10px] text-slate-500">seconds back to pre-cut throughput · lower is better</span>
+                <span class="text-[10px] text-slate-500">seconds back to pre-cut throughput · lower is better · mean of recovered runs only (recovered/runs)</span>
             </figcaption>
             <div class="relative h-[280px] w-full">
                 <canvas id="chart-recovery-time"></canvas>

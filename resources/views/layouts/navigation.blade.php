@@ -18,6 +18,9 @@
                     <x-nav-link :href="route('results')" :active="request()->routeIs('results')">
                         {{ __('Results') }}
                     </x-nav-link>
+                    <x-nav-link :href="route('road-editor')" :active="request()->routeIs('road-editor')">
+                        {{ __('Road Editor') }}
+                    </x-nav-link>
                     <x-nav-link :href="route('traffic-counter')" :active="request()->routeIs('traffic-counter')">
                         {{ __('Traffic Counter') }}
                     </x-nav-link>
@@ -72,6 +75,9 @@
             </x-responsive-nav-link>
             <x-responsive-nav-link :href="route('results')" :active="request()->routeIs('results')">
                 {{ __('Results') }}
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('road-editor')" :active="request()->routeIs('road-editor')">
+                {{ __('Road Editor') }}
             </x-responsive-nav-link>
             <x-responsive-nav-link :href="route('traffic-counter')" :active="request()->routeIs('traffic-counter')">
                 {{ __('Traffic Counter') }}

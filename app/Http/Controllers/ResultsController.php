@@ -8,6 +8,8 @@ use App\Models\TrafficCount;
 use App\Support\CorridorRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 /**
@@ -65,6 +67,12 @@ class ResultsController extends Controller
         'max_wait_time',
     ];
 
+    /** Recovery metrics - a run that never recovers stores null, so each also gets a recovered-run count. */
+    private const RECOVERY_METRICS = ['time_to_recovery_seconds', 'time_to_recovery_wait_seconds'];
+
+    /** Fewest recovered runs a side needs before its mean recovery time is compared as a delta. */
+    private const MIN_RECOVERED_RUNS = 10;
+
     public function __construct(private readonly CorridorRepository $corridors) {}
 
     public function index(): View
@@ -86,7 +94,9 @@ class ResultsController extends Controller
                 'controllerModes' => self::CONTROLLER_MODES,
                 'powerStates' => self::POWER_STATES,
                 'recoveryTimeline' => $payload['recoveryTimeline'],
-                'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
+                'pairedComparisons' => $payload['pairedComparisons'],
+                'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
+                'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,
@@ -124,6 +134,7 @@ class ResultsController extends Controller
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
             'recoveryTimeline' => $payload['recoveryTimeline'],
+            'pairedComparisons' => $payload['pairedComparisons'],
             'html' => [
                 'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
                 'metricSectionGroups' => view('results.partials.metric-section-groups', $viewData)->render(),
@@ -241,7 +252,7 @@ class ResultsController extends Controller
         // results-page audit). Show each side on its own rather than collapsing the whole row to
         // "-" the moment either side is missing, so a subject that DID recover isn't hidden by a
         // baseline that didn't.
-        $fmtRecoverySide = fn (?float $v, string $suffix = 's') => $v === null ? 'did not recover in window' : number_format($v, 1).$suffix;
+        $fmtRecoverySide = fn (?float $v, int $recovered, int $runs) => ($v === null ? 'did not recover in window' : number_format($v, 1).'s')." ({$recovered}/{$runs} recovered)";
 
         $comparisonKey = fn (array $c) => $c['mode'].'|'.($c['sensor_mode'] ?? '');
         $comparisonLabel = function (array $c) use ($modeLabels, $sensorLabels) {
@@ -293,6 +304,7 @@ class ResultsController extends Controller
             'comparisonKey' => $comparisonKey,
             'comparisonLabel' => $comparisonLabel,
             'comparisonOptions' => $comparisonOptions,
+            'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
             'renderableMetricSectionGroups' => $this->metricSectionRenderGroups(
                 $this->metricSectionGroupsConfig(),
                 $payload['pairedComparisons']
@@ -422,6 +434,21 @@ class ResultsController extends Controller
                 'throughput' => $comparison['baseline_recovery_seconds'],
                 default => null,
             },
+            'recoverySubjectRecovered' => match ($recoveryPairMetric) {
+                'wait' => $comparison['recovery_wait_recovered'],
+                'throughput' => $comparison['recovery_recovered'],
+                default => null,
+            },
+            'recoveryBaselineRecovered' => match ($recoveryPairMetric) {
+                'wait' => $comparison['baseline_recovery_wait_recovered'],
+                'throughput' => $comparison['baseline_recovery_recovered'],
+                default => null,
+            },
+            'recoveryReliable' => match ($recoveryPairMetric) {
+                'wait' => $comparison['recovery_wait_reliable'],
+                'throughput' => $comparison['recovery_reliable'],
+                default => true,
+            },
         ];
     }
 
@@ -521,10 +548,7 @@ class ResultsController extends Controller
      */
     private function buildPayload(?string $corridorFilter): array
     {
-        $query = SimulationRun::query();
-        if ($corridorFilter) {
-            $query->where('corridor_config', $corridorFilter);
-        }
+        $query = SimulationRun::query()->whereIn('batch_id', $this->latestBatchIds($corridorFilter));
 
         $aggregates = $this->aggregates((clone $query));
         $aggregatesBySensor = $this->aggregatesBySensor((clone $query));
@@ -560,7 +584,32 @@ class ResultsController extends Controller
             'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter),
             'recentRuns' => $recentRuns,
             'totalRuns' => (clone $query)->count(),
+            'batchGeneratedAt' => $this->displayTime((clone $query)->max('created_at')),
         ];
+    }
+
+    /** A stored (UTC) timestamp in the zone people read it in, e.g. "25 Sep 2026, 11:42". */
+    private function displayTime(?string $utcTimestamp): ?string
+    {
+        return $utcTimestamp === null
+            ? null
+            : Carbon::parse($utcTimestamp, 'UTC')->setTimezone(config('app.display_timezone'))->format('j M Y, H:i');
+    }
+
+    /**
+     * Each corridor's most recent batch - older batches were produced by earlier engine
+     * versions, so pooling them would blend incomparable runs. They stay in the table.
+     *
+     * @return Collection<int, string>
+     */
+    private function latestBatchIds(?string $corridorFilter): Collection
+    {
+        $latestRunIds = SimulationRun::query()
+            ->when($corridorFilter, fn (Builder $query) => $query->where('corridor_config', $corridorFilter))
+            ->selectRaw('max(id)')
+            ->groupBy('corridor_config');
+
+        return SimulationRun::query()->whereIn('id', $latestRunIds)->pluck('batch_id');
     }
 
     /**
@@ -603,6 +652,12 @@ class ResultsController extends Controller
         }
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $clauses[] = "avg({$column}) as {$column}";
+        }
+        foreach (self::RECOVERY_METRICS as $metric) {
+            foreach (array_keys(self::SCOPES) as $suffix) {
+                $column = $metric.$suffix;
+                $clauses[] = "count({$column}) as {$column}_recovered";
+            }
         }
 
         return implode(', ', $clauses);
@@ -701,6 +756,13 @@ class ResultsController extends Controller
         }
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
+        }
+        // avg() skips runs that never recovered, so the mean alone hides how many it's built on.
+        foreach (self::RECOVERY_METRICS as $metric) {
+            foreach (array_keys(self::SCOPES) as $suffix) {
+                $column = $metric.$suffix.'_recovered';
+                $result[$column] = (int) $row->$column;
+            }
         }
 
         return $result;
@@ -834,8 +896,12 @@ class ResultsController extends Controller
         $waitKnown = $subject[$waitKey] !== null && $baseline[$waitKey] !== null;
         $throughputKnown = $subject[$throughputKey] !== null && $baseline[$throughputKey] !== null;
         $clearedKnown = $subject[$clearedKey] !== null && $baseline[$clearedKey] !== null;
-        $recoveryKnown = $subject[$recoveryKey] !== null && $baseline[$recoveryKey] !== null;
-        $recoveryWaitKnown = $subject[$recoveryWaitKey] !== null && $baseline[$recoveryWaitKey] !== null;
+        // A recovery mean built on a handful of recovered runs isn't comparable as an effect
+        // size - both sides need MIN_RECOVERED_RUNS before a delta is computed at all.
+        $recoveryReliable = min($subject[$recoveryKey.'_recovered'], $baseline[$recoveryKey.'_recovered']) >= self::MIN_RECOVERED_RUNS;
+        $recoveryWaitReliable = min($subject[$recoveryWaitKey.'_recovered'], $baseline[$recoveryWaitKey.'_recovered']) >= self::MIN_RECOVERED_RUNS;
+        $recoveryKnown = $recoveryReliable && $subject[$recoveryKey] !== null && $baseline[$recoveryKey] !== null;
+        $recoveryWaitKnown = $recoveryWaitReliable && $subject[$recoveryWaitKey] !== null && $baseline[$recoveryWaitKey] !== null;
         $waitImproves = $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null;
 
         return [
@@ -882,6 +948,12 @@ class ResultsController extends Controller
             // routinely never crosses the recovered threshold within the measured window on this
             // corridor - shouldn't also blank out the OTHER side's real, valid number. The view
             // renders each side independently (see $fmtRecoverySide in results.blade.php).
+            'recovery_recovered' => $subject[$recoveryKey.'_recovered'],
+            'baseline_recovery_recovered' => $baseline[$recoveryKey.'_recovered'],
+            'recovery_wait_recovered' => $subject[$recoveryWaitKey.'_recovered'],
+            'baseline_recovery_wait_recovered' => $baseline[$recoveryWaitKey.'_recovered'],
+            'recovery_reliable' => $recoveryReliable,
+            'recovery_wait_reliable' => $recoveryWaitReliable,
             'recovery_seconds' => $subject[$recoveryKey],
             'baseline_recovery_seconds' => $baseline[$recoveryKey],
             'recovery_wait_seconds' => $subject[$recoveryWaitKey],

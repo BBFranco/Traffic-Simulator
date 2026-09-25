@@ -46,6 +46,8 @@
                                             did not recover in window
                                         @elseif ($card['recoveryBaselineSeconds'] === null)
                                             fixed-time did not recover in window
+                                        @elseif (! $card['recoveryReliable'])
+                                            too few recovered runs to compare (needs {{ $minRecoveredRuns }} per side)
                                         @elseif ($card['improves'] === null)
                                             not measured yet
                                         @else
@@ -60,7 +62,12 @@
                                     @endif
                                 </span>
                             </div>
-                            <p class="mt-0.5 text-[10px] text-slate-500">{{ $section['unitLabel'] }}</p>
+                            <p class="mt-0.5 text-[10px] text-slate-500">
+                                {{ $section['unitLabel'] }}
+                                @if ($card['recoveryPairMetric'])
+                                    · recovered in {{ $card['recoverySubjectRecovered'] }}/{{ $card['comparison']['runs'] }} runs
+                                @endif
+                            </p>
 
                             <dl class="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-[11px] dark:border-slate-800">
                                 @foreach ($section['secondary'] as $secondary)
@@ -75,7 +82,7 @@
                                     <div class="flex justify-between gap-2">
                                         <dt class="text-slate-500">Recovery time (subject vs fixed-time)</dt>
                                         <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                            {{ $fmtRecoverySide($card['recoverySubjectSeconds']) }} vs {{ $fmtRecoverySide($card['recoveryBaselineSeconds']) }}
+                                            {{ $fmtRecoverySide($card['recoverySubjectSeconds'], $card['recoverySubjectRecovered'], $card['comparison']['runs']) }} vs {{ $fmtRecoverySide($card['recoveryBaselineSeconds'], $card['recoveryBaselineRecovered'], $card['comparison']['baseline_runs']) }}
                                         </dd>
                                     </div>
                                     <div class="flex justify-between gap-2">
@@ -88,7 +95,7 @@
                                     <div class="flex justify-between gap-2">
                                         <dt class="text-slate-500">Recovery time (subject vs fixed-time)</dt>
                                         <dd class="font-medium text-slate-800 dark:text-slate-200">
-                                            {{ $fmtRecoverySide($card['recoverySubjectSeconds']) }} vs {{ $fmtRecoverySide($card['recoveryBaselineSeconds']) }}
+                                            {{ $fmtRecoverySide($card['recoverySubjectSeconds'], $card['recoverySubjectRecovered'], $card['comparison']['runs']) }} vs {{ $fmtRecoverySide($card['recoveryBaselineSeconds'], $card['recoveryBaselineRecovered'], $card['comparison']['baseline_runs']) }}
                                         </dd>
                                     </div>
                                     <div class="flex justify-between gap-2">

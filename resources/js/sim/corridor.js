@@ -34,6 +34,132 @@ const DEFAULTS = {
     handedness: 'left',
 };
 
+/** Movements a lane can be marked for at an intersection. */
+export const MOVEMENTS = ['left', 'straight', 'right'];
+
+/** Every lane-use marking, in the order the lane-arrow editor cycles through them. */
+export const LANE_USE_OPTIONS = [
+    ['straight'],
+    ['left'],
+    ['right'],
+    ['left', 'straight'],
+    ['straight', 'right'],
+    ['left', 'right'],
+    ['left', 'straight', 'right'],
+];
+
+/** A lane's movements as the corridor JSON writes them: "left", "straight_right", "all". */
+export function laneUseToken(moves) {
+    if (MOVEMENTS.every((m) => moves.includes(m))) return 'all';
+    return MOVEMENTS.filter((m) => moves.includes(m)).join('_');
+}
+
+/** Sides of an approach a turn lane can be added on: 'left' is the kerb side (left-hand traffic), 'right' the median side. */
+export const TURN_LANE_SIDES = ['left', 'right'];
+export const DEFAULT_TURN_LANE_LENGTH_M = 10;
+/** Drawn widening ahead of a turn lane - visual only, the lane itself is `lengthM` long. */
+export const TURN_LANE_TAPER_M = 6;
+
+/** The movements one lane of `approach` may make - `lane` is a lane index, or 'left'/'right' for a turn lane. */
+export function laneMovesOf(approach, lane) {
+    return typeof lane === 'string' ? approach.turnLanes[lane].laneUse : approach.laneUse[lane];
+}
+
+/** An approach's turn lanes as the corridor JSON writes them (`{ right: { lengthM, laneUse } }`), or null for none. */
+export function turnLanesToConfig(turnLanes) {
+    const entries = TURN_LANE_SIDES.filter((side) => turnLanes?.[side]).map((side) => [
+        side,
+        { lengthM: turnLanes[side].lengthM, laneUse: laneUseToken(turnLanes[side].laneUse) },
+    ]);
+    return entries.length ? Object.fromEntries(entries) : null;
+}
+
+/**
+ * Lane use when a corridor config doesn't give one: kerb lane left + straight,
+ * middle lanes straight, median lane straight + right - so turns come from the
+ * side of the road they turn towards (left-hand traffic). A single-lane road
+ * allows everything. `possible` drops turns the junction doesn't offer.
+ */
+export function defaultLaneUse(lanes, possible = MOVEMENTS) {
+    const only = (moves) => moves.filter((m) => possible.includes(m));
+    if (lanes <= 1) return [only(MOVEMENTS)];
+    return Array.from({ length: lanes }, (_, i) => {
+        if (i === 0) return only(['left', 'straight']);
+        if (i === lanes - 1) return only(['straight', 'right']);
+        return ['straight'];
+    });
+}
+
+/**
+ * `laneUse` on one approach: one entry per lane, KERB LANE FIRST, each a
+ * movement or movements joined by "_" ("left", "straight_right", "all").
+ * Parsed to arrays of MOVEMENTS; see engine.js's turn planning. An arterial
+ * intersection carries its own `laneUse`; a connector carries one per linked
+ * node and direction of travel - see buildApproaches().
+ */
+function parseLaneUse(raw, lanes, label, possible = MOVEMENTS) {
+    if (raw == null) return defaultLaneUse(lanes, possible);
+    if (!Array.isArray(raw) || raw.length !== lanes) {
+        throw new Error(`${label}: laneUse must list exactly ${lanes} lanes (kerb lane first).`);
+    }
+    const parsed = raw.map((entry, i) => parseMoves(entry, `${label}: laneUse lane ${i}`));
+    if (!parsed.some((moves) => moves.includes('straight'))) {
+        throw new Error(`${label}: laneUse needs at least one lane that allows straight.`);
+    }
+    return parsed;
+}
+
+function parseMoves(entry, label) {
+    const moves = entry === 'all' ? [...MOVEMENTS] : String(entry).split('_');
+    const unknown = moves.filter((m) => !MOVEMENTS.includes(m));
+    if (unknown.length || !moves.length) {
+        throw new Error(`${label} "${entry}" - use left, straight, right, joined by "_", or "all".`);
+    }
+    return moves;
+}
+
+/**
+ * `turnLanes` on one approach: an extra short lane added beside the stop line
+ * for turning traffic - `left` on the kerb side, `right` on the median side -
+ * `{ lengthM, laneUse }` each, laneUse a single token like "right". The lane
+ * only exists for its last `lengthM` before the stop line (engine.js lets cars
+ * into it there). On a two-way street the right one sits in the median, so the
+ * median has to be at least a lane wide.
+ */
+function parseTurnLanes(raw, label, { oneWay, medianWidthM, laneWidthM }) {
+    const turnLanes = { left: null, right: null };
+    if (raw == null) return turnLanes;
+    for (const [side, entry] of Object.entries(raw)) {
+        if (!TURN_LANE_SIDES.includes(side)) {
+            throw new Error(`${label}: turnLanes "${side}" - use left (kerb side) or right (median side).`);
+        }
+        if (entry == null) continue;
+        const lengthM = entry.lengthM ?? DEFAULT_TURN_LANE_LENGTH_M;
+        if (!(lengthM > 0)) throw new Error(`${label}: the ${side} turn lane needs a lengthM above 0, got ${entry.lengthM}.`);
+        if (side === 'right' && !oneWay && medianWidthM < laneWidthM) {
+            throw new Error(`${label}: a right turn lane on a two-way street sits in the median, which must be at least a lane (${laneWidthM} m) wide - it is ${medianWidthM} m.`);
+        }
+        const laneUse = parseMoves(entry.laneUse ?? side, `${label}: ${side} turn lane`);
+        if (laneUse.includes('straight')) throw new Error(`${label}: the ${side} turn lane is for turning only - its laneUse can't include straight.`);
+        turnLanes[side] = { lengthM, laneUse };
+    }
+    return turnLanes;
+}
+
+/** Nearest compass direction of a heading - how a connector's `laneUse` names each direction of travel. */
+export function compassDirection(heading) {
+    let best = null;
+    let bestDot = -Infinity;
+    for (const [name, v] of Object.entries(DIRECTION_VECTORS)) {
+        const dot = v.x * heading.x + v.y * heading.y;
+        if (dot > bestDot) {
+            bestDot = dot;
+            best = name;
+        }
+    }
+    return best;
+}
+
 /* ------------------------------------------------------------------ vectors */
 
 const add = (p, v, k = 1) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
@@ -47,7 +173,7 @@ const negate = (h) => ({ x: -h.x, y: -h.y });
 
 const CURVE_SAMPLES_PER_SEGMENT = 40;
 
-/** Renormalised lerp of a unit heading vector - same treatment car.js's turnAnim uses for its cosmetic sweep. */
+/** Renormalised lerp of a unit heading vector. */
 function lerpUnit(a, b, t) {
     const x = a.x + (b.x - a.x) * t;
     const y = a.y + (b.y - a.y) * t;
@@ -139,7 +265,7 @@ function samplerFrom(samples) {
  * A curve for a connector's centreline: a chain of quadratic Beziers,
  * authored as an odd-length list of alternating anchor/control world points
  * (`[P0, C1, P1, C2, P2, ...]`) - the same one-control-point sweep car.js's
- * `turnAnim` already draws for a cosmetic turn, just chained so a loop ramp
+ * `buildTurnPath()` uses for a junction turn, just chained so a loop ramp
  * (~180 degrees or more) is reachable with a few segments instead of one.
  * Densely sampled once at load into an arc-length table so `distanceM` along
  * a curved road means the same real driven metres it always has - see
@@ -267,9 +393,10 @@ export function buildLayout(config) {
     for (const arterial of arterials) {
         for (const node of arterial.intersections) {
             resolveCrossStreet(node, arterial, connectors, defaults, laneWidthM);
-            node.approaches = buildApproaches(node, arterial, laneWidthM);
+            node.approaches = buildApproaches(node, arterial, laneWidthM, connectors);
         }
     }
+    for (const connector of connectors) checkConnectorLaneUseKeys(connector, nodesById);
 
     const layout = {
         id: config.id ?? null,
@@ -369,6 +496,10 @@ function buildArterial(raw, laneWidthM) {
             distanceFromPreviousM: index === 0 ? null : raw.intersections[index - 1].distanceToNextM ?? null,
             crossStreetName: node.crossStreetName ?? null,
             crossStreetLanes: node.crossStreetLanes ?? null,
+            /** Per arterial lane (kerb first), which movements that lane may make at this node. */
+            laneUse: parseLaneUse(node.laneUse, lanes, `Intersection "${node.id}"`),
+            /** The arterial approach's `turnLanes` as written in the config - parsed in buildApproaches(). */
+            rawTurnLanes: node.turnLanes ?? null,
             arterialLanes: lanes,
             arterialRoadWidthM: roadWidthM,
             /** LOCAL tangent at this node - the curved-arterial generalisation of the old constant `heading`. Everything downstream (cross-street axis, approach/stop-line geometry, junction box orientation) reads this per node, not the arterial's own nominal `heading`. */
@@ -415,44 +546,69 @@ function buildArterial(raw, laneWidthM) {
 
 function buildConnector(raw, nodesById, defaults, laneWidthM) {
     const links = raw.linksArterialNodes ?? [];
-    if (links.length !== 2) {
+    if (links.length !== 1 && links.length !== 2) {
         throw new Error(
-            `Connector "${raw.id}" must link exactly 2 arterial nodes, got ${links.length}.`
+            `Connector "${raw.id}" must link 1 or 2 arterial nodes, got ${links.length}.`
         );
     }
-    const [a, b] = links.map((id) => {
+    const linked = links.map((id) => {
         const node = nodesById.get(id);
         if (!node) {
             throw new Error(`Connector "${raw.id}" references unknown intersection "${id}".`);
         }
         return node;
     });
+    // A connector through a single node (the road editor's one-junction test
+    // layout) is its own "both ends": zero span, a stub either side, running
+    // in its own compass `direction`. Everything downstream treats it as a
+    // connector whose two linked nodes happen to coincide.
+    const [a, b] = linked.length === 2 ? linked : [linked[0], linked[0]];
+    if (linked.length === 1 && raw.curve) {
+        throw new Error(`Connector "${raw.id}" links one intersection, so it can't be curved.`);
+    }
+    const singleHeading = linked.length === 1 ? DIRECTION_VECTORS[raw.direction] : null;
+    if (linked.length === 1 && !singleHeading) {
+        throw new Error(`Connector "${raw.id}" links one intersection, so it needs a "direction" (${Object.keys(DIRECTION_VECTORS).join(', ')}).`);
+    }
 
     const dx = b.point.x - a.point.x;
     const dy = b.point.y - a.point.y;
     const span = Math.hypot(dx, dy);
-    if (span < 1) {
+    if (!singleHeading && span < 1) {
         throw new Error(
             `Connector "${raw.id}" links two intersections at (nearly) the same point - ` +
                 `check the arterial origins and distanceToNextM chain.`
         );
     }
-    const straightHeading = { x: dx / span, y: dy / span };
+    const straightHeading = singleHeading ?? { x: dx / span, y: dy / span };
     const stub = raw.stubLengthM ?? defaults.crossStreetStubLengthM;
     const lanes = raw.lanes ?? 2;
     const curve = raw.curve ? buildCurve(raw.curve, raw.id) : null;
+    const twoWay = raw.twoWay ?? true;
+    /** Raised island between the two directions of a two-way street (metres); part of the carriageway width, never a lane. */
+    const medianWidthM = twoWay ? raw.medianWidthM ?? 0 : 0;
 
     const connector = {
         id: raw.id,
         name: raw.name,
         lanes,
         laneWidthM,
-        roadWidthM: lanes * laneWidthM,
-        twoWay: raw.twoWay ?? true,
+        medianWidthM,
+        roadWidthM: lanes * laneWidthM + medianWidthM,
+        twoWay,
         crossChance: raw.crossChance ?? 0,
+        /** Chance a cross-street vehicle turns onto the arterial at a junction it reaches - defaults to `crossChance`, the same "how much traffic turns here" figure the other way round. */
+        turnChance: raw.turnChance ?? raw.crossChance ?? 0,
+        /** `{ nodeId: { northbound: [...], ... } }` as written in the config - parsed per approach in buildApproaches(). */
+        rawLaneUse: raw.laneUse ?? {},
+        /** `{ nodeId: { northbound: { right: {...} }, ... } }` - same keys as `rawLaneUse`, parsed in buildApproaches(). */
+        rawTurnLanes: raw.turnLanes ?? {},
+        /** Side-street speed limit - lower than a typical arterial's when a corridor doesn't give one. */
+        targetSpeedKph: raw.targetSpeedKph ?? 40,
         /** Connectors are never wave-coordinated - two-way streets have no single progression band. */
         mode: raw.mode ?? defaults.connectorMode,
         demand: buildDemand(raw.demand, raw.id, 4, 1800),
+        /** Both linked nodes - the same id twice for a single-node connector. */
         nodeIds: [a.id, b.id],
         /** Set only for a curved connector (a ramp) - see roadPointAt() and its reversed() counterpart for the 'rev' direction. */
         curve,
@@ -500,7 +656,8 @@ function resolveCrossStreet(node, arterial, connectors, defaults, laneWidthM) {
         };
     }
 
-    node.crossRoadWidthM = node.crossLanes * laneWidthM;
+    node.crossMedianWidthM = connector?.medianWidthM ?? 0;
+    node.crossRoadWidthM = node.crossLanes * laneWidthM + node.crossMedianWidthM;
 
     // The junction footprint: as wide as the cross road along the arterial, as
     // deep as the arterial road across it.
@@ -514,61 +671,115 @@ function resolveCrossStreet(node, arterial, connectors, defaults, laneWidthM) {
  * One approach per incoming direction: the arterial (one-way, so all lanes
  * approach together) plus the cross street's one or two directions.
  */
-function buildApproaches(node, arterial, laneWidthM) {
+function buildApproaches(node, arterial, laneWidthM, connectors) {
     const approaches = [];
+    const connector = connectors.find((c) => c.id === node.connectorId) ?? null;
 
-    approaches.push(
-        makeApproach({
-            id: `${node.id}:${arterial.id}`,
-            kind: 'arterial',
-            label: arterial.shortName,
-            node,
-            heading: node.arterialHeading,
-            lanes: arterial.lanes,
-            roadWidthM: arterial.roadWidthM,
-            // Stop line sits at the edge of the junction box, half a cross-road back.
-            setbackM: node.crossRoadWidthM / 2,
-            oneWay: true,
-            laneWidthM,
-        })
-    );
+    const arterialApproach = makeApproach({
+        id: `${node.id}:${arterial.id}`,
+        kind: 'arterial',
+        label: arterial.shortName,
+        node,
+        heading: node.arterialHeading,
+        lanes: arterial.lanes,
+        roadWidthM: arterial.roadWidthM,
+        // Stop line sits at the edge of the junction box, half a cross-road back.
+        setbackM: node.crossRoadWidthM / 2,
+        oneWay: true,
+        laneWidthM,
+        turnLanes: parseTurnLanes(node.rawTurnLanes, `Intersection "${node.id}"`, { oneWay: true, medianWidthM: 0, laneWidthM }),
+    });
+    /** Per lane (kerb first), the movements it may make - the same array as `node.laneUse`, so an edit to one is an edit to both. */
+    arterialApproach.laneUse = node.laneUse;
+    /** Where this approach's lane use lives in the corridor JSON - 'arterial' (the node's own) or a connector direction's compass name. */
+    arterialApproach.laneUseKey = 'arterial';
+    approaches.push(arterialApproach);
 
     const crossHeadings = node.crossTwoWay
         ? [node.crossAxis, negate(node.crossAxis)]
         : [node.crossAxis];
 
     crossHeadings.forEach((heading, i) => {
-        approaches.push(
-            makeApproach({
-                id: `${node.id}:cross:${i}`,
-                kind: 'cross',
-                label: node.crossStreetName,
-                node,
-                heading,
-                lanes: node.crossTwoWay ? Math.max(1, Math.floor(node.crossLanes / 2)) : node.crossLanes,
-                roadWidthM: node.crossRoadWidthM,
-                setbackM: node.arterialRoadWidthM / 2,
+        const laneUseKey = compassDirection(heading);
+        const approach = makeApproach({
+            id: `${node.id}:cross:${i}`,
+            kind: 'cross',
+            label: node.crossStreetName,
+            node,
+            heading,
+            lanes: node.crossTwoWay ? Math.max(1, Math.floor(node.crossLanes / 2)) : node.crossLanes,
+            roadWidthM: node.crossRoadWidthM,
+            medianWidthM: node.crossMedianWidthM,
+            setbackM: node.arterialRoadWidthM / 2,
+            oneWay: !node.crossTwoWay,
+            laneWidthM,
+            // A local stub carries no traffic, so it has no turn lanes either.
+            turnLanes: parseTurnLanes(connector?.rawTurnLanes[node.id]?.[laneUseKey], `Connector "${connector?.id}" at "${node.id}" ${laneUseKey}`, {
                 oneWay: !node.crossTwoWay,
+                medianWidthM: node.crossMedianWidthM,
                 laneWidthM,
-            })
-        );
+            }),
+        });
+        // Only a real cross street (a connector) carries traffic - a local stub
+        // has no lanes to mark. crossAxis is the connector's own heading, so the
+        // first cross approach is its 'fwd' direction and the second its 'rev'.
+        if (connector) {
+            approach.connectorId = connector.id;
+            approach.dirKey = i === 0 ? 'fwd' : 'rev';
+            approach.laneUseKey = laneUseKey;
+            approach.laneUse = parseLaneUse(
+                connector.rawLaneUse[node.id]?.[approach.laneUseKey],
+                approach.lanes,
+                `Connector "${connector.id}" at "${node.id}" ${approach.laneUseKey}`,
+                // The arterial is one-way, so a cross approach can only turn onto it one way (y points south: a positive cross product is a right turn).
+                ['straight', heading.x * node.arterialHeading.y - heading.y * node.arterialHeading.x > 0 ? 'right' : 'left']
+            );
+        }
+        approaches.push(approach);
     });
 
     return approaches;
 }
 
-function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, setbackM, oneWay, laneWidthM }) {
-    const right = rightNormal(heading);
+/** A connector `laneUse`/`turnLanes` entry that matches no approach is a typo - name it rather than silently ignore it. */
+function checkConnectorLaneUseKeys(connector, nodesById) {
+    for (const [field, byNode] of [['laneUse', connector.rawLaneUse], ['turnLanes', connector.rawTurnLanes]]) {
+        for (const [nodeId, byDirection] of Object.entries(byNode)) {
+            if (!connector.nodeIds.includes(nodeId)) {
+                throw new Error(`Connector "${connector.id}": ${field} names "${nodeId}", which it doesn't link (links ${connector.nodeIds.join(', ')}).`);
+            }
+            const keys = nodesById
+                .get(nodeId)
+                .approaches.filter((a) => a.kind === 'cross')
+                .map((a) => a.laneUseKey);
+            for (const key of Object.keys(byDirection ?? {})) {
+                if (!keys.includes(key)) {
+                    throw new Error(`Connector "${connector.id}": ${field} at "${nodeId}" has "${key}" - traffic there runs ${keys.join(' / ')}.`);
+                }
+            }
+        }
+    }
+}
+
+function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, medianWidthM = 0, setbackM, oneWay, laneWidthM, turnLanes }) {
     const left = leftNormal(heading);
 
     // Stop-line centre: `setbackM` upstream of the junction centre.
     const stopCentre = add(node.point, heading, -setbackM);
 
     // A one-way road's approach spans the whole carriageway. On a two-way road
-    // only the left half approaches (left-hand traffic).
+    // only the left half approaches (left-hand traffic). Offsets along the left
+    // normal: the kerb edge, and the edge on the median/right side - each
+    // pushed out a lane where a turn lane is added on that side.
+    const kerbEdgeM = roadWidthM / 2 + (turnLanes.left ? laneWidthM : 0);
+    const medianEdgeM = (oneWay ? -roadWidthM / 2 : medianWidthM / 2) - (turnLanes.right ? laneWidthM : 0);
     const stopLine = oneWay
-        ? { a: add(stopCentre, right, -roadWidthM / 2), b: add(stopCentre, right, roadWidthM / 2) }
-        : { a: stopCentre, b: add(stopCentre, left, roadWidthM / 2) };
+        ? { a: add(stopCentre, left, kerbEdgeM), b: add(stopCentre, left, medianEdgeM) }
+        : { a: add(stopCentre, left, medianEdgeM), b: add(stopCentre, left, kerbEdgeM) };
+
+    // Each turn lane's centre, same left-normal convention as laneCentreOffsets - just outside the kerb lane, or just past the median-side lane.
+    if (turnLanes.left) turnLanes.left.centreOffsetM = kerbEdgeM - laneWidthM / 2;
+    if (turnLanes.right) turnLanes.right.centreOffsetM = medianEdgeM + laneWidthM / 2;
 
     // Lane centres, indexed from the kerb (left) inwards. The approach's outer
     // edge is the left kerb at +roadWidth/2 in both the one-way case (lanes fill
@@ -592,8 +803,11 @@ function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, setba
         stopCentre,
         /** Offsets along the LEFT normal from the road centreline, per lane. */
         laneCentreOffsets,
+        laneWidthM,
+        /** `{ left, right }`, each null or `{ lengthM, laneUse, centreOffsetM }` - see parseTurnLanes(). */
+        turnLanes,
         /** Signal head stands on the left kerb, level with the stop line. */
-        signalHead: add(add(stopCentre, left, roadWidthM / 2 + 3), heading, -1.5),
+        signalHead: add(add(stopCentre, left, kerbEdgeM + 3), heading, -1.5),
     };
 }
 

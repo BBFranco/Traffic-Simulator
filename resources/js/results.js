@@ -35,10 +35,10 @@ import {
 } from './charts/theme.js';
 import { Fireworks } from 'fireworks-js';
 import { onThemeChange } from './theme.js';
-import { runHeadless } from './sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
+import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
 
@@ -304,7 +304,11 @@ function recoveryTimeChart(canvasId, metricColumn, { barLabel }) {
         new Chart(canvas, {
             type: 'bar',
             data: {
-                labels: modes.map((mode) => MODE_LABELS[mode] ?? mode),
+                // The mean only covers runs that recovered - show how many that is.
+                labels: modes.map((mode) => {
+                    const row = rowForModeAndPower(mode, 'load_shedding');
+                    return [MODE_LABELS[mode] ?? mode, `${row[`${recoveryKey}_recovered`]}/${row.runs} recovered`];
+                }),
                 datasets: [
                     {
                         label: barLabel,
@@ -359,7 +363,8 @@ onThemeChange((theme) => {
  *
  * `runHeadless()` here is the exact same function batch/runBatch.mjs calls
  * from the CLI - only the driver differs (a browser button instead of a
- * terminal), per the Phase 2 spec.
+ * terminal), per the Phase 2 spec. It runs in a Web Worker
+ * (sim/batchWorker.js) so the page stays responsive while it works.
  */
 const REPS_PER_CONDITION = 30;
 const DURATION_TICKS = 24000; // 40 measured simulated minutes per run at DT=0.1s
@@ -408,10 +413,14 @@ async function runBatch(demandOverrides) {
     if (batchProgressPct) batchProgressPct.textContent = '0%';
     batchProgressWrap?.classList.remove('hidden');
 
+    let worker = null;
+
     try {
+        worker = createBatchWorker();
         const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
+        const batchId = newBatchId();
         const totalRuns = matrix.length * REPS_PER_CONDITION;
 
         let completed = 0;
@@ -422,7 +431,10 @@ async function runBatch(demandOverrides) {
 
             for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
                 const seed = seedForRep(BASE_SEED, condition.powerState, rep);
-                const { rows, sideStreetRows, summary } = runHeadless({
+                // A run takes seconds - say which one is under way, not just the last one finished.
+                if (batchProgressLabel) batchProgressLabel.textContent = `${condition.key} · rep ${rep + 1}/${REPS_PER_CONDITION} · running...`;
+                // eslint-disable-next-line no-await-in-loop
+                const { rows, sideStreetRows, summary } = await runHeadlessInWorker(worker, {
                     seed,
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
@@ -434,7 +446,7 @@ async function runBatch(demandOverrides) {
                     dt: DT,
                 });
 
-                pending.push(toApiPayload(summary));
+                pending.push(toApiPayload(summary, batchId));
                 completed += 1;
                 updateBatchProgress(completed, totalRuns, condition.key);
 
@@ -448,11 +460,6 @@ async function runBatch(demandOverrides) {
                 if (pending.length >= POST_BATCH_SIZE) {
                     await postSimulationRuns(pending.splice(0, pending.length));
                 }
-
-                // Yield control back to the browser so the progress bar actually
-                // repaints - a tight synchronous loop never gets the chance.
-                // eslint-disable-next-line no-await-in-loop
-                await new Promise((resolve) => setTimeout(resolve, 0));
             }
 
             if (recoveryAcc) {
@@ -469,8 +476,10 @@ async function runBatch(demandOverrides) {
             }
         }
 
+        if (batchProgressLabel) batchProgressLabel.textContent = 'Saving results...';
         if (pending.length) await postSimulationRuns(pending);
 
+        if (batchProgressLabel) batchProgressLabel.textContent = 'Refreshing charts...';
         await refreshAggregatesAndRerender();
         celebrateBatchComplete(totalRuns);
     } catch (error) {
@@ -487,12 +496,65 @@ async function runBatch(demandOverrides) {
         // eslint-disable-next-line no-alert
         alert(`Batch run failed: ${error.message}`);
     } finally {
+        worker?.terminate();
         batchRunning = false;
         batchButton.disabled = false;
         batchButton.textContent = 'Generate dataset (360 runs)';
         batchRunningBadge?.classList.add('hidden');
         batchProgressWrap?.classList.add('hidden');
     }
+}
+
+/**
+ * One id shared by every run of this batch - /results only shows each corridor's latest batch.
+ * `crypto.randomUUID()` is secure-context only (a plain-http Herd .test site isn't), so this
+ * builds the v4 UUID from getRandomValues, which works everywhere.
+ */
+function newBatchId() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * The batch worker. Under `npm run dev` its script comes from the Vite dev
+ * server, a different origin from the page (Herd's .test domain), and the
+ * browser refuses a cross-origin Worker outright - so there it's started from
+ * a same-origin blob that just imports the real module (the dev server allows
+ * the app's origin via CORS). A built bundle is same-origin and loads directly.
+ */
+function createBatchWorker() {
+    const url = new URL(batchWorkerUrl, import.meta.url); // a bare path means the dev server in dev, the page's origin once built
+    if (url.origin === window.location.origin) return new Worker(url, { type: 'module' });
+    const shim = new Blob([`import ${JSON.stringify(url.href)};`], { type: 'text/javascript' });
+    return new Worker(URL.createObjectURL(shim), { type: 'module' });
+}
+
+/** One runHeadless() call on the batch worker - runs go one at a time, so matching on `id` is only a guard. */
+let workerRequestId = 0;
+function runHeadlessInWorker(worker, options) {
+    const id = ++workerRequestId;
+    return new Promise((resolve, reject) => {
+        const cleanUp = () => {
+            worker.removeEventListener('message', onMessage);
+            worker.removeEventListener('error', onError);
+        };
+        const onMessage = ({ data: reply }) => {
+            if (reply.id !== id) return;
+            cleanUp();
+            if (reply.error) reject(new Error(reply.error));
+            else resolve(reply.result);
+        };
+        const onError = (event) => {
+            cleanUp();
+            reject(new Error(event.message || 'Batch worker failed'));
+        };
+        worker.addEventListener('message', onMessage);
+        worker.addEventListener('error', onError);
+        worker.postMessage({ id, options });
+    });
 }
 
 /** Success toast + a brief fireworks burst when the 360-run batch finishes. */
@@ -777,6 +839,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     renderAll();
     applyItsTargetFilter();
     applyTableScopeFilter();
+    if (exportPdfButton) exportPdfButton.disabled = !data.aggregates?.length;
     document.getElementById('fake-data-badge')?.classList.add('hidden');
     document.getElementById('fake-data-banner')?.classList.add('hidden');
 }
@@ -793,6 +856,34 @@ document.getElementById('filter-corridor')?.addEventListener('change', () => {
     const query = params.toString();
     history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
     refreshAggregatesAndRerender(params);
+});
+
+/* ------------------------------------------------------------ PDF export */
+
+const exportPdfButton = document.getElementById('export-pdf-button');
+const exportPdfLabel = document.getElementById('export-pdf-label');
+
+exportPdfButton?.addEventListener('click', async () => {
+    const corridorSelect = document.getElementById('filter-corridor');
+    exportPdfButton.disabled = true;
+    exportPdfLabel.textContent = 'Building PDF…';
+
+    try {
+        // Lazy: jsPDF only loads when someone actually exports.
+        const { exportResultsPdf } = await import('./resultsPdf.js');
+        const corridorId = corridorSelect?.value ?? '';
+        await exportResultsPdf(data, {
+            corridorId,
+            corridorName: corridorSelect?.selectedOptions[0]?.textContent.trim() || 'All corridors',
+            corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
+        });
+    } catch (error) {
+        // eslint-disable-next-line no-alert
+        alert(`PDF export failed: ${error.message}`);
+    } finally {
+        exportPdfButton.disabled = !data.aggregates?.length;
+        exportPdfLabel.textContent = 'Export PDF';
+    }
 });
 
 /* ------------------------------------------------------- ITS-target filter */
