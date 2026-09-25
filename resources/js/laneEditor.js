@@ -121,7 +121,7 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
     function describe(approach, lane) {
         const layout = getLayout();
         const node = layout.nodesById.get(approach.nodeId);
-        const where = approach.kind === 'arterial' ? approach.label : `${approach.label} ${approach.laneUseKey}`;
+        const where = approach.laneUseKey === 'arterial' ? approach.label : `${approach.label} ${approach.laneUseKey}`;
         const moves = laneMovesOf(approach, lane)
             .map((m) => MOVEMENT_LABELS[m])
             .join(' + ');

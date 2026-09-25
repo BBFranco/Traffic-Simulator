@@ -42,6 +42,8 @@ export function buildIntersectionConfig(config, layout, nodeId, demand, approach
                 name: arterial.name,
                 shortName: arterial.shortName,
                 direction: rawArterial.direction,
+                oneWay: arterial.oneWay,
+                medianWidthM: arterial.medianWidthM,
                 lanes: arterial.lanes,
                 targetSpeedKph: arterial.targetSpeedKph,
                 mode: 'fixed',
@@ -91,11 +93,17 @@ export function buildIntersectionConfig(config, layout, nodeId, demand, approach
     return testConfig;
 }
 
-function applyApproachEdit(testConfig, nodeId, { laneUseKey, laneUse, turnLanes }) {
+function applyApproachEdit(testConfig, nodeId, { kind, laneUseKey, laneUse, turnLanes }) {
+    const node = testConfig.arterials[0].intersections[0];
     if (laneUseKey === 'arterial') {
-        const node = testConfig.arterials[0].intersections[0];
         node.laneUse = laneUse;
         node.turnLanes = turnLanes ?? undefined;
+        return;
+    }
+    // A two-way arterial keys its lane use and turn lanes by direction of travel, like a connector.
+    if (kind === 'arterial') {
+        node.laneUse = { ...node.laneUse, [laneUseKey]: laneUse };
+        node.turnLanes = { ...node.turnLanes, [laneUseKey]: turnLanes ?? undefined };
         return;
     }
     const connector = testConfig.connectors[0];

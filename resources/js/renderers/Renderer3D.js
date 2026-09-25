@@ -486,7 +486,7 @@ export class Renderer3D {
         for (const arterial of this.layout.arterials) {
             const points = [arterial.startPoint, ...arterial.intersections.map((n) => n.point), arterial.endPoint];
             for (let i = 0; i < points.length - 1; i += 1) {
-                add(arterial.shortName, points[i], points[i + 1], 'arterial', arterial.lanes, arterial.laneWidthM);
+                add(arterial.shortName, points[i], points[i + 1], 'arterial', arterial.lanes, arterial.laneWidthM, arterial.medianWidthM);
             }
             for (const node of arterial.intersections) {
                 if (!node.crossStub) continue;
@@ -496,13 +496,9 @@ export class Renderer3D {
             }
         }
         for (const connector of this.layout.connectors) {
-            const [a, b] = connector.nodeIds.map(nodePoint);
-            for (const [from, to] of [
-                [connector.startPoint, a],
-                [a, b],
-                [b, connector.endPoint],
-            ]) {
-                add(connector.name, from, to, 'cross', connector.lanes, connector.laneWidthM, connector.medianWidthM);
+            const points = [connector.startPoint, ...connector.nodeIds.map(nodePoint), connector.endPoint];
+            for (let i = 0; i < points.length - 1; i += 1) {
+                add(connector.name, points[i], points[i + 1], 'cross', connector.lanes, connector.laneWidthM, connector.medianWidthM);
             }
         }
 
@@ -703,25 +699,28 @@ export class Renderer3D {
     }
 
     /**
-     * Raised median islands (kerb height) on divided cross streets, stopped
+     * Raised median islands (kerb height) on divided streets, stopped
      * short of each junction box so turning traffic never drives through one -
      * and short of any median-side turn lane, which takes the island's place.
      */
     buildMedians() {
         const positions = [];
-        for (const connector of this.layout.connectors) {
-            if (!connector.medianWidthM || connector.curve) continue;
-            const [a, b] = connector.nodeIds.map((id) => this.layout.nodesById.get(id));
+        const dividedStreets = [
+            ...this.layout.connectors
+                .filter((connector) => connector.medianWidthM && !connector.curve)
+                .map((connector) => ({ road: connector, kind: 'cross', nodes: connector.nodeIds.map((id) => this.layout.nodesById.get(id)), depthOf: (node) => node.arterialRoadWidthM })),
+            ...this.layout.arterials
+                .filter((arterial) => arterial.medianWidthM)
+                .map((arterial) => ({ road: arterial, kind: 'arterial', nodes: arterial.intersections, depthOf: (node) => node.crossRoadWidthM })),
+        ];
+        for (const { road, kind, nodes, depthOf } of dividedStreets) {
             // How far back from `node` the island stops for traffic arriving there heading `travel`.
             const clear = (node, travel) => {
-                const approach = node.approaches.find((ap) => ap.kind === 'cross' && ap.heading.x * travel.x + ap.heading.y * travel.y > 0.5);
-                return Math.max(node.arterialRoadWidthM / 2 + MEDIAN_JUNCTION_CLEARANCE_M, medianTurnLaneReachM(approach));
+                const approach = node.approaches.find((ap) => ap.kind === kind && ap.heading.x * travel.x + ap.heading.y * travel.y > 0.5);
+                return Math.max(depthOf(node) / 2 + MEDIAN_JUNCTION_CLEARANCE_M, medianTurnLaneReachM(approach));
             };
-            const pieces = [
-                [connector.startPoint, null, a.point, a],
-                [a.point, a, b.point, b],
-                [b.point, b, connector.endPoint, null],
-            ];
+            const stops = [[road.startPoint, null], ...nodes.map((node) => [node.point, node]), [road.endPoint, null]];
+            const pieces = stops.slice(0, -1).map(([from, fromNode], i) => [from, fromNode, ...stops[i + 1]]);
             for (const [from, fromNode, to, toNode] of pieces) {
                 const lengthM = Math.hypot(to.x - from.x, to.y - from.y);
                 if (lengthM < 1) continue;
@@ -731,7 +730,7 @@ export class Renderer3D {
                 if (lengthM <= trimFrom + trimTo + 1) continue;
                 const start = { x: from.x + dir.x * trimFrom, y: from.y + dir.y * trimFrom };
                 const end = { x: to.x - dir.x * trimTo, y: to.y - dir.y * trimTo };
-                pushKerbBlock(positions, start, end, connector.medianWidthM / 2, MEDIAN_HEIGHT_M);
+                pushKerbBlock(positions, start, end, road.medianWidthM / 2, MEDIAN_HEIGHT_M);
             }
         }
         if (!positions.length) return;

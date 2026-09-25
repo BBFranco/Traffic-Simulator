@@ -213,6 +213,7 @@ function editableApproaches() {
 /** Every approach's current (possibly unsaved) arrows and turn lanes, in corridor JSON form. */
 function currentApproachEdits() {
     return editableApproaches().map((approach) => ({
+        kind: approach.kind,
         laneUseKey: approach.laneUseKey,
         laneUse: approach.laneUse.map(laneUseToken),
         turnLanes: turnLanesToConfig(approach.turnLanes),
@@ -242,9 +243,14 @@ function rebuildLayout() {
 function turnLaneUnavailableReason(approach, side) {
     const { movement } = TURN_LANE_SIDE_INFO[side];
     if (!engine.movementsAt(approach).includes(movement)) return `No ${movement} turn here`;
-    if (side !== 'right' || approach.kind === 'arterial') return null;
-    const connector = layout.connectors.find((c) => c.id === approach.connectorId);
-    if (connector.twoWay && connector.medianWidthM < connector.laneWidthM) return 'Needs a median a lane wide';
+    if (side !== 'right') return null;
+    // Only a two-way street's median-side turn lane needs room in the median.
+    const isArterial = approach.kind === 'arterial';
+    const road = isArterial
+        ? layout.arterials.find((a) => a.id === layout.nodesById.get(approach.nodeId).arterialId)
+        : layout.connectors.find((c) => c.id === approach.connectorId);
+    const isTwoWay = isArterial ? !road.oneWay : road.twoWay;
+    if (isTwoWay && road.medianWidthM < road.laneWidthM) return 'Needs a median a lane wide';
     return null;
 }
 
@@ -324,7 +330,7 @@ function renderTurnLanePanel() {
             group.className = 'space-y-1.5 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800/60';
             const heading = document.createElement('div');
             heading.className = 'text-[10px] font-semibold uppercase tracking-wider text-slate-500';
-            heading.textContent = approach.kind === 'arterial' ? approach.label : `${approach.label} · ${DIRECTION_LABELS[approach.laneUseKey] ?? approach.laneUseKey}`;
+            heading.textContent = approach.laneUseKey === 'arterial' ? approach.label : `${approach.label} · ${DIRECTION_LABELS[approach.laneUseKey] ?? approach.laneUseKey}`;
             group.append(heading, ...TURN_LANE_SIDES.map((side) => turnLaneRow(approach, side)));
             return group;
         })

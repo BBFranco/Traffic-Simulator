@@ -23,9 +23,30 @@ class CorridorLaneUseEditor
      */
     public function apply(stdClass $config, array $approaches): void
     {
-        collect($approaches)->each(fn (array $approach) => $approach['key'] === LaneUseApproach::Arterial->value
-            ? $this->applyArterialLaneUse($config, $approach['nodeId'], $approach['lanes'], $approach['turnLanes'] ?? null)
-            : $this->applyConnectorLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null));
+        collect($approaches)->each(fn (array $approach) => match (true) {
+            $approach['key'] === LaneUseApproach::Arterial->value => $this->applyArterialLaneUse($config, $approach['nodeId'], $approach['lanes'], $approach['turnLanes'] ?? null),
+            $this->isTwoWayArterialDirection($config, $approach['nodeId'], $approach['key']) => $this->applyTwoWayArterialLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null),
+            default => $this->applyConnectorLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null),
+        });
+    }
+
+    private function findArterial(stdClass $config, string $nodeId): ?stdClass
+    {
+        return collect($config->arterials ?? [])
+            ->first(fn (stdClass $arterial) => collect($arterial->intersections ?? [])->contains('id', $nodeId));
+    }
+
+    /** A two-way arterial's approaches are keyed by its own direction and the opposite one; any other direction at the node is its cross street's. */
+    private function isTwoWayArterialDirection(stdClass $config, string $nodeId, string $direction): bool
+    {
+        $arterial = $this->findArterial($config, $nodeId);
+        $arterialDirection = LaneUseApproach::tryFrom($arterial?->direction ?? '');
+
+        if ($arterial === null || ($arterial->oneWay ?? true) || $arterialDirection === null) {
+            return false;
+        }
+
+        return in_array($direction, [$arterialDirection->value, $arterialDirection->opposite()?->value], true);
     }
 
     /**
@@ -34,8 +55,7 @@ class CorridorLaneUseEditor
      */
     private function applyArterialLaneUse(stdClass $config, string $nodeId, array $lanes, ?array $turnLanes): void
     {
-        $arterial = collect($config->arterials ?? [])
-            ->first(fn (stdClass $arterial) => collect($arterial->intersections ?? [])->contains('id', $nodeId))
+        $arterial = $this->findArterial($config, $nodeId)
             ?? throw new CorridorLaneUseException("No arterial intersection [{$nodeId}] in this corridor.");
 
         $this->ensureLaneCount($lanes, $arterial->lanes ?? 1, $nodeId);
@@ -54,6 +74,36 @@ class CorridorLaneUseEditor
         }
 
         $node->turnLanes = $turnLanesObject;
+    }
+
+    /**
+     * @param  array<int, string>  $lanes
+     * @param  array<string, array{lengthM: int|float, laneUse: string}>|null  $turnLanes
+     */
+    private function applyTwoWayArterialLaneUse(stdClass $config, string $nodeId, string $direction, array $lanes, ?array $turnLanes): void
+    {
+        $arterial = $this->findArterial($config, $nodeId);
+        $label = "{$nodeId} {$direction}";
+        $this->ensureLaneCount($lanes, max(1, intdiv($arterial->lanes ?? 2, 2)), $label);
+
+        $node = collect($arterial->intersections)->firstWhere('id', $nodeId);
+        $node->laneUse ??= new stdClass;
+        $node->laneUse->{$direction} = $lanes;
+
+        if ($turnLanes === null) {
+            return;
+        }
+
+        $this->ensureRoomForMedianTurnLane($config, true, $arterial->medianWidthM ?? 0, $turnLanes, $label);
+        $node->turnLanes ??= new stdClass;
+        $node->turnLanes->{$direction} = $this->turnLanesObject($turnLanes);
+
+        if ($node->turnLanes->{$direction} === null) {
+            unset($node->turnLanes->{$direction});
+        }
+        if (get_object_vars($node->turnLanes) === []) {
+            unset($node->turnLanes);
+        }
     }
 
     /**
@@ -80,7 +130,7 @@ class CorridorLaneUseEditor
             return;
         }
 
-        $this->ensureRoomForMedianTurnLane($config, $connector, $turnLanes, $label);
+        $this->ensureRoomForMedianTurnLane($config, $isTwoWay, $connector->medianWidthM ?? 0, $turnLanes, $label);
         $this->setConnectorTurnLanes($connector, $nodeId, $direction, $this->turnLanesObject($turnLanes));
     }
 
@@ -124,13 +174,12 @@ class CorridorLaneUseEditor
      *
      * @param  array<string, array{lengthM: int|float, laneUse: string}>  $turnLanes
      */
-    private function ensureRoomForMedianTurnLane(stdClass $config, stdClass $connector, array $turnLanes, string $label): void
+    private function ensureRoomForMedianTurnLane(stdClass $config, bool $isTwoWay, int|float $medianWidthM, array $turnLanes, string $label): void
     {
         $laneWidthM = $config->defaults->laneWidthM ?? 3.5;
-        $isTwoWay = $connector->twoWay ?? true;
         $hasMedianTurnLane = isset($turnLanes[TurnLaneSide::Right->value]);
 
-        if ($hasMedianTurnLane && $isTwoWay && ($connector->medianWidthM ?? 0) < $laneWidthM) {
+        if ($hasMedianTurnLane && $isTwoWay && $medianWidthM < $laneWidthM) {
             throw new CorridorLaneUseException("[{$label}] needs a median at least {$laneWidthM} m wide for a right turn lane.");
         }
     }

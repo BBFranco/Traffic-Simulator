@@ -33,6 +33,28 @@ class CorridorLaneUseTest extends TestCase
 }
 JSON;
 
+    private const TWO_WAY_GRID = <<<'JSON'
+{
+  "id": "two-way",
+  "name": "Two-way · test",
+  "arterials": [
+    {
+      "id": "main",
+      "oneWay": false,
+      "direction": "eastbound",
+      "lanes": 4,
+      "medianWidthM": 3.5,
+      "intersections": [
+        { "id": "n1", "distanceToNextM": null }
+      ]
+    }
+  ],
+  "connectors": [
+    { "id": "side", "lanes": 4, "twoWay": true, "direction": "southbound", "linksArterialNodes": ["n1"] }
+  ]
+}
+JSON;
+
     private User $user;
 
     private CorridorLayout $layout;
@@ -161,6 +183,34 @@ JSON;
         ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['approaches.0.turnLanes', 'approaches.0.turnLanes.left.laneUse']);
+    }
+
+    public function test_a_two_way_arterial_keeps_lane_use_and_turn_lanes_per_direction(): void
+    {
+        $config = json_decode(self::TWO_WAY_GRID, false);
+        $this->user->corridorLayouts()->create(['slug' => 'two-way', 'name' => 'Two-way · test', 'config' => $config, 'original_config' => $config]);
+
+        $this->actingAs($this->user)->putJson(route('corridors.lane-use.update', ['corridor' => 'two-way']), ['approaches' => [
+            ['nodeId' => 'n1', 'key' => 'westbound', 'lanes' => ['left', 'straight_right'], 'turnLanes' => ['right' => ['lengthM' => 15, 'laneUse' => 'right']]],
+            ['nodeId' => 'n1', 'key' => 'northbound', 'lanes' => ['left_straight', 'straight_right']],
+        ]])->assertOk();
+
+        $saved = json_decode(json_encode($this->user->corridorLayouts()->firstWhere('slug', 'two-way')->config), true);
+
+        $this->assertSame(['westbound' => ['left', 'straight_right']], $saved['arterials'][0]['intersections'][0]['laneUse']);
+        $this->assertSame(['westbound' => ['right' => ['lengthM' => 15, 'laneUse' => 'right']]], $saved['arterials'][0]['intersections'][0]['turnLanes']);
+        $this->assertSame(['left_straight', 'straight_right'], $saved['connectors'][0]['laneUse']['n1']['northbound']);
+    }
+
+    public function test_a_right_turn_lane_on_an_undivided_two_way_arterial_is_rejected(): void
+    {
+        $config = json_decode(self::TWO_WAY_GRID, false);
+        $config->arterials[0]->medianWidthM = 0;
+        $this->user->corridorLayouts()->create(['slug' => 'two-way', 'name' => 'Two-way · test', 'config' => $config, 'original_config' => $config]);
+
+        $this->actingAs($this->user)->putJson(route('corridors.lane-use.update', ['corridor' => 'two-way']), ['approaches' => [
+            ['nodeId' => 'n1', 'key' => 'eastbound', 'lanes' => ['left', 'straight_right'], 'turnLanes' => ['right' => ['lengthM' => 15, 'laneUse' => 'right']]],
+        ]])->assertUnprocessable();
     }
 
     public function test_an_unknown_movement_is_rejected(): void

@@ -433,8 +433,8 @@ export class LayoutRenderer {
                 widthM: arterial.roadWidthM,
                 lanes: arterial.lanes,
                 laneWidthM: arterial.laneWidthM,
-                medianWidthM: 0,
-                twoWay: false,
+                medianWidthM: arterial.medianWidthM,
+                twoWay: !arterial.oneWay,
                 heading: arterial.heading,
                 // Set only for a curved arterial. The curve's own sample points cover
                 // [0, lengthM] (first to last intersection); the extrapolated
@@ -691,8 +691,10 @@ export class LayoutRenderer {
 
         for (const arterial of this.layout.arterials) {
             if (arterial.curve) continue; // curved-road arrow placement is a follow-up polish, not load-bearing - see the matching connector skip below
-            const offsets = laneCentreOffsetsFor(arterial.roadWidthM, arterial.lanes, false);
+            const offsets = laneCentreOffsetsFor(arterial.roadWidthM, arterial.lanes, !arterial.oneWay, arterial.laneWidthM);
             this.arrowsAlong(arterial.startPoint, arterial.centrelineLengthM, arterial.heading, offsets, spacingM);
+            if (arterial.oneWay) continue;
+            this.arrowsAlong(arterial.endPoint, arterial.centrelineLengthM, { x: -arterial.heading.x, y: -arterial.heading.y }, offsets, spacingM);
         }
         for (const connector of this.layout.connectors) {
             if (connector.curve) continue; // curved-ramp arrow placement is a follow-up polish, not load-bearing

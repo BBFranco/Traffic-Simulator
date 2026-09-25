@@ -346,15 +346,20 @@ directly — the engine itself is render-agnostic.
 2. Tick every intersection's controller (adaptive gets detection + call
    info, green-wave gets `simTimeS`, others get plain `dt`).
 3. Resolve all-way-stop releases (load-shedding fallback).
-4. Spawn, then step, every arterial's cars (cross-routing → MOBIL lane
-   changes → IDM car-following/removal), in separate passes so spawns never
-   influence the same-tick step.
+4. Spawn, then step, every arterial carriageway's cars (cross-routing →
+   MOBIL lane changes → IDM car-following/removal), in separate passes so
+   spawns never influence the same-tick step. A one-way arterial is one
+   carriageway; a two-way arterial is two ('fwd' along its `direction`,
+   then 'rev'), sharing its junctions and their signals.
 5. Spawn, then step, every connector's (cross-street) cars.
 6. Prune the 60s rolling stats window; sample the live chart.
 
-**State:** `arterialState: Map<id, {mode, spawnRate, road, lanes:[{cars:[],
-timerS, nextArrivalS}], stats}>` and a parallel `connectorState` for
-cross-streets. Each lane is a live array of `Car` objects, kept sorted
+**State:** `arterialState: Map<id, {mode, spawnRate, stats}>`,
+`carriagewayState: Map<id, {laneLayout, lanes:[{cars:[], timerS,
+nextArrivalS}]}>` per arterial direction, and a parallel `connectorState`
+for cross-streets. Every road direction reaches its junctions through
+**gates** (stop line, lane use, the turns on offer), which read the
+junction's one controller. Each lane is a live array of `Car` objects, kept sorted
 front-first every step.
 
 **Spawning:**
@@ -389,15 +394,21 @@ File: `resources/js/sim/corridor.js`, `corridors/hatfield-pretorius-francisbaard
 Pure JSON → geometry loader (metres; x=east, y=south; left-hand traffic).
 
 - **Arterials** — one-way roads, straight or Bezier-curved (curves sampled
-  into an arc-length table so curved/straight roads are physics-identical).
+  into an arc-length table so curved/straight roads are physics-identical),
+  or straight two-way roads (`oneWay: false`, half the `lanes` each way,
+  optional `medianWidthM`; each node's `laneUse`/`turnLanes` keyed by
+  compass direction). An arterial car turning right off a two-way arterial
+  waits for a gap in the oncoming half.
   Each has a lead-in `approachLengthM` (spawn point) and run-out
   `exitLengthM`; total length is the removal threshold.
 - **Intersections** — walked in order along the arterial, each carrying
   local heading, cross-axis, junction box size, and per-approach geometry
   (stop-line setback, per-lane centre offsets).
-- **Connectors** (cross-streets) — link exactly two arterial intersections,
-  with stub tips (default 70 m) extending past both so they read as
-  through-streets. If no real connector serves an intersection, a synthetic
+- **Connectors** (cross-streets) — run straight through one or more arterial
+  intersections (`linksArterialNodes`, in the order the street reaches them;
+  a curved ramp links exactly two), with stub tips (default 70 m,
+  `stubLengthM`) extending past the ends so they read as through-streets.
+  A junction has exactly one cross street. If no real connector serves an intersection, a synthetic
   2-lane stub is generated purely for visual 4-way completeness (no demand).
 - **Arterial vs. side-street is structural**: arterials carry a
   controller-selectable mode (fixed/adaptive/green_wave/none); connectors
@@ -406,7 +417,16 @@ Pure JSON → geometry loader (metres; x=east, y=south; left-hand traffic).
   structural split is what the Total/Arterial/Side-Streets scope filter
   (§10) reads.
 
-**Hatfield corridor** (current scenario, placeholder geometry):
+**Hatfield grid** (`corridors/hatfield-realistic.json`, generated from the
+ARTIS Hatfield reference report): 10 east-west arterials (Francis Baard 4L
+eastbound, Pretorius 4L westbound, Burnett 3L westbound, Park 3L eastbound,
+two-way Lynnwood, Stanza Bopape, Prospect, South, Duxbury, Lunnon) × 6
+north-south connectors (Jan Shoba divided, Grosvenor, Richard, Glyn two-way;
+Hilda 3L southbound, Festival 3L northbound) = 54 signalised junctions.
+Festival–Jan Shoba keep 245 m spacing; north-south blocks 164–320 m. Lane
+counts, lane use and distances are simulation estimates (see the file's `meta`).
+
+**Hatfield corridor** (original scenario, placeholder geometry):
 - Two parallel one-way 4-lane arterials — **Francis Baard** (westbound) and
   **Pretorius** (eastbound) — target speed 50 km/h, `mode: fixed` by default.
 - 4 signalised intersections per arterial, **uniform 245 m** block spacing

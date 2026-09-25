@@ -425,6 +425,7 @@ async function runBatch(demandOverrides) {
 
         let completed = 0;
         let pending = [];
+        const startedAtMs = performance.now();
 
         for (const condition of matrix) {
             let recoveryAcc = null;
@@ -448,7 +449,7 @@ async function runBatch(demandOverrides) {
 
                 pending.push(toApiPayload(summary, batchId));
                 completed += 1;
-                updateBatchProgress(completed, totalRuns, condition.key);
+                updateBatchProgress(completed, totalRuns, condition.key, performance.now() - startedAtMs);
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
@@ -595,10 +596,24 @@ function celebrateBatchComplete(totalRuns) {
     setTimeout(() => toast?.classList.add('hidden'), 6000);
 }
 
-function updateBatchProgress(completed, total, conditionKey) {
+/** "45s", "12m 05s", "1h 03m" - coarse enough for a batch ETA. */
+function formatDuration(ms) {
+    const totalS = Math.max(1, Math.round(ms / 1000));
+    const h = Math.floor(totalS / 3600);
+    const m = Math.floor((totalS % 3600) / 60);
+    const s = totalS % 60;
+    if (h) return `${h}h ${String(m).padStart(2, '0')}m`;
+    if (m) return `${m}m ${String(s).padStart(2, '0')}s`;
+    return `${s}s`;
+}
+
+function updateBatchProgress(completed, total, conditionKey, elapsedMs) {
     const pct = Math.round((completed / total) * 100);
+    // Average time per finished run so far, times the runs still to go.
+    const remainingMs = (elapsedMs / completed) * (total - completed);
+    const eta = completed < total ? ` · ~${formatDuration(remainingMs)} left` : '';
     if (batchProgressBar) batchProgressBar.style.width = `${pct}%`;
-    if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs`;
+    if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs${eta}`;
     if (batchProgressLabel) batchProgressLabel.textContent = `${conditionKey} · rep ${((completed - 1) % REPS_PER_CONDITION) + 1}/${REPS_PER_CONDITION}`;
     if (batchButton) batchButton.textContent = `Running... ${completed}/${total}`;
 }
