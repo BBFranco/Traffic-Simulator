@@ -471,9 +471,10 @@ function drawCover(report, data, variants, corridorLayout) {
         ['Conditions', String(conditions)],
         ['Reps / condition', conditions ? String(Math.round(totalRuns / conditions)) : 'n/a'],
         ['Outage window', timeline?.sheddingStart != null ? `${Math.round(timeline.sheddingStart)}-${Math.round(timeline.sheddingEnd)} s` : 'n/a'],
+        ['Warm-up', data.batchWarmupLabel ?? 'n/a'],
     ];
 
-    const boxWidth = (CONTENT_WIDTH - 3 * 4) / 4;
+    const boxWidth = (CONTENT_WIDTH - (stats.length - 1) * 4) / stats.length;
     stats.forEach(([label, value], i) => {
         const x = PAGE.margin + i * (boxWidth + 4);
         doc.setFillColor(...COLOURS.headFill).setDrawColor(...COLOURS.rule);
@@ -485,6 +486,15 @@ function drawCover(report, data, variants, corridorLayout) {
     });
 
     report.y = 102;
+    if (data.hasNonStationaryBatch) {
+        doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
+        const warning = doc.splitTextToSize(
+            'Baseline not stationary: the warm-up probe found a controller whose waits were still growing after the longest warm-up, so this batch was capped at that maximum. Its steady-state figures describe a system that is still drifting.',
+            CONTENT_WIDTH
+        );
+        doc.text(warning, PAGE.margin, report.y);
+        report.y += warning.length * 3.6 + 3;
+    }
     if (corridorLayout) {
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
         report.chartCard(
@@ -528,6 +538,7 @@ function comparisonRows(data, variants, scope) {
 /**
  * A recovery delta with the recovered-run counts behind it ("ITS vs fixed"). Below the
  * minimum recovered runs per side the controller leaves the delta null - say why instead.
+ * A reliable-but-null delta means fixed-time recovered in 0.0s, so there's no ratio: n/a.
  */
 function fmtRecoveryDelta(c, metric) {
     if (c.power_state !== 'load_shedding') return '-';
@@ -536,7 +547,7 @@ function fmtRecoveryDelta(c, metric) {
         : [c.recovery_delta_pct, c.recovery_reliable, c.recovery_recovered, c.baseline_recovery_recovered];
     const counts = `${recovered}/${c.runs} vs ${baselineRecovered}/${c.baseline_runs}`;
 
-    return reliable && delta != null ? `${fmtDelta(delta, '%')}\n${counts}` : `too few runs\n${counts}`;
+    return reliable ? `${fmtDelta(delta, '%')}\n${counts}` : `too few runs\n${counts}`;
 }
 
 /** Tints a delta cell green/red from the matching `*_improves` flag. */
@@ -726,10 +737,15 @@ function drawRecoveryTimes(report, variants, scope) {
     report.y = top + imageHeight + 22;
 }
 
-function drawMethodNotes(report, minRecoveredRuns) {
+function drawMethodNotes(report, data) {
+    const minRecoveredRuns = data.minRecoveredRuns ?? 10;
+    // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
+    const warmup = data.batchWarmupLabel
+        ? `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`
+        : 'a warm-up (not recorded for this batch)';
     report.sectionTitle('Method notes');
     [
-        'Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards a 6-minute warm-up before measuring 40 simulated minutes at dt = 0.1 s.',
+        `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring 40 simulated minutes at dt = 0.1 s.`,
         'Load-shedding conditions cut power a quarter of the way into the measured window and restore it at the halfway mark. While the lights are dark every controller falls back to all-way-stop behaviour.',
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths (1.96 x sample stddev / sqrt(n)) on each condition\'s own mean, not on the delta between two conditions.',
@@ -767,7 +783,7 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         report.newPage();
         report.sectionTitle(`${SCOPES.length + 1}. Wait-time distribution`, 'Total scope - a mean alone can\'t tell "everyone waits a bit longer" apart from "a few are stranded"');
         distributionTable(report, data, variants);
-        drawMethodNotes(report, data.minRecoveredRuns ?? 10);
+        drawMethodNotes(report, data);
 
         report.stampPages();
         report.doc.save(`results-${corridorId || 'all-corridors'}-${now.toISOString().slice(0, 10)}.pdf`);

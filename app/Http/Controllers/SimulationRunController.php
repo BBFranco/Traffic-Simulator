@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreSimulationRunRequest;
 use App\Models\SimulationRun;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 
 /**
  * Where batch-run summaries land in the database (build step 16). The
@@ -18,6 +19,8 @@ class SimulationRunController extends Controller
     {
         $rows = collect($request->validated('runs'))->map(fn (array $run) => [
             ...$run,
+            // Sent as an ISO-8601 instant; stored in UTC like created_at.
+            'batch_started_at' => isset($run['batch_started_at']) ? Carbon::parse($run['batch_started_at'])->utc()->format('Y-m-d H:i:s') : null,
             'raw_config_json' => json_encode($run['raw_config_json']),
             'created_at' => now(),
         ]);

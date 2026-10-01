@@ -19,14 +19,14 @@ class CorridorLaneUseEditor
     /**
      * An approach's `turnLanes`, when given, replace its turn lanes (`[]` removes them).
      *
-     * @param  array<int, array{nodeId: string, key: string, lanes: array<int, string>, turnLanes?: array<string, array{lengthM: int|float, laneUse: string}>}>  $approaches
+     * @param  array<int, array{nodeId: string, key: string, connectorId?: string|null, lanes: array<int, string>, turnLanes?: array<string, array{lengthM: int|float, laneUse: string}>}>  $approaches
      */
     public function apply(stdClass $config, array $approaches): void
     {
         collect($approaches)->each(fn (array $approach) => match (true) {
             $approach['key'] === LaneUseApproach::Arterial->value => $this->applyArterialLaneUse($config, $approach['nodeId'], $approach['lanes'], $approach['turnLanes'] ?? null),
             $this->isTwoWayArterialDirection($config, $approach['nodeId'], $approach['key']) => $this->applyTwoWayArterialLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null),
-            default => $this->applyConnectorLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null),
+            default => $this->applyConnectorLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null, $approach['connectorId'] ?? null),
         });
     }
 
@@ -110,11 +110,14 @@ class CorridorLaneUseEditor
      * @param  array<int, string>  $lanes
      * @param  array<string, array{lengthM: int|float, laneUse: string}>|null  $turnLanes
      */
-    private function applyConnectorLaneUse(stdClass $config, string $nodeId, string $direction, array $lanes, ?array $turnLanes): void
+    private function applyConnectorLaneUse(stdClass $config, string $nodeId, string $direction, array $lanes, ?array $turnLanes, ?string $connectorId = null): void
     {
-        // corridor.js gives a node the first connector that links it - match that.
-        $connector = collect($config->connectors ?? [])
-            ->first(fn (stdClass $connector) => in_array($nodeId, $connector->linksArterialNodes ?? [], true))
+        // The named cross street where a junction's is two roads (corridor.js's splitCrossStreet()), otherwise
+        // the first connector that links the node - the one corridor.js gives it.
+        $linking = collect($config->connectors ?? [])
+            ->filter(fn (stdClass $connector) => in_array($nodeId, $connector->linksArterialNodes ?? [], true));
+        $connector = ($connectorId === null ? null : $linking->firstWhere('id', $connectorId))
+            ?? $linking->first()
             ?? throw new CorridorLaneUseException("No cross street runs through [{$nodeId}] in this corridor.");
 
         $totalLanes = $connector->lanes ?? 2;

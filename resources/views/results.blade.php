@@ -12,8 +12,8 @@
         <div class="flex flex-wrap items-end justify-between gap-4">
             <div>
                 <h1 class="text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100">Results</h1>
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Latest batch per corridor · {{ number_format($totalRuns) }} runs · 30 seeded reps per condition{{ $batchGeneratedAt ? ' · generated '.$batchGeneratedAt : '' }}
+                <p id="batch-summary" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    @include('results.partials.batch-summary')
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
@@ -89,6 +89,14 @@
         <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
         while it runs - the tab is not frozen, just busy.
     </div>
+
+    @if ($hasNonStationaryBatch)
+        <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
+            <strong class="font-semibold">Baseline not stationary.</strong>
+            The warm-up probe found at least one controller whose waits were still growing after its longest warm-up,
+            so these runs measure a network that is still loading up - read them as trends, not a steady-state comparison.
+        </div>
+    @endif
 
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">

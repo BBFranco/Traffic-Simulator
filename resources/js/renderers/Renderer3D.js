@@ -707,7 +707,7 @@ export class Renderer3D {
         const positions = [];
         const dividedStreets = [
             ...this.layout.connectors
-                .filter((connector) => connector.medianWidthM && !connector.curve)
+                .filter((connector) => connector.medianWidthM)
                 .map((connector) => ({ road: connector, kind: 'cross', nodes: connector.nodeIds.map((id) => this.layout.nodesById.get(id)), depthOf: (node) => node.arterialRoadWidthM })),
             ...this.layout.arterials
                 .filter((arterial) => arterial.medianWidthM)
@@ -719,6 +719,22 @@ export class Renderer3D {
                 const approach = node.approaches.find((ap) => ap.kind === kind && ap.heading.x * travel.x + ap.heading.y * travel.y > 0.5);
                 return Math.max(depthOf(node) / 2 + MEDIAN_JUNCTION_CLEARANCE_M, medianTurnLaneReachM(approach));
             };
+            if (road.curve) {
+                // A curved street: one short block per curve sample, dropped wherever it would reach into a junction.
+                const pts = road.curve.points;
+                for (let i = 0; i < pts.length - 1; i += 1) {
+                    const from = pts[i];
+                    const to = pts[i + 1];
+                    const lengthM = Math.hypot(to.x - from.x, to.y - from.y);
+                    if (lengthM < 0.01) continue;
+                    const dir = { x: (to.x - from.x) / lengthM, y: (to.y - from.y) / lengthM };
+                    const nearJunction = nodes.some((node) =>
+                        [from, to].some((p) => Math.hypot(p.x - node.point.x, p.y - node.point.y) < Math.max(clear(node, dir), clear(node, { x: -dir.x, y: -dir.y })))
+                    );
+                    if (!nearJunction) pushKerbBlock(positions, from, to, road.medianWidthM / 2, MEDIAN_HEIGHT_M);
+                }
+                continue;
+            }
             const stops = [[road.startPoint, null], ...nodes.map((node) => [node.point, node]), [road.endPoint, null]];
             const pieces = stops.slice(0, -1).map(([from, fromNode], i) => [from, fromNode, ...stops[i + 1]]);
             for (const [from, fromNode, to, toNode] of pieces) {

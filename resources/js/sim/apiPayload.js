@@ -4,9 +4,16 @@
  * (snake_case, matching the `simulation_runs` migration columns exactly).
  * Shared by the CLI batch driver and the /results page's batch-run button.
  */
-export function toApiPayload(summary, batchId) {
+/**
+ * `warmupStationary`: the batch's warm-up probe verdict (sim/warmupProbe.js), null when the warm-up was hand-picked.
+ * `batchStartedAt`: when the batch was launched (ISO-8601), so /results can show how long it took.
+ */
+export function toApiPayload(summary, batchId, { warmupStationary = null, batchStartedAt = null } = {}) {
     return {
         batch_id: batchId,
+        batch_started_at: batchStartedAt,
+        warmup_ticks: summary.rawConfig.warmupTicks,
+        warmup_stationary: warmupStationary,
         seed: summary.seed,
         controller_mode: summary.controllerMode,
         power_state: summary.powerState,

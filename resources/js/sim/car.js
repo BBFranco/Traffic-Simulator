@@ -345,7 +345,8 @@ export function carWorldPoint(car) {
         // (engine.js's _tryChangeLane()), so physics/collision never waits on
         // this, only the drawn position eases sideways instead of teleporting.
         const t = easeInOut(Math.min(1, car.laneChangeAnim.elapsedS / LANE_CHANGE_ANIM_DURATION_S));
-        const fromOffsetM = laneOffset(road, car.laneChangeAnim.fromLane);
+        // A lane change starts from the old lane; a hand-over onto another road (engine.js's joins) from wherever the car was drawn.
+        const fromOffsetM = car.laneChangeAnim.fromOffsetM ?? laneOffset(road, car.laneChangeAnim.fromLane);
         lateralOffsetM = fromOffsetM + (lateralOffsetM - fromOffsetM) * t;
     }
 

@@ -28,6 +28,8 @@ class UpdateCorridorLaneUseRequest extends FormRequest
             'approaches' => ['required', 'array', 'min:1'],
             'approaches.*.nodeId' => ['required', 'string', 'max:255'],
             'approaches.*.key' => ['required', Rule::enum(LaneUseApproach::class)],
+            // The cross street an approach is on - only needed where a junction's cross street is two roads.
+            'approaches.*.connectorId' => ['sometimes', 'nullable', 'string', 'max:255'],
             'approaches.*.lanes' => ['required', 'array', 'min:1'],
             'approaches.*.lanes.*' => ['required', 'string', 'regex:/^(all|(left|straight|right)(_(left|straight|right))*)$/'],
             'approaches.*.turnLanes' => ['sometimes', 'array:'.$sides],

@@ -30,7 +30,7 @@
       "exitLengthM": 260,
       "demand": {
         "spawnRatePerLanePerMin": 9,
-        "saturationFlowPerLanePerHour": 1900
+        "saturationFlowPerLanePerHour": 1250
       },
       "intersections": [
         {

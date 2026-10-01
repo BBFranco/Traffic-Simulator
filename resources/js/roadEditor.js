@@ -215,6 +215,7 @@ function currentApproachEdits() {
     return editableApproaches().map((approach) => ({
         kind: approach.kind,
         laneUseKey: approach.laneUseKey,
+        connectorId: approach.connectorId,
         laneUse: approach.laneUse.map(laneUseToken),
         turnLanes: turnLanesToConfig(approach.turnLanes),
     }));
