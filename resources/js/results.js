@@ -38,6 +38,7 @@ import { onThemeChange } from './theme.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
+import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
@@ -368,11 +369,10 @@ onThemeChange((theme) => {
  */
 const REPS_PER_CONDITION = 30;
 const DURATION_TICKS = 24000; // 40 measured simulated minutes per run at DT=0.1s
-// Warm-up run BEFORE anything is measured, discarded from every stat - standard
-// traffic-sim practice, long enough for this corridor's own from-empty ramp-up
-// transient to finish under normal power before the outage/recovery windows below
-// land inside an already-equilibrated corridor. See engine.js's resetStats().
-const WARMUP_TICKS = 3600; // 6 simulated minutes
+// Warm-up (run BEFORE anything is measured, discarded from every stat - see
+// engine.js's resetStats()) is measured per corridor before each batch by
+// sim/warmupProbe.js, not a constant: 360 s suits the small corridors, the
+// 54-junction network needs tens of minutes.
 // Load-shedding conditions cut power a quarter of the way into the MEASURED window
 // and restore it at the halfway mark - see batch/runBatch.mjs's matching default schedule.
 const POWER_OUTAGE_START_TICK = Math.round(DURATION_TICKS * 0.25);
@@ -413,43 +413,70 @@ async function runBatch(demandOverrides) {
     if (batchProgressPct) batchProgressPct.textContent = '0%';
     batchProgressWrap?.classList.remove('hidden');
 
-    let worker = null;
+    let pool = null;
 
     try {
-        worker = createBatchWorker();
+        pool = new BatchWorkerPool(batchWorkerCount());
         const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
         const batchId = newBatchId();
+        const batchStartedAt = new Date().toISOString();
         const totalRuns = matrix.length * REPS_PER_CONDITION;
+
+        const warmup = await probeWarmup(pool, corridorConfig);
 
         let completed = 0;
         let pending = [];
         const startedAtMs = performance.now();
+        if (batchProgressLabel) batchProgressLabel.textContent = `Running ${pool.size} at a time...`;
 
-        for (const condition of matrix) {
-            let recoveryAcc = null;
-
-            for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
-                const seed = seedForRep(BASE_SEED, condition.powerState, rep);
-                // A run takes seconds - say which one is under way, not just the last one finished.
-                if (batchProgressLabel) batchProgressLabel.textContent = `${condition.key} · rep ${rep + 1}/${REPS_PER_CONDITION} · running...`;
-                // eslint-disable-next-line no-await-in-loop
-                const { rows, sideStreetRows, summary } = await runHeadlessInWorker(worker, {
-                    seed,
+        // Every run in matrix order; the pool works through them side by side, but results are
+        // taken (and each condition's recovery curve built) in the same order as one at a time,
+        // so the dataset is identical. Only a few pool-widths run ahead, since every finished
+        // run holds its per-tick rows until it is taken.
+        const jobs = matrix.flatMap((condition) =>
+            Array.from({ length: REPS_PER_CONDITION }, (_, rep) => ({
+                condition,
+                options: {
+                    seed: seedForRep(BASE_SEED, condition.powerState, rep),
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
-                    warmupTicks: WARMUP_TICKS,
+                    warmupTicks: warmup.warmupTicks,
                     powerOutageStartTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_START_TICK : null,
                     powerOutageEndTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_END_TICK : null,
                     corridorConfig,
                     durationTicks: DURATION_TICKS,
                     dt: DT,
+                },
+            }))
+        );
+        const runAhead = pool.size * 3;
+        let started = 0;
+        const topUp = (takenIndex) => {
+            while (started < jobs.length && started < takenIndex + runAhead) {
+                const job = jobs[started];
+                job.result = pool.run('run', job.options).then((result) => {
+                    completed += 1;
+                    updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs);
+                    return result;
                 });
+                started += 1;
+            }
+        };
 
-                pending.push(toApiPayload(summary, batchId));
-                completed += 1;
-                updateBatchProgress(completed, totalRuns, condition.key, performance.now() - startedAtMs);
+        let jobIndex = 0;
+        for (const condition of matrix) {
+            let recoveryAcc = null;
+
+            for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
+                topUp(jobIndex);
+                // eslint-disable-next-line no-await-in-loop
+                const { rows, sideStreetRows, summary } = await jobs[jobIndex].result;
+                jobs[jobIndex] = null; // let its rows go
+                jobIndex += 1;
+
+                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
@@ -497,7 +524,7 @@ async function runBatch(demandOverrides) {
         // eslint-disable-next-line no-alert
         alert(`Batch run failed: ${error.message}`);
     } finally {
-        worker?.terminate();
+        pool?.terminate();
         batchRunning = false;
         batchButton.disabled = false;
         batchButton.textContent = 'Generate dataset (360 runs)';
@@ -533,29 +560,100 @@ function createBatchWorker() {
     return new Worker(URL.createObjectURL(shim), { type: 'module' });
 }
 
-/** One runHeadless() call on the batch worker - runs go one at a time, so matching on `id` is only a guard. */
-let workerRequestId = 0;
-function runHeadlessInWorker(worker, options) {
-    const id = ++workerRequestId;
-    return new Promise((resolve, reject) => {
-        const cleanUp = () => {
-            worker.removeEventListener('message', onMessage);
-            worker.removeEventListener('error', onError);
-        };
-        const onMessage = ({ data: reply }) => {
-            if (reply.id !== id) return;
-            cleanUp();
-            if (reply.error) reject(new Error(reply.error));
-            else resolve(reply.result);
-        };
-        const onError = (event) => {
-            cleanUp();
-            reject(new Error(event.message || 'Batch worker failed'));
-        };
-        worker.addEventListener('message', onMessage);
-        worker.addEventListener('error', onError);
-        worker.postMessage({ id, options });
-    });
+/**
+ * Measures this corridor's warm-up before the batch (sim/warmupProbe.js): long
+ * from-empty runs per controller, all side by side on the pool, then each
+ * controller's runs averaged in seed order and the slowest levelling-off point
+ * plus margin taken. Logged to the console so the choice can be checked.
+ */
+async function probeWarmup(pool, corridorConfig) {
+    const conditions = probeConditions();
+    const seeds = Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(BASE_SEED, 'normal', rep));
+    const totalRuns = conditions.length * seeds.length;
+    let finished = 0;
+    const showProgress = () => {
+        if (batchProgressLabel) batchProgressLabel.textContent = `Finding warm-up · ${finished}/${totalRuns} probe runs (${pool.size} at a time)...`;
+    };
+    showProgress();
+    const probes = await Promise.all(
+        conditions.map(async (condition) => {
+            const runs = await Promise.all(
+                seeds.map((seed) =>
+                    pool.run('probeSeries', { ...condition, corridorConfig, seed, dt: DT }).then((series) => {
+                        finished += 1;
+                        showProgress();
+                        return series;
+                    })
+                )
+            );
+            return probeVerdict({ ...condition, runs, dt: DT, measuredTicks: DURATION_TICKS });
+        })
+    );
+    const warmup = chooseWarmup(probes);
+    // eslint-disable-next-line no-console
+    console.info(`Batch warm-up: ${warmup.warmupTicks} ticks (${((warmup.warmupTicks * DT) / 60).toFixed(0)} min), ${warmup.stationary ? 'stationary' : 'NOT stationary - capped'}`, warmup.probes);
+    return warmup;
+}
+
+/** One worker per core, less one for the page itself; capped so a big machine never holds dozens of runs' rows at once. */
+const MAX_BATCH_WORKERS = 12;
+function batchWorkerCount() {
+    return Math.max(1, Math.min(MAX_BATCH_WORKERS, (navigator.hardwareConcurrency || 2) - 1));
+}
+
+/**
+ * A fixed set of batch workers (sim/batchWorker.js): `run()` queues a task and
+ * resolves with its result once a free worker has done it. Every run is fully
+ * determined by its own options (seed included), so which worker does it, and
+ * when, never changes the result.
+ */
+class BatchWorkerPool {
+    constructor(size) {
+        this.size = size;
+        this.queue = [];
+        this.idle = Array.from({ length: size }, () => createBatchWorker());
+        this.all = [...this.idle];
+        this.nextId = 0;
+    }
+
+    run(task, options) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ task, options, resolve, reject });
+            this._dispatch();
+        });
+    }
+
+    _dispatch() {
+        while (this.idle.length && this.queue.length) {
+            const worker = this.idle.pop();
+            const { task, options, resolve, reject } = this.queue.shift();
+            const id = ++this.nextId;
+            const cleanUp = () => {
+                worker.removeEventListener('message', onMessage);
+                worker.removeEventListener('error', onError);
+                this.idle.push(worker);
+                this._dispatch();
+            };
+            const onMessage = ({ data: reply }) => {
+                if (reply.id !== id) return;
+                cleanUp();
+                if (reply.error) reject(new Error(reply.error));
+                else resolve(reply.result);
+            };
+            const onError = (event) => {
+                cleanUp();
+                reject(new Error(event.message || 'Batch worker failed'));
+            };
+            worker.addEventListener('message', onMessage);
+            worker.addEventListener('error', onError);
+            worker.postMessage({ id, task, options });
+        }
+    }
+
+    terminate() {
+        for (const worker of this.all) worker.terminate();
+        this.queue = [];
+    }
 }
 
 /** Success toast + a brief fireworks burst when the 360-run batch finishes. */
@@ -614,7 +712,7 @@ function updateBatchProgress(completed, total, conditionKey, elapsedMs) {
     const eta = completed < total ? ` · ~${formatDuration(remainingMs)} left` : '';
     if (batchProgressBar) batchProgressBar.style.width = `${pct}%`;
     if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs${eta}`;
-    if (batchProgressLabel) batchProgressLabel.textContent = `${conditionKey} · rep ${((completed - 1) % REPS_PER_CONDITION) + 1}/${REPS_PER_CONDITION}`;
+    if (batchProgressLabel) batchProgressLabel.textContent = `Last finished: ${conditionKey}`;
     if (batchButton) batchButton.textContent = `Running... ${completed}/${total}`;
 }
 
@@ -627,7 +725,11 @@ async function fetchCorridor(id) {
 
 /* ============================================================ batch modal (spec §10-11) */
 
-/** Every arterial + connector in a corridor config, in the same shape a demand row needs. */
+/**
+ * Every arterial + connector in a corridor config that has demand of its own, in the same
+ * shape a demand row needs. Roads with no `demand` (a merge road, a turn road) only carry
+ * cars handed on from another road, so there is nothing to set for them.
+ */
 function streetsOf(corridorConfig) {
     const arterials = (corridorConfig.arterials ?? []).map((a) => ({
         id: a.id, name: a.shortName ?? a.name, demand: a.demand, type: 'arterial',
@@ -635,7 +737,7 @@ function streetsOf(corridorConfig) {
     const connectors = (corridorConfig.connectors ?? []).map((c) => ({
         id: c.id, name: c.name, demand: c.demand, type: 'cross-street',
     }));
-    return [...arterials, ...connectors];
+    return [...arterials, ...connectors].filter((street) => street.demand);
 }
 
 /** Badge styling per street type - the only thing that visually told the batch modal's
@@ -826,6 +928,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
             const el = document.getElementById(id);
             if (el && html !== undefined) el.innerHTML = html;
         };
+        setHtml('batch-summary', fresh.html.batchSummary);
         setHtml('research-question-cards', fresh.html.researchQuestionCards);
         setHtml('metric-section-groups', fresh.html.metricSectionGroups);
 

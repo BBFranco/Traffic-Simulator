@@ -202,6 +202,24 @@ JSON;
         $this->assertSame(['left_straight', 'straight_right'], $saved['connectors'][0]['laneUse']['n1']['northbound']);
     }
 
+    public function test_where_the_cross_street_is_two_roads_each_approach_saves_onto_its_own_road(): void
+    {
+        $config = json_decode(self::TWO_WAY_GRID, false);
+        $config->connectors[] = (object) ['id' => 'side_south', 'lanes' => 2, 'twoWay' => true, 'linksArterialNodes' => ['n1']];
+        $this->user->corridorLayouts()->create(['slug' => 'two-way', 'name' => 'Two-way · test', 'config' => $config, 'original_config' => $config]);
+
+        $this->actingAs($this->user)->putJson(route('corridors.lane-use.update', ['corridor' => 'two-way']), ['approaches' => [
+            ['nodeId' => 'n1', 'key' => 'northbound', 'connectorId' => 'side_south', 'lanes' => ['straight_right'], 'turnLanes' => ['left' => ['lengthM' => 10, 'laneUse' => 'left']]],
+            ['nodeId' => 'n1', 'key' => 'southbound', 'connectorId' => 'side', 'lanes' => ['left', 'straight']],
+        ]])->assertOk();
+
+        $saved = json_decode(json_encode($this->user->corridorLayouts()->firstWhere('slug', 'two-way')->config), true);
+
+        $this->assertSame(['southbound' => ['left', 'straight']], $saved['connectors'][0]['laneUse']['n1']);
+        $this->assertSame(['northbound' => ['straight_right']], $saved['connectors'][1]['laneUse']['n1']);
+        $this->assertSame(['northbound' => ['left' => ['lengthM' => 10, 'laneUse' => 'left']]], $saved['connectors'][1]['turnLanes']['n1']);
+    }
+
     public function test_a_right_turn_lane_on_an_undivided_two_way_arterial_is_rejected(): void
     {
         $config = json_decode(self::TWO_WAY_GRID, false);

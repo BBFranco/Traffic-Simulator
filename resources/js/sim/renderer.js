@@ -463,6 +463,22 @@ export class LayoutRenderer {
                 kind: 'connector',
             });
         }
+        // Drawn-only road pieces (corridor.js's `decorations`) - always curved, never carry traffic.
+        for (const piece of this.layout.decorations ?? []) {
+            callback({
+                from: piece.startPoint,
+                to: piece.endPoint,
+                widthM: piece.roadWidthM,
+                lanes: piece.lanes,
+                laneWidthM: piece.laneWidthM,
+                medianWidthM: piece.medianWidthM,
+                twoWay: piece.twoWay,
+                heading: piece.heading,
+                curvePoints: piece.curve.points,
+                ref: piece,
+                kind: 'decoration',
+            });
+        }
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
                 if (!node.crossStub) continue;
@@ -699,7 +715,7 @@ export class LayoutRenderer {
         for (const connector of this.layout.connectors) {
             if (connector.curve) continue; // curved-ramp arrow placement is a follow-up polish, not load-bearing
             const offsets = laneCentreOffsetsFor(connector.roadWidthM, connector.lanes, connector.twoWay, connector.laneWidthM);
-            const length = connector.spanM + connector.stubLengthM * 2;
+            const length = connector.routeLengthM;
             this.arrowsAlong(connector.startPoint, length, connector.heading, offsets, spacingM);
             if (!connector.twoWay) continue; // a one-way street only runs start -> end
             this.arrowsAlong(

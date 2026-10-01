@@ -1,0 +1,1 @@
+Latest batch per corridor · {{ number_format($totalRuns) }} runs · 30 seeded reps per condition{{ $batchWarmupLabel ? ' · warm-up '.$batchWarmupLabel : '' }}{{ $batchTimingLabel ? ' · '.$batchTimingLabel : '' }}

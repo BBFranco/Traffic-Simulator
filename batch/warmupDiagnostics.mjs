@@ -23,7 +23,7 @@
  * Usage:
  *   node batch/warmupDiagnostics.mjs [--corridor=hatfield-pretorius-francisbaard]
  *     [--controller-mode=adaptive] [--sensor-mode=inductive_loop]
- *     [--duration=20000] [--seed=20260101] [--dt=0.1]
+ *     [--duration=20000] [--seed=20260101] [--dt=0.1] [--windows]
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,8 +34,10 @@ import { detectPlateau } from '../resources/js/sim/plateau.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-/** Current shared constant this diagnostic is checking - see results.js:WARMUP_TICKS and runBatch.mjs's --warmup-ticks default. */
+/** The old shared warm-up constant, kept as the reference this diagnostic reports against (batches now measure their own - sim/warmupProbe.js). */
 const CURRENT_WARMUP_TICKS = 3600;
+/** Drift is judged over one batch run's measured window (runBatch.mjs's --duration default, 24000 ticks at dt 0.1), as the probe does. */
+const MEASURED_HORIZON_S = 2400;
 
 /** Multiplier applied to the slowest scope's measured convergence tick before recommending a new warm-up length - a safety margin, not a measured quantity itself. */
 const SAFETY_MARGIN = 1.5;
@@ -48,6 +50,7 @@ function parseArgs(argv) {
         duration: 20000,
         seed: 20260101,
         dt: 0.1,
+        windows: false,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -57,6 +60,7 @@ function parseArgs(argv) {
         else if (key === 'duration') args.duration = Number(value);
         else if (key === 'seed') args.seed = Number(value);
         else if (key === 'dt') args.dt = Number(value);
+        else if (key === 'windows') args.windows = true;
     }
     return args;
 }
@@ -65,10 +69,14 @@ function toSamples(byTick) {
     return [...byTick.entries()].map(([tick, value]) => ({ tick, value }));
 }
 
-function reportScope(label, byTick, dt) {
-    const { convergedAtTick, windowMeans } = detectPlateau(toSamples(byTick), { dt });
+function reportScope(label, byTick, dt, printWindows = false) {
+    const { convergedAtTick, truncationTick, driftRatio, windowMeans } = detectPlateau(toSamples(byTick), { dt, horizonSeconds: MEASURED_HORIZON_S });
+    // Raw window means, so a "converged"/"never stabilized" verdict can be checked by eye - the
+    // detector has been wrong before (see plateau.js's doc on the early/late-half version it replaced).
+    if (printWindows) console.log(`  ${label} window means: ${windowMeans.map((w) => `${(w.tick * dt).toFixed(0)}s=${w.mean.toFixed(1)}`).join(' ')}`);
     if (convergedAtTick == null) {
-        console.log(`  ${label}: never stabilized within the ${windowMeans.length} sampled windows.`);
+        const cut = truncationTick == null ? 'too few windows to test' : `still trending after the best cut at ${(truncationTick * dt).toFixed(0)}s (drift ${(driftRatio * 100).toFixed(0)}%)`;
+        console.log(`  ${label}: never stabilized - ${cut}.`);
         return null;
     }
     const seconds = convergedAtTick * dt;
@@ -100,9 +108,9 @@ function main() {
 
     console.log('\nAverage-wait convergence per scope:');
     const waitConvergence = {
-        total: reportScope('Total', totalWaitByTick, args.dt),
-        arterial: reportScope('Arterial', arterialWaitByTick, args.dt),
-        sideStreet: reportScope('Side-Streets', sideStreetWaitByTick, args.dt),
+        total: reportScope('Total', totalWaitByTick, args.dt, args.windows),
+        arterial: reportScope('Arterial', arterialWaitByTick, args.dt, args.windows),
+        sideStreet: reportScope('Side-Streets', sideStreetWaitByTick, args.dt, args.windows),
     };
 
     const arterialThroughputByTick = buildByTickThroughput(rows);
@@ -131,7 +139,7 @@ function main() {
     // margin is a cushion suggestion, not itself evidence the current constant is insufficient.
     console.log(
         slowest > CURRENT_WARMUP_TICKS
-            ? `=> Current warm-up is TOO SHORT for at least one scope (measured convergence exceeds it) - update WARMUP_TICKS (results.js) and --warmup-ticks's default (runBatch.mjs), e.g. to ~${recommended}.`
+            ? `=> The old 3600-tick warm-up is TOO SHORT here for at least one scope - batches probe their own (sim/warmupProbe.js); ~${recommended} by this run.`
             : `=> Current warm-up already covers every scope's measured convergence point (${slowest} <= ${CURRENT_WARMUP_TICKS} ticks) - no change needed, though bumping toward ~${recommended} would add cushion.`
     );
 }

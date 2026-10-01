@@ -96,7 +96,8 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
         if (!options.length) return;
         const moves = laneMovesOf(approach, lane);
         const current = options.findIndex((option) => laneUseToken(option) === laneUseToken(moves));
-        const othersAllowStraight = typeof lane === 'string' || approach.laneUse.some((other, i) => i !== lane && other.includes('straight'));
+        // A T's approach has no straight on to keep (every lane turns there).
+        const othersAllowStraight = typeof lane === 'string' || approach.noStraight || approach.laneUse.some((other, i) => i !== lane && other.includes('straight'));
 
         for (let n = 1; n <= options.length; n += 1) {
             const next = options[(((current === -1 ? 0 : current) + step * n) % options.length + options.length) % options.length];
@@ -201,7 +202,8 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
             const payload = await request('PUT', {
                 approaches: changed.map((approach) => {
                     const { lanes, turnLanes } = snapshotOf(approach);
-                    return { nodeId: approach.nodeId, key: approach.laneUseKey, lanes, turnLanes: turnLanes ?? {} };
+                    // connectorId: at a junction where the cross street is two roads, which one this approach is on.
+                    return { nodeId: approach.nodeId, key: approach.laneUseKey, connectorId: approach.connectorId, lanes, turnLanes: turnLanes ?? {} };
                 }),
             });
             for (const approach of changed) saved.set(approach.id, snapshotOf(approach));

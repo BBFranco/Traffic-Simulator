@@ -38,7 +38,10 @@ function turnLaneArrowDistances(lengthM) {
 
 /** Every lane of `approach` with the distances its arrows sit at: lane indices, then 'left'/'right' for its turn lanes. */
 function arrowLanes(approach) {
-    const lanes = approach.laneUse.map((_, lane) => ({ lane, distances: ARROW_DISTANCES_M }));
+    // An approach fed by a narrower road only has the lanes that road lines up with (corridor.js's coveredLanes).
+    const lanes = approach.laneUse
+        .map((_, lane) => ({ lane, distances: ARROW_DISTANCES_M }))
+        .filter(({ lane }) => !approach.coveredLanes || approach.coveredLanes.includes(lane));
     for (const side of TURN_LANE_SIDES) {
         const turnLane = approach.turnLanes?.[side];
         if (turnLane) lanes.push({ lane: side, distances: turnLaneArrowDistances(turnLane.lengthM) });

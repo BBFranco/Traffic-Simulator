@@ -39,7 +39,7 @@
         "spawnRatePerLanePerMinMin": 3,
         "spawnRatePerLanePerMinMax": 15,
         "fluctuationPeriodS": 300,
-        "saturationFlowPerLanePerHour": 1900
+        "saturationFlowPerLanePerHour": 1250
       },
       "intersections": [
         {
@@ -107,7 +107,7 @@
         "spawnRatePerLanePerMinMin": 3,
         "spawnRatePerLanePerMinMax": 15,
         "fluctuationPeriodS": 300,
-        "saturationFlowPerLanePerHour": 1900
+        "saturationFlowPerLanePerHour": 1250
       },
       "intersections": [
         {
@@ -174,7 +174,7 @@
         "spawnRatePerLanePerMinMin": 1,
         "spawnRatePerLanePerMinMax": 7,
         "fluctuationPeriodS": 300,
-        "saturationFlowPerLanePerHour": 1800
+        "saturationFlowPerLanePerHour": 1250
       }
     },
     {
@@ -193,7 +193,7 @@
         "spawnRatePerLanePerMinMin": 1,
         "spawnRatePerLanePerMinMax": 7,
         "fluctuationPeriodS": 300,
-        "saturationFlowPerLanePerHour": 1800
+        "saturationFlowPerLanePerHour": 1250
       }
     },
     {
@@ -212,7 +212,7 @@
         "spawnRatePerLanePerMinMin": 1,
         "spawnRatePerLanePerMinMax": 7,
         "fluctuationPeriodS": 300,
-        "saturationFlowPerLanePerHour": 1800
+        "saturationFlowPerLanePerHour": 1250
       }
     },
     {
@@ -231,7 +231,7 @@
         "spawnRatePerLanePerMinMin": 1,
         "spawnRatePerLanePerMinMax": 7,
         "fluctuationPeriodS": 300,
-        "saturationFlowPerLanePerHour": 1800
+        "saturationFlowPerLanePerHour": 1250
       }
     }
   ]

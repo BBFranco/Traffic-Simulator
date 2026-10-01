@@ -96,6 +96,8 @@ class ResultsController extends Controller
                 'recoveryTimeline' => $payload['recoveryTimeline'],
                 'pairedComparisons' => $payload['pairedComparisons'],
                 'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
+                'batchWarmupLabel' => $payload['batchWarmupLabel'],
+                'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
@@ -135,7 +137,10 @@ class ResultsController extends Controller
             'powerStates' => self::POWER_STATES,
             'recoveryTimeline' => $payload['recoveryTimeline'],
             'pairedComparisons' => $payload['pairedComparisons'],
+            'batchWarmupLabel' => $payload['batchWarmupLabel'],
+            'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
             'html' => [
+                'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
                 'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
                 'metricSectionGroups' => view('results.partials.metric-section-groups', $viewData)->render(),
                 'perConditionRows' => view('results.partials.per-condition-rows', $viewData)->render(),
@@ -584,8 +589,57 @@ class ResultsController extends Controller
             'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter),
             'recentRuns' => $recentRuns,
             'totalRuns' => (clone $query)->count(),
-            'batchGeneratedAt' => $this->displayTime((clone $query)->max('created_at')),
+            'batchTimingLabel' => $this->batchTimingLabel((clone $query)),
+            'batchWarmupLabel' => $this->warmupLabel((clone $query)->whereNotNull('warmup_ticks')->distinct()->pluck('warmup_ticks')),
+            'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
         ];
+    }
+
+    /**
+     * The probed warm-up(s) of the batches shown, e.g. "38 min" or "6-38 min" across corridors.
+     *
+     * @param  Collection<int, int>  $warmupTicks
+     */
+    private function warmupLabel(Collection $warmupTicks): ?string
+    {
+        if ($warmupTicks->isEmpty()) {
+            return null;
+        }
+
+        // Batches run at dt = 0.1 s: 600 ticks a simulated minute.
+        $minutes = $warmupTicks->map(fn (int $ticks) => (int) round($ticks / 600))->unique()->sort()->values();
+
+        return $minutes->count() === 1 ? "{$minutes->first()} min" : "{$minutes->first()}-{$minutes->last()} min";
+    }
+
+    /**
+     * When the most recently finished batch shown ran, e.g. "last batch (hatfield-realistic)
+     * 25 Sep 2026, 23:05 -> 23:14 (9 min)". Its start is when it was launched, warm-up probe
+     * included; legacy batches never stored one, so they only get their finish time.
+     */
+    private function batchTimingLabel(Builder $query): ?string
+    {
+        $latest = $query->toBase()
+            ->selectRaw('corridor_config, min(batch_started_at) as started_at, min(created_at) as first_saved_at, max(created_at) as finished_at')
+            ->groupBy('batch_id', 'corridor_config')
+            ->orderByDesc('finished_at')
+            ->first();
+
+        if ($latest === null) {
+            return null;
+        }
+
+        $finishedAt = Carbon::parse($latest->finished_at, 'UTC');
+        $finishedLocal = $finishedAt->copy()->setTimezone(config('app.display_timezone'))->format('H:i');
+        // No launch time stored: the span its runs were saved over is the best there is (it misses the probe and the first POST's runs).
+        if ($latest->started_at === null) {
+            return "last batch ({$latest->corridor_config}) runs saved {$this->displayTime($latest->first_saved_at)} → {$finishedLocal}";
+        }
+
+        $startedAt = Carbon::parse($latest->started_at, 'UTC');
+        $minutes = max(1, (int) round($startedAt->diffInMinutes($finishedAt, true)));
+
+        return "last batch ({$latest->corridor_config}) {$this->displayTime($latest->started_at)} → {$finishedLocal} ({$minutes} min)";
     }
 
     /** A stored (UTC) timestamp in the zone people read it in, e.g. "25 Sep 2026, 11:42". */
@@ -902,6 +956,10 @@ class ResultsController extends Controller
         $recoveryWaitReliable = min($subject[$recoveryWaitKey.'_recovered'], $baseline[$recoveryWaitKey.'_recovered']) >= self::MIN_RECOVERED_RUNS;
         $recoveryKnown = $recoveryReliable && $subject[$recoveryKey] !== null && $baseline[$recoveryKey] !== null;
         $recoveryWaitKnown = $recoveryWaitReliable && $subject[$recoveryWaitKey] !== null && $baseline[$recoveryWaitKey] !== null;
+        // A 0.0s baseline recovery (fixed-time recovered instantly) leaves no ratio to take -
+        // pctChange() returns null there, and the improves flag follows so the cell isn't tinted.
+        $recoveryDelta = $recoveryKnown ? $this->pctChange($baseline[$recoveryKey], $subject[$recoveryKey]) : null;
+        $recoveryWaitDelta = $recoveryWaitKnown ? $this->pctChange($baseline[$recoveryWaitKey], $subject[$recoveryWaitKey]) : null;
         $waitImproves = $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null;
 
         return [
@@ -917,21 +975,17 @@ class ResultsController extends Controller
                 : null,
             'cleared_delta_pp' => $clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null,
             // Recovery time: only meaningful under load shedding (null otherwise); lower is better.
-            'recovery_delta_pct' => $recoveryKnown
-                ? $this->pctChange($baseline[$recoveryKey], $subject[$recoveryKey])
-                : null,
-            'recovery_wait_delta_pct' => $recoveryWaitKnown
-                ? $this->pctChange($baseline[$recoveryWaitKey], $subject[$recoveryWaitKey])
-                : null,
+            'recovery_delta_pct' => $recoveryDelta,
+            'recovery_wait_delta_pct' => $recoveryWaitDelta,
             'wait_improves' => $waitImproves,
             'wait_tone' => $this->toneClasses($waitImproves),
             'wait_figure_tone' => $this->figureToneClasses($waitImproves),
             'throughput_improves' => $throughputKnown ? $subject[$throughputKey] > $baseline[$throughputKey] : null,
             'cleared_improves' => $clearedKnown ? $subject[$clearedKey] > $baseline[$clearedKey] : null,
-            'recovery_improves' => $recoveryKnown
+            'recovery_improves' => $recoveryDelta !== null
                 ? $subject[$recoveryKey] < $baseline[$recoveryKey]
                 : null,
-            'recovery_wait_improves' => $recoveryWaitKnown
+            'recovery_wait_improves' => $recoveryWaitDelta !== null
                 ? $subject[$recoveryWaitKey] < $baseline[$recoveryWaitKey]
                 : null,
             // Recovery time on its own only measures how long a metric takes to sustain its way
@@ -975,10 +1029,14 @@ class ResultsController extends Controller
         ];
     }
 
-    private function pctChange(float $from, float $to): float
+    /**
+     * Null when $from is zero: (x - 0) / 0 is undefined, and reporting it as 0.0% would read as
+     * "no difference" - the view renders null as n/a instead.
+     */
+    private function pctChange(float $from, float $to): ?float
     {
         if ($from == 0.0) {
-            return 0.0;
+            return null;
         }
 
         return round((($to - $from) / $from) * 100, 1);

@@ -436,8 +436,9 @@ counts, lane use and distances are simulation estimates (see the file's `meta`).
   each linking one Pretorius node to one Francis Baard node; 22% chance an
   arterial kerb-lane car turns off at each.
 - Demand: arterials 3–15 veh/lane/min (midpoint 9), cross streets 1–7
-  veh/lane/min, both fluctuating on a 300 s sinusoid. Saturation flow 1900
-  veh/lane/hr (arterial) / 1800 (cross).
+  veh/lane/min, both fluctuating on a 300 s sinusoid. Saturation flow 1250
+  veh/lane/hr everywhere - measured on the engine's own cars, not the
+  textbook 1800-1900 (see corridor.js's MODEL_SATURATION_FLOW_PER_LANE_PER_HOUR).
 
 ---
 
