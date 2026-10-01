@@ -12,11 +12,15 @@ use Illuminate\Database\Eloquent\Model;
  * rationale.
  */
 #[Fillable([
+    'batch_id',
+    'batch_started_at',
     'seed',
     'controller_mode',
     'power_state',
     'sensor_mode',
     'corridor_config',
+    'warmup_ticks',
+    'warmup_stationary',
     'avg_wait_time',
     'avg_wait_time_arterial',
     'avg_wait_time_side_street',
@@ -64,7 +68,10 @@ class SimulationRun extends Model
     {
         return [
             'raw_config_json' => 'array',
+            'warmup_ticks' => 'integer',
+            'warmup_stationary' => 'boolean',
             'created_at' => 'datetime',
+            'batch_started_at' => 'datetime',
         ];
     }
 

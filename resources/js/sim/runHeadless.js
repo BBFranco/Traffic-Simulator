@@ -15,6 +15,9 @@
 import { buildLayout } from './corridor.js';
 import { SimulationEngine } from './engine.js';
 
+/** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
+const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
+
 /**
  * @param seed                 integer PRNG seed
  * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' - applied to every arterial in the corridor
@@ -118,6 +121,21 @@ export function runHeadless({
                 rows.push(row);
             }
 
+            // A major road modelled as cross streets (connector `scope: "arterial"`) is one more arterial row.
+            if (snap.arterialConnectors) {
+                const s = snap.arterialConnectors;
+                rows.push({
+                    tick: measuredTick,
+                    arterial: ARTERIAL_CONNECTORS_ID,
+                    avgWaitTime: round(s.avgWaitRolling, 3),
+                    throughputPerMin: s.throughputPerMin,
+                    clearedTotal: s.clearedTotal,
+                    waitSumTotal: s.waitSumTotal,
+                    clearedWithoutStopping: s.clearedWithoutStopPct == null ? '' : round(s.clearedWithoutStopPct, 1),
+                    powerState: snap.powerState,
+                });
+            }
+
             sideStreetRows.push({
                 tick: measuredTick,
                 avgWaitTime: round(snap.sideStreet.avgWaitRolling, 3),
@@ -176,10 +194,13 @@ function buildSummary({
     // rolling snapshot. That rolling window sits entirely inside the post-outage tail for a
     // load-shedding run, which structurally erases most of the run's real signal-vs-fixed-time
     // difference - see the Phase 2 results-page audit.
-    const perArterial = layout.arterials.map((arterial) => {
-        const s = finalSnap.stats[arterial.id];
+    const arterialBuckets = [
+        ...layout.arterials.map((arterial) => ({ id: arterial.id, s: finalSnap.stats[arterial.id] })),
+        ...(finalSnap.arterialConnectors ? [{ id: ARTERIAL_CONNECTORS_ID, s: finalSnap.arterialConnectors }] : []),
+    ];
+    const perArterial = arterialBuckets.map(({ id, s }) => {
         return {
-            id: arterial.id,
+            id,
             avgWaitTime: s.clearedTotal ? s.waitSumTotal / s.clearedTotal : 0,
             throughputPerMin: s.clearedTotal / (durationSeconds / 60),
             clearedTotal: s.clearedTotal,

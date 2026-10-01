@@ -18,6 +18,8 @@ class SimulatorComposer
             'sensorModes' => $this->sensorModes(),
             'toneClasses' => $this->toneClasses(),
             'controllerModeOptions' => $this->controllerModeOptions(),
+            'speedOptions' => $this->speedOptions(),
+            'viewOptions' => $this->viewOptions(),
             'inset' => 'rounded-md border border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/40',
             'tinyInput' => 'rounded border-slate-300 bg-white py-0.5 text-[10px] text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100',
             'checkbox' => 'rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-500',
@@ -77,5 +79,23 @@ class SimulatorComposer
             'green_wave' => 'Green wave',
             'none' => 'Free flow',
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function speedOptions(): array
+    {
+        return ['0.5' => '0.5×', '1' => '1×', '2' => '2×', '4' => '4×', '8' => '8×', '16' => '16×'];
+    }
+
+    /**
+     * Render-only switch - simulator.js swaps renderers without touching the engine.
+     *
+     * @return array<string, string>
+     */
+    private function viewOptions(): array
+    {
+        return ['2d' => '2D', '3d' => '3D'];
     }
 }

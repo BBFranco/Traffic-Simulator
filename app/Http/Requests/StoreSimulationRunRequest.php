@@ -21,6 +21,9 @@ class StoreSimulationRunRequest extends FormRequest
     {
         return [
             'runs' => ['required', 'array', 'min:1'],
+            // Every run of one batch shares an id - /results shows only each corridor's latest batch.
+            'runs.*.batch_id' => ['required', 'uuid'],
+            'runs.*.batch_started_at' => ['nullable', 'date'],
             'runs.*.seed' => ['required', 'integer'],
             'runs.*.controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
             'runs.*.power_state' => ['required', 'in:normal,load_shedding'],
@@ -67,6 +70,8 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.p95_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.max_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.raw_config_json' => ['required', 'array'],
+            'runs.*.warmup_ticks' => ['nullable', 'integer', 'min:0'],
+            'runs.*.warmup_stationary' => ['nullable', 'boolean'],
         ];
     }
 }

@@ -15,17 +15,17 @@
  *
  * Usage:
  *   node batch/runBatch.mjs [--corridor=hatfield-pretorius-francisbaard]
- *     [--reps=30] [--duration=24000] [--warmup-ticks=3600] [--base-seed=20260101]
+ *     [--reps=30] [--duration=24000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
  *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs]
  *
  * --duration is in MEASURED ticks at dt=0.1s (24000 ticks = 40 simulated minutes
- * per run by default). --warmup-ticks (3600 = 6 simulated minutes by default) run
- * BEFORE that and are discarded from every stat - the standard traffic-sim
- * warm-up, long enough for this corridor's own from-empty ramp-up transient
- * (measured at ~150-250s to first reach a steady, fluctuating throughput) to
- * finish under normal power before anything gets measured. See engine.js's
- * resetStats() and runHeadless.js's warmupTicks doc for the mechanics.
+ * per run by default). --warmup-ticks run BEFORE that and are discarded from
+ * every stat (engine.js's resetStats(), runHeadless.js's warmupTicks doc).
+ * By default ('auto') they're measured for this corridor first by
+ * sim/warmupProbe.js - one long from-empty run per controller - exactly as the
+ * /results batch button does; pass a number to skip the probe. --probe-only
+ * prints the probe's verdict and stops.
  *
  * A load-shedding condition's outage starts a quarter of the way into the
  * MEASURED window (i.e. warm-up doesn't count) and power is restored at the
@@ -35,11 +35,13 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { runHeadless } from '../resources/js/sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experimentalMatrix.js';
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
+import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -52,7 +54,8 @@ function parseArgs(argv) {
         corridor: 'hatfield-pretorius-francisbaard',
         reps: 30,
         duration: 24000,
-        warmupTicks: 3600,
+        warmupTicks: 'auto',
+        probeOnly: false,
         baseSeed: 20260101,
         powerOutageStartTick: null,
         powerOutageEndTick: null,
@@ -64,7 +67,8 @@ function parseArgs(argv) {
         if (key === 'corridor') args.corridor = value;
         else if (key === 'reps') args.reps = Number(value);
         else if (key === 'duration') args.duration = Number(value);
-        else if (key === 'warmup-ticks') args.warmupTicks = Number(value);
+        else if (key === 'warmup-ticks') args.warmupTicks = value === 'auto' ? 'auto' : Number(value);
+        else if (key === 'probe-only') args.probeOnly = true;
         else if (key === 'base-seed') args.baseSeed = Number(value);
         else if (key === 'power-outage-start-tick') args.powerOutageStartTick = Number(value);
         else if (key === 'power-outage-end-tick') args.powerOutageEndTick = Number(value);
@@ -83,7 +87,7 @@ function toCsv(rows) {
     if (!rows.length) return '';
     const columns = Object.keys(rows[0]);
     const lines = [columns.join(',')];
-    for (const row of rows) lines.push(columns.map((c) => row[c]).join(','));
+    for (const row of rows) lines.push(columns.map((c) => row[c] ?? '').join(','));
     return lines.join('\n') + '\n';
 }
 
@@ -120,12 +124,40 @@ async function postRecoveryTicks(url, payload) {
     await postJson(url, payload);
 }
 
+/** Measures the corridor's warm-up (sim/warmupProbe.js), printing each probe's per-scope verdict. */
+function probeWarmup(corridorConfig, args) {
+    const probes = [];
+    for (const condition of probeConditions()) {
+        console.log(`Warm-up probe: ${condition.controllerMode}, normal power, from empty, ${PROBE_REPLICATIONS} seeds averaged...`);
+        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration });
+        for (const [scope, v] of Object.entries(probe.scopes)) {
+            if (v.truncationTick == null) continue;
+            const at = `${((v.truncationTick * args.dt) / 60).toFixed(0)} min`;
+            console.log(`  ${scope.padEnd(10)} ${v.stationary ? `levels off at ${at}` : `NOT stationary (still drifting ${(v.driftRatio * 100).toFixed(0)}% after ${at})`}`);
+        }
+        probes.push(probe);
+    }
+    const warmup = chooseWarmup(probes);
+    console.log(
+        `Warm-up: ${warmup.warmupTicks} ticks (${((warmup.warmupTicks * args.dt) / 60).toFixed(0)} min)` +
+            (warmup.stationary ? '.' : ' - capped: at least one controller never reached a steady state, so this batch is flagged not stationary.')
+    );
+    return warmup;
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
     const corridorConfig = JSON.parse(fs.readFileSync(corridorPath, 'utf8'));
 
+    // Taken before the probe, so a batch's duration includes finding its warm-up.
+    const batchStartedAt = new Date().toISOString();
+    // A fixed --warmup-ticks is the caller's own choice - nothing measured says whether it's stationary.
+    const warmup = args.warmupTicks === 'auto' ? probeWarmup(corridorConfig, args) : { warmupTicks: args.warmupTicks, stationary: null };
+    if (args.probeOnly) return;
+
     const matrix = buildExperimentalMatrix();
+    const batchId = randomUUID();
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
     let mismatches = 0;
@@ -146,7 +178,7 @@ async function main() {
                 seed,
                 controllerMode: condition.controllerMode,
                 sensorMode: condition.sensorMode,
-                warmupTicks: args.warmupTicks,
+                warmupTicks: warmup.warmupTicks,
                 powerOutageStartTick: condition.powerState === 'load_shedding' ? args.powerOutageStartTick : null,
                 powerOutageEndTick: condition.powerState === 'load_shedding' ? args.powerOutageEndTick : null,
                 corridorConfig,
@@ -163,7 +195,7 @@ async function main() {
             }
 
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to

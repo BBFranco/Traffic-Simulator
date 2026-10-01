@@ -1,8 +1,12 @@
 <?php
 
+use App\Http\Controllers\CorridorLaneUseController;
+use App\Http\Controllers\CorridorLayoutController;
+use App\Http\Controllers\CorridorTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
 use App\Http\Controllers\ResultsController;
+use App\Http\Controllers\RoadEditorController;
 use App\Http\Controllers\SimulationRunController;
 use App\Http\Controllers\SimulatorController;
 use App\Http\Controllers\TrafficCounterController;
@@ -28,10 +32,27 @@ Route::get('/dashboard', fn () => redirect()->route('simulator'))
 Route::middleware('auth')->group(function () {
     Route::get('/simulator', [SimulatorController::class, 'index'])->name('simulator');
 
-    // Layout configs from `corridors/*.json`, fetched by the scenario picker.
+    // The user's own road layouts: fetched by the Simulator/Road Editor pickers, imported and deleted in the Road Editor.
     Route::get('/corridors/{corridor}', [SimulatorController::class, 'corridor'])
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.show');
+    Route::post('/corridors', [CorridorLayoutController::class, 'store'])->name('corridors.store');
+    Route::delete('/corridors/{corridor}', [CorridorLayoutController::class, 'destroy'])
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.destroy');
+
+    // The shared read-only templates in `corridors/*.json` - the batch dataset's layouts, drawn by Results and Traffic Counter.
+    Route::get('/corridor-templates/{corridor}', CorridorTemplateController::class)
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridor-templates.show');
+
+    // Lane-arrow editor: save edits into the user's layout, or put it back as it was imported.
+    Route::put('/corridors/{corridor}/lane-use', [CorridorLaneUseController::class, 'update'])
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.lane-use.update');
+    Route::delete('/corridors/{corridor}/lane-use', [CorridorLaneUseController::class, 'destroy'])
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.lane-use.destroy');
 
     // One representative batch-dataset run per condition, for the "replay a batch run" picker.
     Route::get('/simulator/sample-runs', [SimulatorController::class, 'sampleRuns'])->name('simulator.sample-runs');
@@ -40,6 +61,9 @@ Route::middleware('auth')->group(function () {
     // JSON refresh for the batch-run button (build step 17) - re-render charts
     // in place after a batch completes, no full page reload.
     Route::get('/results/data', [ResultsController::class, 'data'])->name('results.data');
+
+    // One intersection at a time with test traffic - click the lane arrows, save them into the corridor file.
+    Route::get('/road-editor', [RoadEditorController::class, 'index'])->name('road-editor');
 
     // Traffic Counter tab (spec §2) - unlike /api/simulation-runs and
     // /api/recovery-ticks below, these stay inside 'auth' + CSRF: they're driven

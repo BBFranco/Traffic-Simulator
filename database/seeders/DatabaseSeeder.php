@@ -3,17 +3,15 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
      * A single local account so `/simulator` is reachable straight after
      * `migrate --seed`. Registration is open too - this is only a shortcut.
+     * Model events stay on, so it gets the standard layout like any new account (UserObserver).
      */
     public function run(): void
     {

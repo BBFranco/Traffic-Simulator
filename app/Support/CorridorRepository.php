@@ -6,12 +6,16 @@ use JsonException;
 use RuntimeException;
 
 /**
- * Reads the corridor layout configs in `corridors/*.json`.
+ * Reads the corridor layout configs in `corridors/*.json` - the shared,
+ * read-only templates.
  *
- * The layouts deliberately live outside `public/` and outside the JS bundle:
- * they are data the batch runner (build step 17) also has to read from disk, so
- * one directory is the single source of truth for both the browser and Node.
- * The browser gets them through `GET /corridors/{id}`.
+ * They deliberately live outside `public/` and outside the JS bundle: they are
+ * data the batch runner (build step 17) also has to read from disk, so one
+ * directory is the single source of truth for the dissertation dataset - the
+ * Results and Traffic Counter pages use them through
+ * `GET /corridor-templates/{id}`. Each user's own, editable layouts live in the
+ * database instead (UserCorridorLayouts); a new account starts with a copy of
+ * the standard Hatfield template.
  */
 class CorridorRepository
 {
@@ -21,60 +25,59 @@ class CorridorRepository
     }
 
     /**
-     * Every available corridor, as lightweight descriptors for the scenario picker.
+     * Every template, as lightweight descriptors for a picker.
      *
-     * @return array<int, array{id: string, name: string, description: string, intersections: int, arterials: int, connectors: int}>
+     * @return array<int, array{id: string, name: string, description: string, sortOrder: int, arterials: int, connectors: int, intersections: int}>
      */
     public function index(): array
     {
-        $descriptors = [];
+        return collect($this->files())
+            ->map(function (string $path) {
+                $config = $this->decode($path);
 
-        foreach ($this->files() as $path) {
-            $config = $this->decode($path);
-            $id = $config['id'] ?? pathinfo($path, PATHINFO_FILENAME);
-
-            $intersections = 0;
-            foreach ($config['arterials'] ?? [] as $arterial) {
-                $intersections += count($arterial['intersections'] ?? []);
-            }
-
-            $descriptors[] = [
-                'id' => $id,
-                'name' => $config['name'] ?? $id,
-                'description' => $config['description'] ?? '',
-                'sortOrder' => $config['sortOrder'] ?? 99,
-                'arterials' => count($config['arterials'] ?? []),
-                'connectors' => count($config['connectors'] ?? []),
-                'intersections' => $intersections,
-            ];
-        }
-
-        usort($descriptors, fn ($a, $b) => [$a['sortOrder'], $a['name']] <=> [$b['sortOrder'], $b['name']]);
-
-        return $descriptors;
+                return CorridorDescriptor::fromConfig($config, $config['id'] ?? pathinfo($path, PATHINFO_FILENAME));
+            })
+            ->sortBy([['sortOrder', 'asc'], ['name', 'asc']])
+            ->values()
+            ->all();
     }
 
-    /** The first corridor by sort order - what `/simulator` loads on arrival. */
+    /** The first template by sort order. */
     public function defaultId(): ?string
     {
         return $this->index()[0]['id'] ?? null;
     }
 
     /**
-     * Full config for one corridor.
+     * Full config for one template.
      *
      * @return array<string, mixed>|null
      */
     public function find(string $id): ?array
     {
-        foreach ($this->files() as $path) {
-            $config = $this->decode($path);
-            if (($config['id'] ?? pathinfo($path, PATHINFO_FILENAME)) === $id) {
-                return $config;
-            }
+        $path = $this->pathFor($id);
+
+        return $path === null ? null : $this->decode($path);
+    }
+
+    /** One template's file contents as written - decoded by the caller however it needs (e.g. as objects, to keep `{}` intact). */
+    public function raw(string $id): ?string
+    {
+        $path = $this->pathFor($id);
+
+        return $path === null ? null : (string) file_get_contents($path);
+    }
+
+    private function pathFor(string $id): ?string
+    {
+        // Almost every template is named after its own id - skip decoding the rest.
+        $named = $this->directory.DIRECTORY_SEPARATOR.basename($id).'.json';
+        if (is_file($named) && ($this->decode($named)['id'] ?? $id) === $id) {
+            return $named;
         }
 
-        return null;
+        return collect($this->files())
+            ->first(fn (string $path) => ($this->decode($path)['id'] ?? pathinfo($path, PATHINFO_FILENAME)) === $id);
     }
 
     /** @return array<int, string> */

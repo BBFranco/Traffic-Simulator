@@ -18,10 +18,13 @@
  */
 
 import { buildLayout } from './sim/corridor.js';
-import { LayoutRenderer, ARTERIAL_ACCENTS } from './sim/renderer.js';
+import { ARTERIAL_ACCENTS } from './sim/renderer.js';
+import { Renderer2D } from './renderers/Renderer2D.js';
+import { VIEW_2D, VIEW_3D } from './renderers/RendererInterface.js';
 import { SimulationEngine, CHART_SAMPLE_INTERVAL_S } from './sim/engine.js';
 import { Chart, INK, applyChartTheme, baseOptions, lineDataset } from './charts/theme.js';
 import { onThemeChange } from './theme.js';
+import { initTooltips } from './tooltips.js';
 
 /** Physics timestep - decoupled from render framerate so batch mode (build step 13) reuses the same engine unmodified. */
 const FIXED_DT_S = 0.1;
@@ -86,6 +89,10 @@ const state = {
     demand: {},
     /** Fraction (0-1) of newly-spawned vehicles that are trucks - see engine.js's setTruckRatio(). */
     truckRatio: 0,
+    /** Fraction (0-1) of newly-spawned vehicles that are buses - see engine.js's setBusRatio(). */
+    busRatio: 0,
+    /** Just-for-fun traffic characters - see engine.js's setRandomEvents(). Always off in replays and batch runs. */
+    randomEvents: false,
 };
 
 let layout = null;
@@ -129,6 +136,7 @@ const el = {
     statsChartEmpty: document.getElementById('stats-chart-empty'),
     canvas: document.getElementById('sim-canvas'),
     tooltip: document.getElementById('node-tooltip'),
+    outageOverlay: document.getElementById('outage-overlay'),
     corridorSelect: document.getElementById('corridor-select'),
     corridorDescription: document.getElementById('corridor-description'),
     corridorFacts: document.getElementById('corridor-facts'),
@@ -140,6 +148,9 @@ const el = {
     demandControls: document.getElementById('demand-controls'),
     truckRatioInput: document.getElementById('truck-ratio-input'),
     truckRatioValue: document.getElementById('truck-ratio-value'),
+    busRatioInput: document.getElementById('bus-ratio-input'),
+    busRatioValue: document.getElementById('bus-ratio-value'),
+    randomEventsInput: document.getElementById('random-events'),
     statsColumns: document.getElementById('stats-columns'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
@@ -159,7 +170,52 @@ const el = {
     controlLog: document.getElementById('control-log'),
 };
 
-const renderer = new LayoutRenderer(el.canvas);
+initTooltips();
+
+const renderer2d = new Renderer2D(el.canvas);
+/** The 2D map's LayoutRenderer - the pan/zoom/hover/layer handlers below drive its camera directly, exactly as before. */
+const renderer = renderer2d.inner;
+
+/**
+ * View switching. Renderers only ever READ engine.snapshot() - switching never
+ * touches state.running, the engine, the seed or the accumulator, so the run
+ * carries on tick-for-tick. three.js is loaded on first use so the default 2D
+ * page ships no WebGL code.
+ */
+let activeView = VIEW_2D;
+let renderer3d = null;
+let currentTheme = 'light';
+/** Bumped on every switch so a slow dynamic import can't attach a 3D view the user already left. */
+let viewSwitchToken = 0;
+
+function activeRenderer() {
+    return activeView === VIEW_3D && renderer3d ? renderer3d : renderer2d;
+}
+
+async function setView(view) {
+    const token = ++viewSwitchToken;
+
+    if (view === VIEW_3D) {
+        const { Renderer3D } = await import('./renderers/Renderer3D.js');
+        if (token !== viewSwitchToken || renderer3d) return;
+        renderer3d = new Renderer3D(el.canvasWrap, el.outageOverlay, FIXED_DT_S);
+        renderer3d.setTheme(currentTheme);
+        if (layout) renderer3d.init(layout);
+        el.canvas.classList.add('hidden');
+        el.tooltip.classList.add('hidden');
+        renderer.hoverNodeId = null;
+    } else {
+        renderer3d?.dispose();
+        renderer3d = null;
+        el.canvas.classList.remove('hidden');
+        renderer2d.resize();
+    }
+
+    activeView = view;
+    document.querySelectorAll('[data-view-only]').forEach((node) => {
+        node.classList.toggle('hidden', node.dataset.viewOnly !== view);
+    });
+}
 
 /* ----------------------------------------------------------------- log panel */
 
@@ -214,6 +270,11 @@ segmentedHandlers.set('speed', (value) => {
     logChange('speed', `${state.speed}x`);
 });
 
+segmentedHandlers.set('view', (value) => {
+    setView(value === VIEW_3D ? VIEW_3D : VIEW_2D);
+    logChange('view', value);
+});
+
 segmentedHandlers.set('replay-power-state', (value) => {
     replaySelectedPowerState = value;
 });
@@ -239,7 +300,8 @@ async function loadCorridor(id, { config = null } = {}) {
     }
 
     clearCorridorError();
-    renderer.setLayout(layout);
+    renderer2d.init(layout);
+    renderer3d?.init(layout);
     renderCorridorSummary();
     buildArterialModeControls();
     buildDemandControls();
@@ -269,6 +331,8 @@ function engineResetOptions() {
         batteryBackedSensors: state.batteryBackedSensors,
         power: { ...state.power },
         truckRatio: state.truckRatio,
+        busRatio: state.busRatio,
+        randomEvents: state.randomEvents,
     };
 }
 
@@ -342,7 +406,9 @@ function populateReplayFamilySelect() {
 }
 
 function renderCorridorSummary() {
-    el.corridorDescription.textContent = layout.description || '';
+    el.corridorDescription.dataset.tip = layout.description || '';
+    el.corridorDescription.setAttribute('aria-label', layout.description || '');
+    el.corridorDescription.classList.toggle('hidden', !layout.description);
 
     const intersections = layout.arterials.reduce((sum, a) => sum + a.intersections.length, 0);
     const facts = [
@@ -659,7 +725,7 @@ function escapeHtml(value) {
 
 document.getElementById('zoom-in').addEventListener('click', () => zoomButton(1.35));
 document.getElementById('zoom-out').addEventListener('click', () => zoomButton(1 / 1.35));
-document.getElementById('zoom-fit').addEventListener('click', () => renderer.fit());
+document.getElementById('zoom-fit').addEventListener('click', () => activeRenderer().fit());
 
 function zoomButton(factor) {
     const { width, height } = renderer.camera.viewport;
@@ -675,7 +741,27 @@ document.querySelectorAll('input[data-layer]').forEach((input) => {
     });
 });
 
-new ResizeObserver(() => renderer.resize()).observe(el.canvasWrap);
+new ResizeObserver(() => activeRenderer().resize()).observe(el.canvasWrap);
+
+/*
+ * Full screen puts #sim-stage (transport bar + canvas + stats footer) into browser full screen.
+ * The ResizeObserver above already resizes whichever renderer is active, and
+ * Esc exits natively - fullscreenchange keeps data-fullscreen in sync either way.
+ */
+const simStage = document.getElementById('sim-stage');
+
+document.getElementById('fullscreen-enter').addEventListener('click', () => {
+    simStage.requestFullscreen().catch((error) => {
+        // eslint-disable-next-line no-console
+        console.warn('Full screen was refused:', error);
+    });
+});
+document.getElementById('fullscreen-exit').addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+});
+document.addEventListener('fullscreenchange', () => {
+    simStage.dataset.fullscreen = String(document.fullscreenElement === simStage);
+});
 
 /* ----------------------------------------------------------- other controls */
 
@@ -753,6 +839,21 @@ el.truckRatioInput.addEventListener('change', () => {
     logChange('truckRatio', `${el.truckRatioInput.value}%`);
 });
 
+el.busRatioInput.addEventListener('input', () => {
+    state.busRatio = Number(el.busRatioInput.value) / 100;
+    el.busRatioValue.textContent = el.busRatioInput.value;
+    engine.setBusRatio(state.busRatio);
+});
+el.busRatioInput.addEventListener('change', () => {
+    logChange('busRatio', `${el.busRatioInput.value}%`);
+});
+
+el.randomEventsInput.addEventListener('change', () => {
+    state.randomEvents = el.randomEventsInput.checked;
+    engine.setRandomEvents(state.randomEvents);
+    logChange('randomEvents', state.randomEvents);
+});
+
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {
     state.batteryBackedSensors = event.target.checked;
     engine.setBatteryBackedSensors(event.target.checked);
@@ -796,7 +897,7 @@ el.loadSheddingToggle.addEventListener('click', () => {
 /**
  * Loads and plays a batch-dataset run: forces every control to the run's recorded conditions
  * (uniform controller mode across all arterials, its sensor, seed, and the batch defaults the
- * live page doesn't otherwise apply - 0% trucks, battery-backed sensors on, no scheduled
+ * live page doesn't otherwise apply - 0% trucks and buses, random events off, battery-backed sensors on, no scheduled
  * outages), then hands off to `tickEngine()` (via `replay`) to reset stats at the end of
  * warm-up and trigger/restore power automatically at the run's original outage ticks.
  */
@@ -819,6 +920,13 @@ async function startReplay(run) {
     state.truckRatio = 0;
     el.truckRatioInput.value = 0;
     el.truckRatioValue.textContent = '0';
+
+    state.busRatio = 0;
+    el.busRatioInput.value = 0;
+    el.busRatioValue.textContent = '0';
+
+    state.randomEvents = false;
+    el.randomEventsInput.checked = false;
 
     state.batteryBackedSensors = true;
     document.getElementById('battery-backed-sensors').checked = true;
@@ -929,6 +1037,7 @@ el.resetButton.addEventListener('click', () => {
     applyToggleFaces(el.runToggle, false);
     restartEngine();
     renderer.fit();
+    renderer3d?.fit();
     logChange('reset', 'scenario reset');
 });
 
@@ -1104,8 +1213,8 @@ function updateStatsFooter(snapshot) {
 
 /** One frame: push the engine's latest state into the canvas, footer stats and chart. */
 function renderFrame(snapshot) {
-    renderer.setDynamicState({ cars: snapshot.cars, signals: snapshot.signals });
-    renderer.draw();
+    // alpha = progress towards the next tick; the 2D map ignores it, the 3D view interpolates with it.
+    activeRenderer().update(snapshot, accumulatorS / FIXED_DT_S);
     updateStatsFooter(snapshot);
     updateSimClock(snapshot.simTimeS);
     renderPowerPill(snapshot.powerState === 'load_shedding');
@@ -1217,7 +1326,9 @@ function tickEngine() {
     // behind by a CSS-only theme switch.
     let firstThemeCall = true;
     onThemeChange((theme) => {
-        renderer.setTheme(theme);
+        currentTheme = theme;
+        renderer2d.setTheme(theme);
+        renderer3d?.setTheme(theme);
         applyChartTheme(theme);
         if (!firstThemeCall) buildFooterChart();
         firstThemeCall = false;

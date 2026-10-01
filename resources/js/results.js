@@ -35,10 +35,11 @@ import {
 } from './charts/theme.js';
 import { Fireworks } from 'fireworks-js';
 import { onThemeChange } from './theme.js';
-import { runHeadless } from './sim/runHeadless.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
+import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
+import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
 
@@ -304,7 +305,11 @@ function recoveryTimeChart(canvasId, metricColumn, { barLabel }) {
         new Chart(canvas, {
             type: 'bar',
             data: {
-                labels: modes.map((mode) => MODE_LABELS[mode] ?? mode),
+                // The mean only covers runs that recovered - show how many that is.
+                labels: modes.map((mode) => {
+                    const row = rowForModeAndPower(mode, 'load_shedding');
+                    return [MODE_LABELS[mode] ?? mode, `${row[`${recoveryKey}_recovered`]}/${row.runs} recovered`];
+                }),
                 datasets: [
                     {
                         label: barLabel,
@@ -359,15 +364,15 @@ onThemeChange((theme) => {
  *
  * `runHeadless()` here is the exact same function batch/runBatch.mjs calls
  * from the CLI - only the driver differs (a browser button instead of a
- * terminal), per the Phase 2 spec.
+ * terminal), per the Phase 2 spec. It runs in a Web Worker
+ * (sim/batchWorker.js) so the page stays responsive while it works.
  */
 const REPS_PER_CONDITION = 30;
 const DURATION_TICKS = 24000; // 40 measured simulated minutes per run at DT=0.1s
-// Warm-up run BEFORE anything is measured, discarded from every stat - standard
-// traffic-sim practice, long enough for this corridor's own from-empty ramp-up
-// transient to finish under normal power before the outage/recovery windows below
-// land inside an already-equilibrated corridor. See engine.js's resetStats().
-const WARMUP_TICKS = 3600; // 6 simulated minutes
+// Warm-up (run BEFORE anything is measured, discarded from every stat - see
+// engine.js's resetStats()) is measured per corridor before each batch by
+// sim/warmupProbe.js, not a constant: 360 s suits the small corridors, the
+// 54-junction network needs tens of minutes.
 // Load-shedding conditions cut power a quarter of the way into the MEASURED window
 // and restore it at the halfway mark - see batch/runBatch.mjs's matching default schedule.
 const POWER_OUTAGE_START_TICK = Math.round(DURATION_TICKS * 0.25);
@@ -408,35 +413,70 @@ async function runBatch(demandOverrides) {
     if (batchProgressPct) batchProgressPct.textContent = '0%';
     batchProgressWrap?.classList.remove('hidden');
 
+    let pool = null;
+
     try {
+        pool = new BatchWorkerPool(batchWorkerCount());
         const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
+        const batchId = newBatchId();
+        const batchStartedAt = new Date().toISOString();
         const totalRuns = matrix.length * REPS_PER_CONDITION;
+
+        const warmup = await probeWarmup(pool, corridorConfig);
 
         let completed = 0;
         let pending = [];
+        const startedAtMs = performance.now();
+        if (batchProgressLabel) batchProgressLabel.textContent = `Running ${pool.size} at a time...`;
 
-        for (const condition of matrix) {
-            let recoveryAcc = null;
-
-            for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
-                const seed = seedForRep(BASE_SEED, condition.powerState, rep);
-                const { rows, sideStreetRows, summary } = runHeadless({
-                    seed,
+        // Every run in matrix order; the pool works through them side by side, but results are
+        // taken (and each condition's recovery curve built) in the same order as one at a time,
+        // so the dataset is identical. Only a few pool-widths run ahead, since every finished
+        // run holds its per-tick rows until it is taken.
+        const jobs = matrix.flatMap((condition) =>
+            Array.from({ length: REPS_PER_CONDITION }, (_, rep) => ({
+                condition,
+                options: {
+                    seed: seedForRep(BASE_SEED, condition.powerState, rep),
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
-                    warmupTicks: WARMUP_TICKS,
+                    warmupTicks: warmup.warmupTicks,
                     powerOutageStartTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_START_TICK : null,
                     powerOutageEndTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_END_TICK : null,
                     corridorConfig,
                     durationTicks: DURATION_TICKS,
                     dt: DT,
+                },
+            }))
+        );
+        const runAhead = pool.size * 3;
+        let started = 0;
+        const topUp = (takenIndex) => {
+            while (started < jobs.length && started < takenIndex + runAhead) {
+                const job = jobs[started];
+                job.result = pool.run('run', job.options).then((result) => {
+                    completed += 1;
+                    updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs);
+                    return result;
                 });
+                started += 1;
+            }
+        };
 
-                pending.push(toApiPayload(summary));
-                completed += 1;
-                updateBatchProgress(completed, totalRuns, condition.key);
+        let jobIndex = 0;
+        for (const condition of matrix) {
+            let recoveryAcc = null;
+
+            for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
+                topUp(jobIndex);
+                // eslint-disable-next-line no-await-in-loop
+                const { rows, sideStreetRows, summary } = await jobs[jobIndex].result;
+                jobs[jobIndex] = null; // let its rows go
+                jobIndex += 1;
+
+                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
@@ -448,11 +488,6 @@ async function runBatch(demandOverrides) {
                 if (pending.length >= POST_BATCH_SIZE) {
                     await postSimulationRuns(pending.splice(0, pending.length));
                 }
-
-                // Yield control back to the browser so the progress bar actually
-                // repaints - a tight synchronous loop never gets the chance.
-                // eslint-disable-next-line no-await-in-loop
-                await new Promise((resolve) => setTimeout(resolve, 0));
             }
 
             if (recoveryAcc) {
@@ -469,8 +504,10 @@ async function runBatch(demandOverrides) {
             }
         }
 
+        if (batchProgressLabel) batchProgressLabel.textContent = 'Saving results...';
         if (pending.length) await postSimulationRuns(pending);
 
+        if (batchProgressLabel) batchProgressLabel.textContent = 'Refreshing charts...';
         await refreshAggregatesAndRerender();
         celebrateBatchComplete(totalRuns);
     } catch (error) {
@@ -487,11 +524,135 @@ async function runBatch(demandOverrides) {
         // eslint-disable-next-line no-alert
         alert(`Batch run failed: ${error.message}`);
     } finally {
+        pool?.terminate();
         batchRunning = false;
         batchButton.disabled = false;
         batchButton.textContent = 'Generate dataset (360 runs)';
         batchRunningBadge?.classList.add('hidden');
         batchProgressWrap?.classList.add('hidden');
+    }
+}
+
+/**
+ * One id shared by every run of this batch - /results only shows each corridor's latest batch.
+ * `crypto.randomUUID()` is secure-context only (a plain-http Herd .test site isn't), so this
+ * builds the v4 UUID from getRandomValues, which works everywhere.
+ */
+function newBatchId() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * The batch worker. Under `npm run dev` its script comes from the Vite dev
+ * server, a different origin from the page (Herd's .test domain), and the
+ * browser refuses a cross-origin Worker outright - so there it's started from
+ * a same-origin blob that just imports the real module (the dev server allows
+ * the app's origin via CORS). A built bundle is same-origin and loads directly.
+ */
+function createBatchWorker() {
+    const url = new URL(batchWorkerUrl, import.meta.url); // a bare path means the dev server in dev, the page's origin once built
+    if (url.origin === window.location.origin) return new Worker(url, { type: 'module' });
+    const shim = new Blob([`import ${JSON.stringify(url.href)};`], { type: 'text/javascript' });
+    return new Worker(URL.createObjectURL(shim), { type: 'module' });
+}
+
+/**
+ * Measures this corridor's warm-up before the batch (sim/warmupProbe.js): long
+ * from-empty runs per controller, all side by side on the pool, then each
+ * controller's runs averaged in seed order and the slowest levelling-off point
+ * plus margin taken. Logged to the console so the choice can be checked.
+ */
+async function probeWarmup(pool, corridorConfig) {
+    const conditions = probeConditions();
+    const seeds = Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(BASE_SEED, 'normal', rep));
+    const totalRuns = conditions.length * seeds.length;
+    let finished = 0;
+    const showProgress = () => {
+        if (batchProgressLabel) batchProgressLabel.textContent = `Finding warm-up · ${finished}/${totalRuns} probe runs (${pool.size} at a time)...`;
+    };
+    showProgress();
+    const probes = await Promise.all(
+        conditions.map(async (condition) => {
+            const runs = await Promise.all(
+                seeds.map((seed) =>
+                    pool.run('probeSeries', { ...condition, corridorConfig, seed, dt: DT }).then((series) => {
+                        finished += 1;
+                        showProgress();
+                        return series;
+                    })
+                )
+            );
+            return probeVerdict({ ...condition, runs, dt: DT, measuredTicks: DURATION_TICKS });
+        })
+    );
+    const warmup = chooseWarmup(probes);
+    // eslint-disable-next-line no-console
+    console.info(`Batch warm-up: ${warmup.warmupTicks} ticks (${((warmup.warmupTicks * DT) / 60).toFixed(0)} min), ${warmup.stationary ? 'stationary' : 'NOT stationary - capped'}`, warmup.probes);
+    return warmup;
+}
+
+/** One worker per core, less one for the page itself; capped so a big machine never holds dozens of runs' rows at once. */
+const MAX_BATCH_WORKERS = 12;
+function batchWorkerCount() {
+    return Math.max(1, Math.min(MAX_BATCH_WORKERS, (navigator.hardwareConcurrency || 2) - 1));
+}
+
+/**
+ * A fixed set of batch workers (sim/batchWorker.js): `run()` queues a task and
+ * resolves with its result once a free worker has done it. Every run is fully
+ * determined by its own options (seed included), so which worker does it, and
+ * when, never changes the result.
+ */
+class BatchWorkerPool {
+    constructor(size) {
+        this.size = size;
+        this.queue = [];
+        this.idle = Array.from({ length: size }, () => createBatchWorker());
+        this.all = [...this.idle];
+        this.nextId = 0;
+    }
+
+    run(task, options) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ task, options, resolve, reject });
+            this._dispatch();
+        });
+    }
+
+    _dispatch() {
+        while (this.idle.length && this.queue.length) {
+            const worker = this.idle.pop();
+            const { task, options, resolve, reject } = this.queue.shift();
+            const id = ++this.nextId;
+            const cleanUp = () => {
+                worker.removeEventListener('message', onMessage);
+                worker.removeEventListener('error', onError);
+                this.idle.push(worker);
+                this._dispatch();
+            };
+            const onMessage = ({ data: reply }) => {
+                if (reply.id !== id) return;
+                cleanUp();
+                if (reply.error) reject(new Error(reply.error));
+                else resolve(reply.result);
+            };
+            const onError = (event) => {
+                cleanUp();
+                reject(new Error(event.message || 'Batch worker failed'));
+            };
+            worker.addEventListener('message', onMessage);
+            worker.addEventListener('error', onError);
+            worker.postMessage({ id, task, options });
+        }
+    }
+
+    terminate() {
+        for (const worker of this.all) worker.terminate();
+        this.queue = [];
     }
 }
 
@@ -533,11 +694,25 @@ function celebrateBatchComplete(totalRuns) {
     setTimeout(() => toast?.classList.add('hidden'), 6000);
 }
 
-function updateBatchProgress(completed, total, conditionKey) {
+/** "45s", "12m 05s", "1h 03m" - coarse enough for a batch ETA. */
+function formatDuration(ms) {
+    const totalS = Math.max(1, Math.round(ms / 1000));
+    const h = Math.floor(totalS / 3600);
+    const m = Math.floor((totalS % 3600) / 60);
+    const s = totalS % 60;
+    if (h) return `${h}h ${String(m).padStart(2, '0')}m`;
+    if (m) return `${m}m ${String(s).padStart(2, '0')}s`;
+    return `${s}s`;
+}
+
+function updateBatchProgress(completed, total, conditionKey, elapsedMs) {
     const pct = Math.round((completed / total) * 100);
+    // Average time per finished run so far, times the runs still to go.
+    const remainingMs = (elapsedMs / completed) * (total - completed);
+    const eta = completed < total ? ` · ~${formatDuration(remainingMs)} left` : '';
     if (batchProgressBar) batchProgressBar.style.width = `${pct}%`;
-    if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs`;
-    if (batchProgressLabel) batchProgressLabel.textContent = `${conditionKey} · rep ${((completed - 1) % REPS_PER_CONDITION) + 1}/${REPS_PER_CONDITION}`;
+    if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs${eta}`;
+    if (batchProgressLabel) batchProgressLabel.textContent = `Last finished: ${conditionKey}`;
     if (batchButton) batchButton.textContent = `Running... ${completed}/${total}`;
 }
 
@@ -550,7 +725,11 @@ async function fetchCorridor(id) {
 
 /* ============================================================ batch modal (spec §10-11) */
 
-/** Every arterial + connector in a corridor config, in the same shape a demand row needs. */
+/**
+ * Every arterial + connector in a corridor config that has demand of its own, in the same
+ * shape a demand row needs. Roads with no `demand` (a merge road, a turn road) only carry
+ * cars handed on from another road, so there is nothing to set for them.
+ */
 function streetsOf(corridorConfig) {
     const arterials = (corridorConfig.arterials ?? []).map((a) => ({
         id: a.id, name: a.shortName ?? a.name, demand: a.demand, type: 'arterial',
@@ -558,7 +737,7 @@ function streetsOf(corridorConfig) {
     const connectors = (corridorConfig.connectors ?? []).map((c) => ({
         id: c.id, name: c.name, demand: c.demand, type: 'cross-street',
     }));
-    return [...arterials, ...connectors];
+    return [...arterials, ...connectors].filter((street) => street.demand);
 }
 
 /** Badge styling per street type - the only thing that visually told the batch modal's
@@ -749,6 +928,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
             const el = document.getElementById(id);
             if (el && html !== undefined) el.innerHTML = html;
         };
+        setHtml('batch-summary', fresh.html.batchSummary);
         setHtml('research-question-cards', fresh.html.researchQuestionCards);
         setHtml('metric-section-groups', fresh.html.metricSectionGroups);
 
@@ -777,6 +957,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     renderAll();
     applyItsTargetFilter();
     applyTableScopeFilter();
+    if (exportPdfButton) exportPdfButton.disabled = !data.aggregates?.length;
     document.getElementById('fake-data-badge')?.classList.add('hidden');
     document.getElementById('fake-data-banner')?.classList.add('hidden');
 }
@@ -793,6 +974,34 @@ document.getElementById('filter-corridor')?.addEventListener('change', () => {
     const query = params.toString();
     history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
     refreshAggregatesAndRerender(params);
+});
+
+/* ------------------------------------------------------------ PDF export */
+
+const exportPdfButton = document.getElementById('export-pdf-button');
+const exportPdfLabel = document.getElementById('export-pdf-label');
+
+exportPdfButton?.addEventListener('click', async () => {
+    const corridorSelect = document.getElementById('filter-corridor');
+    exportPdfButton.disabled = true;
+    exportPdfLabel.textContent = 'Building PDF…';
+
+    try {
+        // Lazy: jsPDF only loads when someone actually exports.
+        const { exportResultsPdf } = await import('./resultsPdf.js');
+        const corridorId = corridorSelect?.value ?? '';
+        await exportResultsPdf(data, {
+            corridorId,
+            corridorName: corridorSelect?.selectedOptions[0]?.textContent.trim() || 'All corridors',
+            corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
+        });
+    } catch (error) {
+        // eslint-disable-next-line no-alert
+        alert(`PDF export failed: ${error.message}`);
+    } finally {
+        exportPdfButton.disabled = !data.aggregates?.length;
+        exportPdfLabel.textContent = 'Export PDF';
+    }
 });
 
 /* ------------------------------------------------------- ITS-target filter */

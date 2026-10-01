@@ -30,7 +30,7 @@
       "exitLengthM": 220,
       "demand": {
         "spawnRatePerLanePerMin": 9,
-        "saturationFlowPerLanePerHour": 1900
+        "saturationFlowPerLanePerHour": 1250
       },
       "intersections": [
         { "id": "n_1", "name": "North & Second", "distanceToNextM": 300 },
@@ -51,7 +51,7 @@
       "exitLengthM": 220,
       "demand": {
         "spawnRatePerLanePerMin": 9,
-        "saturationFlowPerLanePerHour": 1900
+        "saturationFlowPerLanePerHour": 1250
       },
       "intersections": [
         { "id": "s_1", "name": "South & First", "distanceToNextM": 300 },
@@ -70,7 +70,7 @@
       "mode": "fixed",
       "demand": {
         "spawnRatePerLanePerMin": 4,
-        "saturationFlowPerLanePerHour": 1800
+        "saturationFlowPerLanePerHour": 1250
       }
     },
     {
@@ -83,7 +83,7 @@
       "mode": "fixed",
       "demand": {
         "spawnRatePerLanePerMin": 4,
-        "saturationFlowPerLanePerHour": 1800
+        "saturationFlowPerLanePerHour": 1250
       }
     }
   ]

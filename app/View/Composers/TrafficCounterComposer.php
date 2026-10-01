@@ -23,7 +23,7 @@ class TrafficCounterComposer
             'bootPayload' => [
                 'corridors' => $data['corridors'] ?? null,
                 'defaultCorridorId' => $data['defaultCorridorId'] ?? null,
-                'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
+                'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'storeUrl' => route('traffic-counts.store'),
                 'listUrl' => route('traffic-counts.list'),
                 'statusUrlTemplate' => route('traffic-counts.status', ['trafficCount' => '__ID__']),

@@ -67,6 +67,9 @@ return [
 
     'timezone' => 'UTC',
 
+    // Timestamps are stored in UTC (above); this is only the zone they're shown to people in.
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Africa/Johannesburg'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

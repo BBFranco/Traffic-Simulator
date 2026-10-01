@@ -85,12 +85,12 @@ class NavigationTest extends TestCase
             ->assertJsonPath('arterials.0.intersections.0.id', 'fb_1');
     }
 
-    public function test_every_corridor_config_on_disk_loads(): void
+    public function test_every_corridor_template_on_disk_loads(): void
     {
         $user = User::factory()->create();
 
-        foreach (['hatfield-pretorius-francisbaard', 'two-intersection-test', 'single-intersection'] as $id) {
-            $this->actingAs($user)->getJson("/corridors/{$id}")->assertOk()->assertJsonPath('id', $id);
+        foreach (['hatfield-pretorius-francisbaard', 'hatfield-realistic', 'hatfield-turn-lanes', 'two-intersection-test', 'single-intersection'] as $id) {
+            $this->actingAs($user)->getJson("/corridor-templates/{$id}")->assertOk()->assertJsonPath('id', $id);
         }
     }
 
