@@ -285,9 +285,35 @@ function bezierPoint(p0, c, p2, t) {
     return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p2.x, y: u * u * p0.y + 2 * u * t * c.y + t * t * p2.y };
 }
 
+/**
+ * A turn path through a list of points - a car's way round a roundabout
+ * (engine.js#_roundaboutPath()), where one Bezier can't follow the ring. Same
+ * arc-length table as buildTurnPath(), one entry per point.
+ */
+export function buildPolylinePath(points) {
+    const cumulative = [0];
+    for (let i = 1; i < points.length; i += 1) {
+        cumulative.push(cumulative[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+    }
+    return { points, cumulative, lengthM: cumulative[cumulative.length - 1] };
+}
+
+function polylinePointAt(path, s) {
+    const { points, cumulative } = path;
+    let i = 1;
+    while (i < points.length - 1 && cumulative[i] < s) i += 1;
+    const a = points[i - 1];
+    const b = points[i];
+    const segment = cumulative[i] - cumulative[i - 1] || 1;
+    const t = Math.min(1, Math.max(0, (s - cumulative[i - 1]) / segment));
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { point: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, heading: { x: (b.x - a.x) / len, y: (b.y - a.y) / len } };
+}
+
 /** Point and heading `distanceM` along a turn path. */
 export function turnPathPointAt(path, distanceM) {
     const s = Math.min(Math.max(distanceM, 0), path.lengthM);
+    if (path.points) return polylinePointAt(path, s);
     let i = 1;
     while (i < TURN_PATH_SAMPLES && path.cumulative[i] < s) i += 1;
     const segment = path.cumulative[i] - path.cumulative[i - 1] || 1;

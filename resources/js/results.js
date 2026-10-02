@@ -727,15 +727,16 @@ async function fetchCorridor(id) {
 
 /**
  * Every arterial + connector in a corridor config that has demand of its own, in the same
- * shape a demand row needs. Roads with no `demand` (a merge road, a turn road) only carry
+ * shape a demand row needs, typed by measurement scope rather than by road kind (an arterial
+ * with scope "side" is a side street, a connector with scope "arterial" is an arterial). Roads with no `demand` (a merge road, a turn road) only carry
  * cars handed on from another road, so there is nothing to set for them.
  */
 function streetsOf(corridorConfig) {
     const arterials = (corridorConfig.arterials ?? []).map((a) => ({
-        id: a.id, name: a.shortName ?? a.name, demand: a.demand, type: 'arterial',
+        id: a.id, name: a.shortName ?? a.name, demand: a.demand, type: a.scope === 'side' ? 'side-street' : 'arterial',
     }));
     const connectors = (corridorConfig.connectors ?? []).map((c) => ({
-        id: c.id, name: c.name, demand: c.demand, type: 'cross-street',
+        id: c.id, name: c.name, demand: c.demand, type: c.scope === 'arterial' ? 'arterial' : 'side-street',
     }));
     return [...arterials, ...connectors].filter((street) => street.demand);
 }
@@ -747,8 +748,8 @@ const STREET_TYPE_BADGES = {
         label: 'Arterial',
         classes: 'border border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300',
     },
-    'cross-street': {
-        label: 'Cross-street',
+    'side-street': {
+        label: 'Side street',
         classes: 'border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
     },
 };
@@ -922,6 +923,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     const fresh = await response.json();
     Object.assign(data, fresh);
     rebuildByKey();
+    document.getElementById('non-stationary-banner')?.classList.toggle('hidden', !fresh.hasNonStationaryBatch);
 
     if (fresh.html) {
         const setHtml = (id, html) => {

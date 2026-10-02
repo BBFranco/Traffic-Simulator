@@ -178,14 +178,34 @@ async function corridorLayoutImage(corridorUrl) {
         return {
             image: canvas.toDataURL('image/png'),
             aspect,
-            arterials: layout.arterials.length,
-            intersections: layout.arterials.reduce((sum, arterial) => sum + arterial.intersections.length, 0),
-            connectors: layout.connectors.length,
+            ...corridorCounts(layout),
         };
     } finally {
         setRendererTheme(currentTheme());
         host.remove();
     }
+}
+
+/**
+ * Roads counted by measurement scope (an arterial object with scope "side" is a side street, a
+ * connector with scope "arterial" is an arterial), by distinct name - a road split into pieces at
+ * its junctions (Jan Shoba, Arcadia, South) is still one road. Junctions are counted by control.
+ */
+function corridorCounts(layout) {
+    const arterialNames = new Set();
+    const sideNames = new Set();
+    for (const arterial of layout.arterials) (arterial.scope === 'side' ? sideNames : arterialNames).add(arterial.shortName ?? arterial.name);
+    for (const connector of layout.connectors) (connector.scope === 'arterial' ? arterialNames : sideNames).add(connector.name);
+    for (const name of arterialNames) sideNames.delete(name);
+    const nodes = layout.arterials.flatMap((arterial) => arterial.intersections);
+    const countControl = (control) => nodes.filter((node) => node.control === control).length;
+    return {
+        arterialRoads: arterialNames.size,
+        sideRoads: sideNames.size,
+        signals: countControl('signal'),
+        roundabouts: countControl('roundabout'),
+        allWayStops: countControl('allWayStop'),
+    };
 }
 
 const printLegend = {
@@ -499,7 +519,13 @@ function drawCover(report, data, variants, corridorLayout) {
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
         report.chartCard(
             'Corridor layout',
-            `${plural(corridorLayout.arterials, 'arterial')} · ${plural(corridorLayout.intersections, 'signalised intersection')} · ${plural(corridorLayout.connectors, 'cross street')}`,
+            [
+                plural(corridorLayout.arterialRoads, 'arterial road'),
+                plural(corridorLayout.sideRoads, 'side street'),
+                plural(corridorLayout.signals, 'signalised junction'),
+                corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
+                corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
+            ].filter(Boolean).join(' · '),
             corridorLayout.image,
             corridorLayout.aspect
         );

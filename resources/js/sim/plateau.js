@@ -27,7 +27,8 @@
  *    (the length of one measured run - a slow creep that barely moves within
  *    it doesn't bias it), or that drift must be indistinguishable from noise
  *    (|t| < 2). A cut at the very end of the search range also means no
- *    settled stretch was found.
+ *    settled stretch was found - unless the best interior cut keeps the same
+ *    mean within noise (interiorCutIfUnbiased()), in which case it stands.
  */
 
 /** Least-squares slope of `values` against their index, with its t statistic. */
@@ -45,6 +46,23 @@ function trend(values) {
     const residual = values.reduce((sum, y, x) => sum + (y - meanY - slope * (x - meanX)) ** 2, 0);
     const slopeSe = n > 2 ? Math.sqrt(residual / (n - 2) / sxx) : Infinity;
     return { slope, meanY, t: slopeSe > 0 ? slope / slopeSe : slope === 0 ? 0 : Infinity };
+}
+
+/**
+ * MSER's minimum on the edge of its search range is ambiguous: either the ramp really lasts the
+ * whole first half, or the second half just happens to be calmer than the middle (one noisy
+ * window - an adaptive network's 55-60 min bump on hatfield-realistic, 2026-10-02 - is enough to
+ * pull the cut to the edge while the level was already flat from 10 min). MSER's score is the
+ * squared standard error of the kept mean, so the two are told apart by that: if the best interior
+ * cut keeps a mean within 2 SE of the edge cut's, cutting further removes no bias and the interior
+ * cut stands; if the earlier windows sit measurably off the later level, it is a ramp and the edge
+ * cut (non-stationary) stays.
+ */
+function interiorCutIfUnbiased(scores, keptMeans, maxCut) {
+    let interior = 0;
+    for (let d = 1; d < maxCut; d += 1) if (scores[d] < scores[interior]) interior = d;
+    const edgeSe = Math.sqrt(scores[maxCut]);
+    return Math.abs(keptMeans[interior] - keptMeans[maxCut]) <= 2 * edgeSe ? interior : maxCut;
 }
 
 /**
@@ -94,17 +112,16 @@ export function detectPlateau(samples, { windowSeconds = 300, driftTolerance = 0
 
     const values = windowMeans.map((w) => w.mean);
     const maxCut = Math.floor(n / 2);
-    let bestCut = 0;
-    let bestScore = Infinity;
+    const scores = [];
+    const keptMeans = [];
     for (let d = 0; d <= maxCut; d += 1) {
         const kept = values.slice(d);
         const mean = kept.reduce((a, b) => a + b, 0) / kept.length;
-        const score = kept.reduce((s, y) => s + (y - mean) ** 2, 0) / kept.length ** 2;
-        if (score < bestScore) {
-            bestScore = score;
-            bestCut = d;
-        }
+        keptMeans.push(mean);
+        scores.push(kept.reduce((s, y) => s + (y - mean) ** 2, 0) / kept.length ** 2);
     }
+    let bestCut = scores.indexOf(Math.min(...scores));
+    if (bestCut === maxCut) bestCut = interiorCutIfUnbiased(scores, keptMeans, maxCut);
 
     const { slope, meanY, t } = trend(values.slice(bestCut));
     const horizonWindows = horizonSeconds == null ? n - bestCut : horizonSeconds / windowSeconds;

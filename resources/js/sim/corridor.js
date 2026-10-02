@@ -154,10 +154,49 @@ function parseTurnLanes(raw, label, { oneWay, medianWidthM, laneWidthM }) {
             throw new Error(`${label}: a right turn lane on a two-way street sits in the median, which must be at least a lane (${laneWidthM} m) wide - it is ${medianWidthM} m.`);
         }
         const laneUse = parseMoves(entry.laneUse ?? side, `${label}: ${side} turn lane`);
-        if (laneUse.includes('straight')) throw new Error(`${label}: the ${side} turn lane is for turning only - its laneUse can't include straight.`);
+        // It may also go straight (a flared lane, like Burnett's median lane at Jan Shoba), but it's a turn lane - it has to turn too.
+        if (!laneUse.some((m) => m !== 'straight')) throw new Error(`${label}: the ${side} turn lane has to allow a turn - its laneUse can't be straight on alone.`);
         turnLanes[side] = { lengthM, laneUse };
     }
     return turnLanes;
+}
+
+/**
+ * An intersection's `control`: 'signal' (the default - traffic lights, timed by
+ * the arterial's mode), 'roundabout' (no lights, give way to traffic already in
+ * it) or 'allWayStop' (a permanent 4-way stop). Only signals change with the
+ * arterial's mode or go dark in load shedding.
+ */
+export const JUNCTION_CONTROLS = ['signal', 'roundabout', 'allWayStop'];
+
+function parseControl(raw, label) {
+    const control = raw ?? 'signal';
+    if (!JUNCTION_CONTROLS.includes(control)) {
+        throw new Error(`${label}: control "${raw}" - use ${JUNCTION_CONTROLS.join(', ')}.`);
+    }
+    return control;
+}
+
+/** A roundabout's outside diameter when the intersection doesn't give `roundaboutDiameterM` (m). */
+export const DEFAULT_ROUNDABOUT_DIAMETER_M = 36;
+/** Width of a roundabout's circulating carriageway, kerb to island (m) - the island fills the rest. */
+export const ROUNDABOUT_RING_WIDTH_M = 7;
+
+/**
+ * A roundabout's footprint, `node.roundabout`: the outside circle (`radiusM`),
+ * the island in the middle (`islandRadiusM`) and the line cars drive round on
+ * (`circulatingRadiusM`, mid-ring). Never smaller than the junction box would
+ * be. Every approach's yield line is pulled back to the outside circle.
+ */
+function shapeRoundabout(node) {
+    const boxRadiusM = Math.hypot(node.crossRoadWidthM, node.arterialRoadWidthM) / 2;
+    const radiusM = Math.max((node.rawRoundaboutDiameterM ?? DEFAULT_ROUNDABOUT_DIAMETER_M) / 2, boxRadiusM + 2);
+    const islandRadiusM = Math.max(1, radiusM - ROUNDABOUT_RING_WIDTH_M);
+    node.roundabout = { radiusM, islandRadiusM, circulatingRadiusM: (radiusM + islandRadiusM) / 2 };
+    node.stopLineBackM = {
+        arterial: Math.max(node.stopLineBackM.arterial, radiusM - node.crossRoadWidthM / 2),
+        cross: Math.max(node.stopLineBackM.cross, radiusM - node.arterialRoadWidthM / 2),
+    };
 }
 
 /** Nearest compass direction of a heading - how a connector's `laneUse` names each direction of travel. */
@@ -434,12 +473,16 @@ export function buildLayout(config) {
     // the intersection still reads - and signals - as a 4-way.
     for (const arterial of arterials) {
         for (const node of arterial.intersections) {
+            widenForJoinedArm(node, arterial, joins, arterials, connectors);
             resolveCrossStreet(node, arterial, connectors, joins, defaults, laneWidthM);
+            if (node.control === 'roundabout') shapeRoundabout(node);
+            node.arterialArms = arterialArms(node, arterial, joins);
             node.approaches = buildApproaches(node, arterial, laneWidthM, connectors);
         }
     }
     for (const connector of connectors) checkConnectorLaneUseKeys(connector, nodesById);
     markFedApproaches(joins, connectors, nodesById);
+    drawHandOversAtBoxEdge(arterials, connectors, joins);
 
     const layout = {
         id: config.id ?? null,
@@ -570,6 +613,10 @@ function buildArterial(raw, laneWidthM) {
             distanceFromPreviousM: index === 0 ? null : raw.intersections[index - 1].distanceToNextM ?? null,
             crossStreetName: node.crossStreetName ?? null,
             crossStreetLanes: node.crossStreetLanes ?? null,
+            /** How the junction is run - see JUNCTION_CONTROLS. */
+            control: parseControl(node.control, `Intersection "${node.id}"`),
+            /** A roundabout's outside diameter as written (m) - see shapeRoundabout(). */
+            rawRoundaboutDiameterM: node.roundaboutDiameterM ?? null,
             /** Per arterial lane (kerb first), which movements that lane may make at this node - one-way arterials only; a two-way one's lives on each of its approaches (see buildApproaches()). */
             laneUse: oneWay ? parseLaneUse(node.laneUse, lanes, `Intersection "${node.id}"`) : null,
             /** A two-way arterial's `laneUse` as written in the config, keyed by compass direction - parsed in buildApproaches(). */
@@ -615,6 +662,12 @@ function buildArterial(raw, laneWidthM) {
         laneWidthM,
         roadWidthM,
         targetSpeedKph: raw.targetSpeedKph ?? 50,
+        /**
+         * Whose traffic it is in the results: 'arterial' (the default), or 'side' for a
+         * street that owns junctions but isn't a main road - its cars count with the side
+         * streets' (engine.js#_recordClear()), the mirror of a connector's `scope: "arterial"`.
+         */
+        scope: raw.scope === 'side' ? 'side' : 'arterial',
         /** Initial controller mode from config; the UI overrides this per arterial at runtime. */
         mode: raw.mode ?? 'fixed',
         demand: buildDemand(raw.demand, raw.id, 8),
@@ -927,7 +980,11 @@ function connectorOffsetOf(connectorId, node, origin, heading) {
 }
 
 function resolveCrossStreet(node, arterial, connectors, joins, defaults, laneWidthM) {
-    const through = connectors.filter((c) => c.nodeIds.includes(node.id));
+    const linking = connectors.filter((c) => c.nodeIds.includes(node.id));
+    /** Roads that come in (or go out) along the arterial's own line and stop here - see arterialArmsOf(). */
+    node.arterialArmRoads = linking.filter((c) => isArterialArm(c, node));
+    for (const arm of node.arterialArmRoads) node.arterialRoadWidthM = Math.max(node.arterialRoadWidthM, arm.roadWidthM);
+    const through = linking.filter((c) => !node.arterialArmRoads.includes(c));
     const split = through.length === 2 ? splitCrossStreet(node, through, joins) : null;
     if (through.length > 1 && !split) {
         throw new Error(
@@ -1026,7 +1083,8 @@ function buildApproaches(node, arterial, laneWidthM, connectors) {
     const approaches = [];
     const connector = connectors.find((c) => c.id === node.connectorId) ?? null;
 
-    if (arterial.oneWay) {
+    // No road to arrive on (a one-way arterial starting at a T): no approach - its traffic only turns in there.
+    if (arterial.oneWay && node.arterialArms[0].hasUpstream) {
         const arterialApproach = makeApproach({
             id: `${node.id}:${arterial.id}`,
             kind: 'arterial',
@@ -1048,8 +1106,10 @@ function buildApproaches(node, arterial, laneWidthM, connectors) {
         /** Which direction of the arterial this is - 'fwd' runs its own `direction`, 'rev' the opposite way (two-way only). */
         arterialApproach.dirKey = 'fwd';
         approaches.push(arterialApproach);
-    } else {
+    } else if (!arterial.oneWay) {
         [node.arterialHeading, negate(node.arterialHeading)].forEach((heading, i) => {
+            // No road to arrive on (the arterial starts here, its other half one-way away): no approach that way.
+            if (!node.arterialArms[i].hasUpstream) return;
             const laneUseKey = compassDirection(heading);
             const label = `Intersection "${node.id}" ${laneUseKey}`;
             const approach = makeApproach({
@@ -1066,12 +1126,49 @@ function buildApproaches(node, arterial, laneWidthM, connectors) {
                 laneWidthM,
                 turnLanes: parseTurnLanes(node.rawTurnLanes?.[laneUseKey], label, { oneWay: false, medianWidthM: arterial.medianWidthM, laneWidthM }),
             });
-            approach.laneUse = parseLaneUse(node.rawLaneUse[laneUseKey], arterial.perSideLanes, label);
+            /** Nothing straight on past the junction this way (the arterial stops there) - every lane has to turn. */
+            approach.noStraight = !node.arterialArms[i].hasDownstream;
+            /** Its queue is on the road joined on right before the junction, which already has its lanes - turn lanes included, so none is drawn widening out of the road. */
+            approach.fedByJoin = node.arterialArms[i].fedByJoin;
+            approach.laneUse = parseLaneUse(
+                node.rawLaneUse[laneUseKey],
+                arterial.perSideLanes,
+                label,
+                approach.noStraight ? MOVEMENTS.filter((m) => m !== 'straight') : MOVEMENTS
+            );
             approach.laneUseKey = laneUseKey;
             approach.dirKey = i === 0 ? 'fwd' : 'rev';
             approaches.push(approach);
         });
-        checkTwoWayArterialKeys(node, approaches.map((a) => a.laneUseKey));
+        checkTwoWayArterialKeys(node, [node.arterialHeading, negate(node.arterialHeading)].map(compassDirection));
+    }
+
+    // A road coming in along the arterial's line that stops here: its own lanes, arrows and turn lanes, on the arterial's signal phase.
+    for (const { connector: road, dirKey, heading } of arterialArmsOf(node)) {
+        const laneUseKey = compassDirection(heading);
+        const label = `Connector "${road.id}" at "${node.id}" ${laneUseKey}`;
+        const arterialSide = node.arterialArms[heading.x * node.arterialHeading.x + heading.y * node.arterialHeading.y > 0 ? 0 : 1];
+        const approach = makeApproach({
+            id: `${node.id}:${road.id}:${dirKey}`,
+            kind: 'arterial',
+            label: road.name,
+            node,
+            heading,
+            lanes: road.twoWay ? Math.max(1, Math.floor(road.lanes / 2)) : road.lanes,
+            roadWidthM: road.roadWidthM,
+            medianWidthM: road.medianWidthM,
+            setbackM: node.crossRoadWidthM / 2 + node.stopLineBackM.arterial,
+            oneWay: !road.twoWay,
+            laneWidthM,
+            turnLanes: parseTurnLanes(road.rawTurnLanes[node.id]?.[laneUseKey], label, { oneWay: !road.twoWay, medianWidthM: road.medianWidthM, laneWidthM }),
+        });
+        approach.connectorId = road.id;
+        approach.dirKey = dirKey;
+        approach.laneUseKey = laneUseKey;
+        /** It carries on as the arterial past the junction - unless the arterial stops there too. */
+        approach.noStraight = !arterialSide.hasDownstream;
+        approach.laneUse = parseLaneUse(road.rawLaneUse[node.id]?.[laneUseKey], approach.lanes, label, approach.noStraight ? MOVEMENTS.filter((m) => m !== 'straight') : MOVEMENTS);
+        approaches.push(approach);
     }
 
     const crossHeadings = node.crossTwoWay || node.crossSplit
@@ -1153,6 +1250,136 @@ export function crossArms(connector, node) {
     ];
 }
 
+/**
+ * The arterial's own crossArms(), per direction of travel ([fwd, rev]): whether
+ * there's road to arrive on and road to carry on into at `node`. Only an end
+ * node can lack either - where the arterial's lead-in or run-out is no longer
+ * than the junction box and no road joins it there (Arcadia west of Festival
+ * stops at the box, its other half carrying on one-way the other way).
+ */
+function arterialArms(node, arterial, joins) {
+    const index = arterial.intersections.indexOf(node);
+    const minArmM = node.crossRoadWidthM / 2 + 1;
+    const before = index > 0 || arterial.approachLengthM > minArmM;
+    const after = index < arterial.intersections.length - 1 || arterial.exitLengthM > minArmM;
+    const plain = joins.filter((j) => j.fromAtM == null && j.toAtM == null);
+    const joined = (end, dirKey) => plain.some((j) => j[end].kind === 'arterial' && j[end].id === arterial.id && j[end].dirKey === dirKey);
+    // `fedByJoin`: the only road to arrive on is the one joined on just before the junction - it carries the approach's lanes.
+    const arms = [
+        { hasUpstream: before || joined('to', 'fwd'), hasDownstream: after || joined('from', 'fwd'), fedByJoin: !before && joined('to', 'fwd') },
+        // A one-way arterial has no other direction to arrive on or carry on along.
+        arterial.oneWay
+            ? { hasUpstream: false, hasDownstream: false, fedByJoin: false }
+            : { hasUpstream: after || joined('to', 'rev'), hasDownstream: before || joined('from', 'rev'), fedByJoin: !after && joined('to', 'rev') },
+    ];
+    // Where a road comes in along the arterial's line and stops here (arterialArmsOf()), that road is the approach that way, not the arterial.
+    for (const { heading } of arterialArmsOf(node)) {
+        const i = heading.x * node.arterialHeading.x + heading.y * node.arterialHeading.y > 0 ? 0 : 1;
+        arms[i] = { ...arms[i], hasUpstream: false, fedByJoin: false };
+    }
+    return arms;
+}
+
+/**
+ * Where a straight arterial hands over to a connector right at an end junction
+ * (widenForJoinedArm()), its stub runs a little past the junction box - the
+ * stop line has to sit inside the road the cars are handed onto, or they'd land
+ * past it and never turn there. Drawn, that sliver would read as the old road
+ * carrying on past the junction, so the arterial is drawn only to the box edge
+ * (`drawnStartPoint`/`drawnEndPoint`) and the connector from it (the same,
+ * on the connector's end that meets it). Drawing only - traffic is unchanged.
+ */
+function drawHandOversAtBoxEdge(arterials, connectors, joins) {
+    const plain = joins.filter((j) => j.fromAtM == null && j.toAtM == null);
+    for (const arterial of arterials) {
+        if (arterial.curve) continue;
+        const ends = [
+            { node: arterial.intersections[0], stubM: arterial.approachLengthM, tip: arterial.startPoint, sign: -1, key: 'drawnStartPoint' },
+            { node: arterial.intersections[arterial.intersections.length - 1], stubM: arterial.exitLengthM, tip: arterial.endPoint, sign: 1, key: 'drawnEndPoint' },
+        ];
+        for (const { node, stubM, tip, sign, key } of ends) {
+            const edgeM = node.crossRoadWidthM / 2;
+            if (stubM > JOINED_ARM_MAX_M || stubM <= edgeM) continue;
+            const joined = plain
+                .flatMap((j) => [[j.from, j.to], [j.to, j.from]])
+                .filter(([ours, other]) => ours.kind === 'arterial' && ours.id === arterial.id && other.kind === 'connector')
+                .map(([, other]) => connectors.find((c) => c.id === other.id));
+            // The connector's end at this stub's tip, if it really starts or stops there - level with it along the arterial, anywhere across its width.
+            const h = node.arterialHeading;
+            const atTip = (p) => {
+                const d = { x: p.x - tip.x, y: p.y - tip.y };
+                return Math.abs(d.x * h.x + d.y * h.y) < 0.5 && Math.abs(d.x * h.y - d.y * h.x) <= arterial.roadWidthM / 2;
+            };
+            const meeting = joined
+                .map((connector) => ({ connector, end: atTip(connector.startPoint) ? 'start' : atTip(connector.endPoint) ? 'end' : null }))
+                .find((m) => m.end);
+            if (!meeting) continue;
+            const edge = add(node.point, h, sign * edgeM);
+            const back = { x: edge.x - tip.x, y: edge.y - tip.y };
+            const connectorEnd = meeting.end === 'start' ? meeting.connector.startPoint : meeting.connector.endPoint;
+            arterial[key] = edge;
+            meeting.connector[meeting.end === 'start' ? 'drawnStartPoint' : 'drawnEndPoint'] = { x: connectorEnd.x + back.x, y: connectorEnd.y + back.y };
+        }
+    }
+}
+
+/** Closer than this to parallel with the arterial, a road linking a junction runs along it, not across it (|cos|). */
+const ALONG_ARTERIAL_COS = 0.95;
+
+/** A connector that links `node` running along the arterial's line, and stops there (ends at its centre, or starts there). */
+function isArterialArm(connector, node) {
+    const index = connector.nodeIds.indexOf(node.id);
+    const h = connector.nodeHeadings[index];
+    if (Math.abs(h.x * node.arterialHeading.x + h.y * node.arterialHeading.y) < ALONG_ARTERIAL_COS) return false;
+    const centreM = connector.stubStartM + connector.nodeOffsetsM[index];
+    return Math.abs(connector.routeLengthM - centreM) <= 1 || centreM <= 1;
+}
+
+/**
+ * The directions of travel that arrive at `node` along the arterial's line on
+ * a road of their own (isArterialArm()) - Arcadia's one-way section reaching
+ * Hilda, where the divided road starts: `{ connector, dirKey, heading }`. Such
+ * a road's approach is the arterial's that way (its phase, its turns onto the
+ * cross street), with the road's own lanes, lane use and turn lanes.
+ */
+export function arterialArmsOf(node) {
+    const arriving = [];
+    for (const connector of node.arterialArmRoads ?? []) {
+        const index = connector.nodeIds.indexOf(node.id);
+        const h = connector.nodeHeadings[index];
+        const endsHere = Math.abs(connector.routeLengthM - (connector.stubStartM + connector.nodeOffsetsM[index])) <= 1;
+        if (endsHere) arriving.push({ connector, dirKey: 'fwd', heading: h });
+        else if (connector.twoWay) arriving.push({ connector, dirKey: 'rev', heading: negate(h) });
+    }
+    return arriving;
+}
+
+/** A lead-in or run-out this short is just the junction's own arm - the road joined on beyond it is what's really there (m). */
+const JOINED_ARM_MAX_M = 15;
+
+/**
+ * Where an arterial hands over to another road right at an end junction
+ * (a join from its run-out, or into its lead-in, no longer than
+ * JOINED_ARM_MAX_M), the junction box is as wide as the wider of the two -
+ * the mirror of a split cross street's box (resolveCrossStreet()).
+ */
+function widenForJoinedArm(node, arterial, joins, arterials, connectors) {
+    const index = arterial.intersections.indexOf(node);
+    const ends = [];
+    if (index === 0 && arterial.approachLengthM <= JOINED_ARM_MAX_M) ends.push(['to', 'fwd'], ['from', 'rev']);
+    if (index === arterial.intersections.length - 1 && arterial.exitLengthM <= JOINED_ARM_MAX_M) ends.push(['from', 'fwd'], ['to', 'rev']);
+    for (const join of joins) {
+        if (join.fromAtM != null || join.toAtM != null) continue;
+        for (const [end, dirKey] of ends) {
+            const ours = join[end];
+            if (ours.kind !== 'arterial' || ours.id !== arterial.id || ours.dirKey !== dirKey) continue;
+            const other = join[end === 'to' ? 'from' : 'to'];
+            const road = other.kind === 'arterial' ? arterials.find((a) => a.id === other.id) : connectors.find((c) => c.id === other.id);
+            node.arterialRoadWidthM = Math.max(node.arterialRoadWidthM, road.roadWidthM);
+        }
+    }
+}
+
 /** A two-way arterial node's `laneUse`/`turnLanes` key that matches neither direction is a typo - name it rather than silently ignore it. */
 function checkTwoWayArterialKeys(node, keys) {
     for (const [field, byDirection] of [['laneUse', node.rawLaneUse], ['turnLanes', node.rawTurnLanes]]) {
@@ -1173,7 +1400,7 @@ function checkConnectorLaneUseKeys(connector, nodesById) {
             }
             const keys = nodesById
                 .get(nodeId)
-                .approaches.filter((a) => a.kind === 'cross' && a.connectorId === connector.id)
+                .approaches.filter((a) => a.connectorId === connector.id)
                 .map((a) => a.laneUseKey);
             for (const key of Object.keys(byDirection ?? {})) {
                 if (!keys.includes(key)) {

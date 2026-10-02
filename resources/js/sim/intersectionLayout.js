@@ -60,6 +60,8 @@ export function buildIntersectionConfig(config, layout, nodeId, demand, approach
                         distanceToNextM: null,
                         crossStreetName: rawNode.crossStreetName,
                         crossStreetLanes: rawNode.crossStreetLanes,
+                        control: rawNode.control,
+                        roundaboutDiameterM: rawNode.roundaboutDiameterM,
                         laneUse: rawNode.laneUse,
                         turnLanes: rawNode.turnLanes,
                     },
@@ -91,6 +93,8 @@ export function buildIntersectionConfig(config, layout, nodeId, demand, approach
         keepTJunction(testConfig.connectors[0], connector, node);
         addJoinedContinuations(testConfig, config, layout, connector, node);
     }
+    addArterialArmRoads(testConfig, config, node);
+    addArterialContinuations(testConfig, config, layout, arterial, node);
 
     for (const edit of approachEdits) applyApproachEdit(testConfig, nodeId, edit);
 
@@ -99,7 +103,7 @@ export function buildIntersectionConfig(config, layout, nodeId, demand, approach
 
 /**
  * Where the real cross street hands over to another road right at this junction
- * (Duxbury going 2 + 2 to 1 + 1 across Lynnwood, Grosvenor narrowing at Burnett),
+ * (Duxbury going 2 + 2 to 1 + 1 across Lynnwood, Grosvenor narrowing at Arcadia),
  * the test layout does the same on that side: the street's stub stops where the
  * real one does and the other road carries on from there, joined like the real
  * pair - so that arm shows the road that's actually there, and only the lanes it
@@ -166,6 +170,113 @@ function addJoinedContinuations(testConfig, config, layout, connector, node) {
 }
 
 /**
+ * A road the real junction has coming in along the arterial's line and
+ * stopping there (corridor.js's arterialArmsOf() - Arcadia's one-way section
+ * at Hilda): the test layout has it too, stopping at the junction the same
+ * way, with its lane use and turn lanes there. addArterialContinuations()
+ * then joins it on like the real pair.
+ */
+function addArterialArmRoads(testConfig, config, node) {
+    for (const road of node.arterialArmRoads ?? []) {
+        const raw = config.connectors.find((c) => c.id === road.id);
+        const index = road.nodeIds.indexOf(node.id);
+        const endsHere = Math.abs(road.routeLengthM - (road.stubStartM + road.nodeOffsetsM[index])) <= 1;
+        testConfig.connectors.push({
+            id: road.id,
+            name: road.name,
+            lanes: road.lanes,
+            twoWay: road.twoWay,
+            medianWidthM: road.medianWidthM,
+            targetSpeedKph: road.targetSpeedKph,
+            mode: 'fixed',
+            demand: testConfig.arterials[0].demand,
+            linksArterialNodes: [node.id],
+            direction: compassDirection(road.nodeHeadings[index]),
+            stubStartM: endsHere ? CROSS_STUB_M : 0,
+            stubEndM: endsHere ? 0 : CROSS_STUB_M,
+            laneUse: raw?.laneUse?.[node.id] ? { [node.id]: raw.laneUse[node.id] } : {},
+            turnLanes: raw?.turnLanes?.[node.id] ? { [node.id]: raw.turnLanes[node.id] } : {},
+        });
+    }
+}
+
+/** A test arterial's heading from its compass `direction` (y points south). */
+const COMPASS_HEADINGS = { eastbound: { x: 1, y: 0 }, westbound: { x: -1, y: 0 }, northbound: { x: 0, y: -1 }, southbound: { x: 0, y: 1 } };
+
+/** A lead-in or run-out this short on the real arterial is only the junction's own arm (corridor.js's JOINED_ARM_MAX_M). */
+const JOINED_ARM_MAX_M = 15;
+
+/**
+ * Where the real arterial starts or stops right at this junction - handing over
+ * to another road there (Arcadia changing at Festival, Hilda and Grosvenor,
+ * Duxbury at Jan Shoba) or just ending - the test arterial does the same on
+ * that side: its lead-in or run-out is the real one's, and the road joined on
+ * beyond carries on from there, joined like the real pair. So an approach the
+ * real junction hasn't got isn't there, and one that must turn still has to.
+ */
+function addArterialContinuations(testConfig, config, layout, arterial, node) {
+    const index = arterial.intersections.indexOf(node);
+    const testArterial = testConfig.arterials[0];
+    const plainJoins = (config.joins ?? []).filter((join) => join.toAtM == null && join.fromAtM == null);
+    const sides = [];
+    if (index === 0 && arterial.approachLengthM <= JOINED_ARM_MAX_M) sides.push({ side: 'start', lengthM: arterial.approachLengthM, refs: [['to', 'fwd'], ['from', 'rev']] });
+    if (index === arterial.intersections.length - 1 && arterial.exitLengthM <= JOINED_ARM_MAX_M) {
+        sides.push({ side: 'end', lengthM: arterial.exitLengthM, refs: [['from', 'fwd'], ['to', 'rev']] });
+    }
+    if (!sides.length) return;
+    for (const { side, lengthM } of sides) testArterial[side === 'start' ? 'approachLengthM' : 'exitLengthM'] = lengthM;
+    // Where the test junction sits and which way its arterial runs - the test layout's own (its one junction at the origin, running its compass direction), not the real corridor's.
+    const centre = { point: { x: testArterial.origin.xM, y: testArterial.origin.yM } };
+    const heading = COMPASS_HEADINGS[testArterial.direction];
+    for (const { side, lengthM, refs } of sides) {
+        const joins = plainJoins.filter((join) => refs.some(([end, dirKey]) => join[end] === `${arterial.id}:${dirKey}`));
+        if (!joins.length) continue;
+        const otherRef = (join) => (join.to.startsWith(`${arterial.id}:`) ? join.from : join.to);
+        const otherId = otherRef(joins[0]).split(':')[0];
+        const road = layout.connectors.find((c) => c.id === otherId) ?? layout.arterials.find((a) => a.id === otherId);
+        if (!road) continue;
+        // Already there as the junction's own approach along the arterial (addArterialArmRoads()) - just join it on.
+        if (testConfig.connectors.some((c) => c.id === road.id)) {
+            testConfig.joins = [...(testConfig.joins ?? []), ...joins];
+            continue;
+        }
+        // Out from the stub's tip, away from the junction; the road's fwd keeps the arterial's direction of travel.
+        const sign = side === 'end' ? 1 : -1;
+        // As far to one side of the arterial's centreline as the real road meets it (Arcadia's one-way lines up with the divided road's eastbound half).
+        const sideM = sideOffsetM(node, road, lengthM * sign);
+        const normal = { x: -heading.y, y: heading.x };
+        const tip = { x: centre.point.x + heading.x * lengthM * sign + normal.x * sideM, y: centre.point.y + heading.y * lengthM * sign + normal.y * sideM };
+        const far = { x: tip.x + heading.x * CROSS_STUB_M * sign, y: tip.y + heading.y * CROSS_STUB_M * sign };
+        const [from, to] = side === 'end' ? [tip, far] : [far, tip];
+        const twoWay = road.twoWay ?? !road.oneWay;
+        testConfig.connectors.push({
+            id: road.id,
+            name: road.name,
+            lanes: road.lanes,
+            twoWay,
+            medianWidthM: road.medianWidthM,
+            targetSpeedKph: road.targetSpeedKph,
+            mode: 'fixed',
+            demand: testArterial.demand,
+            curve: [
+                { xM: from.x, yM: from.y },
+                { xM: (from.x + to.x) / 2, yM: (from.y + to.y) / 2 },
+                { xM: to.x, yM: to.y },
+            ],
+        });
+        testConfig.joins = [...(testConfig.joins ?? []), ...joins];
+    }
+}
+
+/** How far `road`'s nearer end sits to one side of the real arterial's centreline `alongM` from `node` (m, along `{ -heading.y, heading.x }`). */
+function sideOffsetM(node, road, alongM) {
+    const h = node.arterialHeading;
+    const tip = { x: node.point.x + h.x * alongM, y: node.point.y + h.y * alongM };
+    const [end] = [road.startPoint, road.endPoint].sort((a, b) => Math.hypot(a.x - tip.x, a.y - tip.y) - Math.hypot(b.x - tip.x, b.y - tip.y));
+    return (end.x - tip.x) * -h.y + (end.y - tip.y) * h.x;
+}
+
+/**
  * Where the real street stops at this junction (a T), the test street stops
  * there too - a stub of 0 on the missing side - so the junction keeps its T
  * lane use (every lane on the stem turns) instead of gaining an arm it hasn't got.
@@ -224,8 +335,8 @@ function applyApproachEdit(testConfig, nodeId, { kind, laneUseKey, laneUse, turn
         node.turnLanes = turnLanes ?? undefined;
         return;
     }
-    // A two-way arterial keys its lane use and turn lanes by direction of travel, like a connector.
-    if (kind === 'arterial') {
+    // A two-way arterial keys its lane use and turn lanes by direction of travel, like a connector - unless the approach is a road of its own along the arterial's line.
+    if (kind === 'arterial' && !connectorId) {
         node.laneUse = { ...node.laneUse, [laneUseKey]: laneUse };
         node.turnLanes = { ...node.turnLanes, [laneUseKey]: turnLanes ?? undefined };
         return;

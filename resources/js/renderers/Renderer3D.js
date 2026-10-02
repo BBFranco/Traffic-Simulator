@@ -121,6 +121,10 @@ const BUS_BODY_COLOURS = ['#f1f5f9', '#f1f5f9', '#f1f5f9', '#15803d', '#1e4a9a',
 const BUS_STRIPE_COLOURS = ['#15803d', '#1e4a9a', '#b91c1c', '#d97706', '#0f766e'];
 /** Universal lit-lens hues (renderer.js's LIT_LENS_COLOURS). */
 const LIT_LENS_COLOURS = ['#ef4444', '#f59e0b', '#22c55e'];
+/** Stop-sign red, its plate's size and how high it stands - the same in both themes. */
+const STOP_SIGN_RED = '#c81e1e';
+const STOP_SIGN_RADIUS_M = 0.45;
+const STOP_SIGN_HEIGHT_M = 2.4;
 
 const CAMERA_PITCH_RAD = (55 * Math.PI) / 180;
 const CAMERA_FOV_DEG = 45;
@@ -165,6 +169,8 @@ const ROAD_NAME_OPACITY = 0.8;
 const ROAD_NAME_HEIGHT_M = { arterial: 3, cross: 2.4 };
 const ROAD_NAME_SPACING_M = 70;
 const MEDIAN_HEIGHT_M = 0.18;
+/** Sides of a roundabout's circle and island. */
+const CIRCLE_SEGMENTS = 64;
 /** Median islands stop this far outside the junction box. */
 const MEDIAN_JUNCTION_CLEARANCE_M = 1.5;
 /** Kept clear of each end of a stretch: junction box plus, on arterials, the lane-use arrows 8-50 m before the stop line. */
@@ -367,6 +373,7 @@ export class Renderer3D {
             housing: new MeshLambertMaterial(),
             median: new MeshLambertMaterial({ side: DoubleSide }),
             lens: new MeshBasicMaterial(),
+            stopSign: new MeshLambertMaterial({ color: STOP_SIGN_RED }),
             halo: new MeshBasicMaterial({ transparent: true, opacity: 0.32, blending: AdditiveBlending, depthWrite: false }),
         };
     }
@@ -680,6 +687,7 @@ export class Renderer3D {
             for (const node of arterial.intersections) {
                 junction.rect(node.point, node.arterialHeading, node.crossRoadWidthM, node.arterialRoadWidthM);
                 junction.rect(node.point, node.crossAxis, node.arterialRoadWidthM, node.crossRoadWidthM);
+                if (node.roundabout) junction.disc(node.point, node.roundabout.radiusM);
             }
         }
 
@@ -701,7 +709,8 @@ export class Renderer3D {
     /**
      * Raised median islands (kerb height) on divided streets, stopped
      * short of each junction box so turning traffic never drives through one -
-     * and short of any median-side turn lane, which takes the island's place.
+     * and short of any median-side turn lane, which takes the island's place -
+     * plus each roundabout's island.
      */
     buildMedians() {
         const positions = [];
@@ -717,7 +726,8 @@ export class Renderer3D {
             // How far back from `node` the island stops for traffic arriving there heading `travel`.
             const clear = (node, travel) => {
                 const approach = node.approaches.find((ap) => ap.kind === kind && ap.heading.x * travel.x + ap.heading.y * travel.y > 0.5);
-                return Math.max(depthOf(node) / 2 + MEDIAN_JUNCTION_CLEARANCE_M, medianTurnLaneReachM(approach));
+                const halfDepthM = node.roundabout ? node.roundabout.radiusM : depthOf(node) / 2;
+                return Math.max(halfDepthM + MEDIAN_JUNCTION_CLEARANCE_M, medianTurnLaneReachM(approach));
             };
             if (road.curve) {
                 // A curved street: one short block per curve sample, dropped wherever it would reach into a junction.
@@ -749,6 +759,9 @@ export class Renderer3D {
                 pushKerbBlock(positions, start, end, road.medianWidthM / 2, MEDIAN_HEIGHT_M);
             }
         }
+        for (const node of this.layout.nodesById.values()) {
+            if (node.roundabout) pushIsland(positions, node.point, node.roundabout.islandRadiusM, MEDIAN_HEIGHT_M);
+        }
         if (!positions.length) return;
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
@@ -779,7 +792,11 @@ export class Renderer3D {
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
                 if (skip.has(node.id)) continue;
-                for (const approach of node.approaches) layer.line([approach.stopLine.a, approach.stopLine.b], 0, 0.45);
+                for (const approach of node.approaches) {
+                    const line = [approach.stopLine.a, approach.stopLine.b];
+                    if (node.control === 'roundabout') layer.dashed(line, 0, 0.45, 0.6, 0.6);
+                    else layer.line(line, 0, 0.45);
+                }
             }
         }
         const geometry = layer.build();
@@ -793,11 +810,16 @@ export class Renderer3D {
     /* --------------------------------------------------------------- signals */
 
     buildSignals() {
+        const stopApproaches = [];
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
+                // A roundabout has no signals at all, a 4-way stop a stop sign per approach.
+                if (node.control === 'allWayStop') stopApproaches.push(...node.approaches);
+                if (node.control !== 'signal') continue;
                 for (const approach of node.approaches) this.approaches.push({ nodeId: node.id, approach });
             }
         }
+        this.buildStopSigns(stopApproaches);
         const n = this.approaches.length;
         if (!n) return;
 
@@ -834,6 +856,27 @@ export class Renderer3D {
             for (let i = 0; i < 3; i += 1) {
                 this.lenses.setMatrixAt(k * 3 + i, new Matrix4().setPosition(entry.lensPoints[i]));
             }
+        });
+    }
+
+    /** A stop sign - a red octagon on a post - where a signal would stand, facing the traffic it stops. */
+    buildStopSigns(approaches) {
+        if (!approaches.length) return;
+        const post = new CylinderGeometry(0.05 * SIGNAL_SCALE, 0.05 * SIGNAL_SCALE, STOP_SIGN_HEIGHT_M, 6);
+        post.translate(0, STOP_SIGN_HEIGHT_M / 2, 0);
+        // An 8-sided disc, its face turned to look along local +x (the way the signal housings face).
+        const plate = new CylinderGeometry(STOP_SIGN_RADIUS_M, STOP_SIGN_RADIUS_M, 0.05, 8);
+        plate.rotateY(Math.PI / 8);
+        plate.rotateZ(Math.PI / 2);
+        plate.translate(0.06, STOP_SIGN_HEIGHT_M, 0);
+        const posts = this.addSignalMesh(post, this.materials.pole, approaches.length);
+        const plates = this.addSignalMesh(plate, this.materials.stopSign, approaches.length);
+        const matrix = new Matrix4();
+        approaches.forEach(({ signalHead, heading }, k) => {
+            const face = { x: -heading.x, y: -heading.y };
+            matrix.makeRotationY(Math.atan2(-face.y, face.x)).setPosition(signalHead.x, 0, signalHead.y);
+            posts.setMatrixAt(k, matrix);
+            plates.setMatrixAt(k, matrix);
         });
     }
 
@@ -1237,6 +1280,19 @@ class FlatLayer {
         this.positions.push(a.x, 0, a.y, b.x, 0, b.y, c.x, 0, c.y);
     }
 
+    /** Filled circle - a roundabout's ring of road. */
+    disc(centre, radiusM, segments = CIRCLE_SEGMENTS) {
+        for (let i = 0; i < segments; i += 1) {
+            const a0 = (i / segments) * Math.PI * 2;
+            const a1 = ((i + 1) / segments) * Math.PI * 2;
+            this.triangle(
+                centre,
+                { x: centre.x + Math.cos(a0) * radiusM, y: centre.y + Math.sin(a0) * radiusM },
+                { x: centre.x + Math.cos(a1) * radiusM, y: centre.y + Math.sin(a1) * radiusM }
+            );
+        }
+    }
+
     quad(a, b, c, d) {
         this.positions.push(a.x, 0, a.y, b.x, 0, b.y, c.x, 0, c.y, a.x, 0, a.y, c.x, 0, c.y, d.x, 0, d.y);
     }
@@ -1262,6 +1318,19 @@ function pushKerbBlock(positions, start, end, halfWidthM, heightM) {
     quad(s2, e2, e2b, s2b);
     quad(s1b, s1, s2, s2b);
     quad(e1, e1b, e2b, e2);
+}
+
+/** A roundabout's raised island - a kerb-height drum: its top and its round side. */
+function pushIsland(positions, centre, radiusM, heightM, segments = CIRCLE_SEGMENTS) {
+    const at = (i, y) => {
+        const angle = (i / segments) * Math.PI * 2;
+        return [centre.x + Math.cos(angle) * radiusM, y, centre.y + Math.sin(angle) * radiusM];
+    };
+    const top = [centre.x, heightM, centre.y];
+    for (let i = 0; i < segments; i += 1) {
+        positions.push(...top, ...at(i + 1, heightM), ...at(i, heightM));
+        positions.push(...at(i, 0), ...at(i, heightM), ...at(i + 1, heightM), ...at(i, 0), ...at(i + 1, heightM), ...at(i + 1, 0));
+    }
 }
 
 function smoothstep(edge0, edge1, x) {

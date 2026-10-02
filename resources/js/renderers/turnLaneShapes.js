@@ -17,6 +17,8 @@ export function eachTurnLane(layout, callback) {
                     x: approach.stopCentre.x - h.x * backM + left.x * offsetM,
                     y: approach.stopCentre.y - h.y * backM + left.y * offsetM,
                 });
+                // Fed by a road joined on right before the junction: that road already has the turn lane's lane (corridor.js's `fedByJoin`).
+                if (approach.fedByJoin) continue;
                 for (const side of TURN_LANE_SIDES) {
                     const turnLane = approach.turnLanes?.[side];
                     if (turnLane) callback({ approach, node, side, turnLane, at });

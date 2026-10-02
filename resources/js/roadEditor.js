@@ -246,7 +246,8 @@ function turnLaneUnavailableReason(approach, side) {
     if (!engine.movementsAt(approach).includes(movement)) return `No ${movement} turn here`;
     if (side !== 'right') return null;
     // Only a two-way street's median-side turn lane needs room in the median.
-    const isArterial = approach.kind === 'arterial';
+    // A road arriving along the arterial's line has its own (connector) geometry, like a cross street.
+    const isArterial = approach.kind === 'arterial' && !approach.connectorId;
     const road = isArterial
         ? layout.arterials.find((a) => a.id === layout.nodesById.get(approach.nodeId).arterialId)
         : layout.connectors.find((c) => c.id === approach.connectorId);

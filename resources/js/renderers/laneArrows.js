@@ -44,7 +44,8 @@ function arrowLanes(approach) {
         .filter(({ lane }) => !approach.coveredLanes || approach.coveredLanes.includes(lane));
     for (const side of TURN_LANE_SIDES) {
         const turnLane = approach.turnLanes?.[side];
-        if (turnLane) lanes.push({ lane: side, distances: turnLaneArrowDistances(turnLane.lengthM) });
+        // On an approach fed by a joined road the turn lane runs on back along that road (corridor.js's `fedByJoin`), so it gets a full lane's arrows.
+        if (turnLane) lanes.push({ lane: side, distances: approach.fedByJoin ? ARROW_DISTANCES_M : turnLaneArrowDistances(turnLane.lengthM) });
     }
     return lanes;
 }

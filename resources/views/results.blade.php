@@ -90,13 +90,12 @@
         while it runs - the tab is not frozen, just busy.
     </div>
 
-    @if ($hasNonStationaryBatch)
-        <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
-            <strong class="font-semibold">Baseline not stationary.</strong>
-            The warm-up probe found at least one controller whose waits were still growing after its longest warm-up,
-            so these runs measure a network that is still loading up - read them as trends, not a steady-state comparison.
-        </div>
-    @endif
+    {{-- Always rendered: results.js toggles it after a batch or corridor change, which only swaps the partials. --}}
+    <div id="non-stationary-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85 {{ $hasNonStationaryBatch ? '' : 'hidden' }}">
+        <strong class="font-semibold">Baseline not stationary.</strong>
+        The warm-up probe found at least one controller whose waits were still growing after its longest warm-up,
+        so these runs measure a network that is still loading up - read them as trends, not a steady-state comparison.
+    </div>
 
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">

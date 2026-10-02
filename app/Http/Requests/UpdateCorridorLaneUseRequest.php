@@ -35,8 +35,8 @@ class UpdateCorridorLaneUseRequest extends FormRequest
             'approaches.*.turnLanes' => ['sometimes', 'array:'.$sides],
             'approaches.*.turnLanes.*' => ['array:lengthM,laneUse'],
             'approaches.*.turnLanes.*.lengthM' => ['required', 'numeric', 'gt:0', 'max:500'],
-            // A turn lane is for turning only - never straight.
-            'approaches.*.turnLanes.*.laneUse' => ['required', 'string', 'regex:/^(left|right|left_right)$/'],
+            // A turn lane has to turn - it may also go straight on (a flared lane), but never straight on alone.
+            'approaches.*.turnLanes.*.laneUse' => ['required', 'string', 'regex:/^(left|right|left_right|left_straight|straight_right|all)$/'],
         ];
     }
 }

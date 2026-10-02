@@ -24,6 +24,8 @@ class CorridorLaneUseEditor
     public function apply(stdClass $config, array $approaches): void
     {
         collect($approaches)->each(fn (array $approach) => match (true) {
+            // A connector's own approach - a cross street, or a road arriving along the arterial's line - is that connector's, whatever its direction.
+            ($approach['connectorId'] ?? null) !== null => $this->applyConnectorLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null, $approach['connectorId']),
             $approach['key'] === LaneUseApproach::Arterial->value => $this->applyArterialLaneUse($config, $approach['nodeId'], $approach['lanes'], $approach['turnLanes'] ?? null),
             $this->isTwoWayArterialDirection($config, $approach['nodeId'], $approach['key']) => $this->applyTwoWayArterialLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null),
             default => $this->applyConnectorLaneUse($config, $approach['nodeId'], $approach['key'], $approach['lanes'], $approach['turnLanes'] ?? null, $approach['connectorId'] ?? null),

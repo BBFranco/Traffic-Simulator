@@ -109,7 +109,8 @@ export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDem
     let offsetS = 0;
     nodeInfos.forEach((info, i) => {
         if (i > 0) {
-            const prevDistanceM = nodeInfos[i - 1].node.distanceToNextM ?? 0;
+            // Along the arterial, not the previous node's distanceToNextM - a roundabout or stop between two signals isn't in nodeInfos.
+            const prevDistanceM = info.node.sAlongM - nodeInfos[i - 1].node.sAlongM;
             offsetS += greenWaveOffset(prevDistanceM, targetSpeedMps) + startFromRestLagS(targetSpeedMps);
         }
         const greenDurations = splitCommonCycle(cycleLengthS, L, flowRatiosByNode[i]);

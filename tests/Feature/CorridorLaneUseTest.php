@@ -185,6 +185,15 @@ JSON;
             ->assertJsonValidationErrors(['approaches.0.turnLanes', 'approaches.0.turnLanes.left.laneUse']);
     }
 
+    public function test_a_turn_lane_may_also_go_straight(): void
+    {
+        $this->saveLaneUse([
+            ['nodeId' => 'n1', 'key' => 'arterial', 'lanes' => ['left', 'straight', 'straight'], 'turnLanes' => ['left' => ['lengthM' => 25, 'laneUse' => 'left_straight']]],
+        ])->assertOk();
+
+        $this->assertSame(['left' => ['lengthM' => 25, 'laneUse' => 'left_straight']], $this->savedConfig()['arterials'][0]['intersections'][0]['turnLanes']);
+    }
+
     public function test_a_two_way_arterial_keeps_lane_use_and_turn_lanes_per_direction(): void
     {
         $config = json_decode(self::TWO_WAY_GRID, false);
@@ -218,6 +227,23 @@ JSON;
         $this->assertSame(['southbound' => ['left', 'straight']], $saved['connectors'][0]['laneUse']['n1']);
         $this->assertSame(['northbound' => ['straight_right']], $saved['connectors'][1]['laneUse']['n1']);
         $this->assertSame(['northbound' => ['left' => ['lengthM' => 10, 'laneUse' => 'left']]], $saved['connectors'][1]['turnLanes']['n1']);
+    }
+
+    public function test_a_road_arriving_along_the_arterial_saves_its_approach_onto_itself(): void
+    {
+        $config = json_decode(self::TWO_WAY_GRID, false);
+        $config->connectors[] = (object) ['id' => 'one_way', 'lanes' => 3, 'twoWay' => false, 'direction' => 'eastbound', 'linksArterialNodes' => ['n1'], 'stubEndM' => 0];
+        $this->user->corridorLayouts()->create(['slug' => 'two-way', 'name' => 'Two-way · test', 'config' => $config, 'original_config' => $config]);
+
+        $this->actingAs($this->user)->putJson(route('corridors.lane-use.update', ['corridor' => 'two-way']), ['approaches' => [
+            ['nodeId' => 'n1', 'key' => 'eastbound', 'connectorId' => 'one_way', 'lanes' => ['straight', 'straight', 'right'], 'turnLanes' => ['right' => ['lengthM' => 30, 'laneUse' => 'right']]],
+        ]])->assertOk();
+
+        $saved = json_decode(json_encode($this->user->corridorLayouts()->firstWhere('slug', 'two-way')->config), true);
+
+        $this->assertArrayNotHasKey('laneUse', $saved['arterials'][0]['intersections'][0]);
+        $this->assertSame(['eastbound' => ['straight', 'straight', 'right']], $saved['connectors'][1]['laneUse']['n1']);
+        $this->assertSame(['eastbound' => ['right' => ['lengthM' => 30, 'laneUse' => 'right']]], $saved['connectors'][1]['turnLanes']['n1']);
     }
 
     public function test_a_right_turn_lane_on_an_undivided_two_way_arterial_is_rejected(): void

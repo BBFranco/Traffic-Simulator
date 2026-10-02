@@ -1,56 +1,363 @@
 {
     "id": "hatfield-realistic",
-    "sortOrder": 2,
-    "name": "Hatfield Grid · realistic network",
-    "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (two-way, to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - all three narrow to 1 + 1 two-way south of Burnett and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data.",
     "meta": {
-        "geometryUnits": "metres",
         "axes": "x increases east, y increases south (screen convention)",
+        "joins": "Where carriageways join (Jan Shoba's merge at Arcadia, Hilda into Duxbury, Jan Shoba's lane drop at Francis Baard, Duxbury at Jan Shoba where it becomes its own road to cross Lunnon and reach Lynnwood, Festival and Hilda at Burnett and Grosvenor at Arcadia, where they narrow, and Arcadia at Festival, Hilda and Grosvenor, where it changes) the corridor lists `joins`: cars reaching the end of one road drive straight onto the next. At each narrowing the kerb lane of the wider road is turn-only (Grosvenor southbound at Arcadia, Duxbury westbound at Jan Shoba as a short left-turn lane). The northbound lane of Hilda ends at Burnett because Hilda is one-way north of it. Where the Jan Shoba pair meets the divided road, the kerb lane each side tapers over 40 m (southbound a lane drop, northbound a lane gain); at Francis Baard the southbound kerb lane is left-turn only because the road drops to 3 lanes past it. The Lunnon turn roads merge into and peel off the Jan Shoba kerb lanes partway along it.",
+        "layout": "North to south: Stanza Bopape, Pretorius, Francis Baard, Arcadia, Park, Burnett, Prospect, South, then past Jan Shoba's 30 degree bend Duxbury, Lunnon, Lynnwood. West to east: Festival, Hilda, Grosvenor, Jan Shoba. Grosvenor, Hilda and Festival start at Stanza Bopape as T-junctions, South has a lane-wide median for 100 m either side of Jan Shoba. Duxbury's last 100 m west of Jan Shoba has a lane-wide median (eastbound: a left-turn lane and a straight-and-right lane); westbound from the 2 + 2 road east of it arrives in four lanes - left, straight, right, right. Park and Burnett carry on east of Jan Shoba as 1 + 1 two-way streets (Burnett with a lane-wide median, whose median-side lane at Jan Shoba turns right or goes straight on), and Park starts at Hilda (a T: it carries only the traffic that turns into it off Hilda, and Festival crosses no Park); Grosvenor ends at South and Festival at Prospect (T-junctions), and Hilda bends into Duxbury. South of Burnett, Festival and Hilda are 1 + 1 two-way streets, and so is Grosvenor south of Arcadia (50 km/h, an estimate). Arcadia runs from the western edge like the other streets and stops 20 m short of Jan Shoba. It changes at each of Festival, Hilda and Grosvenor: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, where it is the eastbound approach in its own right (2 straight lanes and a right-turn lane; westbound Arcadia traffic turns south onto Hilda there), a 2 + 2 divided road with a lane-wide median to Grosvenor, then 2 + 2 undivided. Arcadia counts as a side street, not an arterial, in the results. Prospect and Lunnon do not cross Jan Shoba: each half stops short of it and their lanes curve into and out of Jan Shoba as left-turn roads (no junction; merging cars give way, about 10% of Jan Shoba traffic turns off). East of Jan Shoba Duxbury turns 45 degrees right, crosses Lunnon, bends again to meet Lynnwood square on and carries on south of it as a 1 + 1 street. Streets that start at a T carry only the traffic that turns into them. Prospect and South meet Hilda and Grosvenor at roundabouts (36 m across, no signals; drivers give way to traffic coming round from the right and drive round the island), and Prospect & Festival is a 4-way stop.",
         "source": "ARTIS - Hatfield Realistic Traffic Network Reference Report (City of Tshwane Hatfield Metropolitan Node Precinct Plan for the road hierarchy and one-way system). Road existence, directionality and hierarchy are documented; lane counts, lane use and distances are ARTIS approximations.",
-        "layout": "North to south: Stanza Bopape, Pretorius, Francis Baard, Arcadia, Park, Burnett, Prospect, South, then past Jan Shoba's 30 degree bend Duxbury, Lunnon, Lynnwood. West to east: Festival, Hilda, Grosvenor, Jan Shoba. Grosvenor, Hilda and Festival start at Stanza Bopape as T-junctions; Grosvenor ends at South and Festival at Prospect (T-junctions), and Hilda bends into Duxbury. South of Burnett, Festival, Hilda and Grosvenor are 1 + 1 two-way streets (50 km/h, an estimate). Arcadia runs from the western edge like the other streets and stops 20 m short of Jan Shoba. Prospect and Lunnon do not cross Jan Shoba: each half stops short of it and their lanes curve into and out of Jan Shoba as left-turn roads (no junction; merging cars give way, about 10% of Jan Shoba traffic turns off). East of Jan Shoba Duxbury turns 45 degrees right, crosses Lunnon, bends again to meet Lynnwood square on and carries on south of it as a 1 + 1 street. Streets that start at a T carry only the traffic that turns into them.",
-        "distanceSource": "Festival-Hilda-Grosvenor-Jan Shoba 245 m (the northbound Jan Shoba carriageway 245 m past Grosvenor at Francis Baard and 243 m at Pretorius and Stanza, where it is a lane wider on its kerb side, the southbound one another 245 m east; they merge 70 m south of Arcadia). North-south: Stanza-Pretorius 275 and Pretorius-Francis Baard 164 from the report; Francis Baard-Arcadia, Arcadia-Park, Park-Burnett, Burnett-Prospect and Prospect-South 250 (estimates); South to the bend 100, bend to Duxbury 300, Duxbury-Lunnon 280, Lunnon-Lynnwood 320 (estimates, reusing the report's block lengths); Duxbury east turns 140 m past Jan Shoba (estimate).",
-        "directions": "Francis Baard and Park eastbound, Pretorius and Burnett westbound, Hilda southbound, Festival northbound. Jan Shoba north of Arcadia: the east carriageway southbound, the west one northbound (left-hand traffic), 4 lanes each north of Francis Baard and 3 south of it.",
-        "speeds": "Francis Baard, Pretorius, Lynnwood and Stanza Bopape 60 km/h; Jan Shoba, Grosvenor, Hilda and Festival 60 km/h (kept at the posted limit rather than the report's 50); every other street 50 km/h.",
-        "demandSource": "Sinusoidal fluctuation between min and max, 300 s period, following the report's demand hierarchy (high: Francis Baard, Pretorius, Jan Shoba, Lynnwood; medium: Burnett, Park, Grosvenor, Hilda, Festival, Stanza Bopape; lower: the rest). A simulation-demand hierarchy, not measured volumes. Pretorius, Francis Baard, Jan Shoba, Stanza Bopape, Grosvenor, Hilda and Festival ranges were narrowed (2026-09-25) so fixed-time and green wave reach a steady state: the original peaks oversaturated the M2 × Jan Shoba junctions under fixed timing and queues grew for hours. Hierarchy holds by total road volume (lanes × rate).",
+        "speeds": "Every road 60 km/h (raised from 50 on the minor streets 2026-10-02); roundabout entry/exit slips 40 km/h.",
         "laneUse": "Report section 22: kerb lane left + straight, inner lanes straight, median lane straight + right, minus any turn the junction does not offer (a one-way cross street only takes one of them). Pretorius & Jan Shoba has two left-turn lanes (report section 5). One entry per lane, kerb lane (leftmost, SA) first; a two-way street keys it by direction of travel.",
-        "joins": "Where carriageways join (Jan Shoba's merge at Arcadia, Hilda into Duxbury, Jan Shoba's lane drop at Francis Baard, Duxbury at Jan Shoba where it becomes its own road to cross Lunnon and reach Lynnwood, and Festival, Hilda and Grosvenor at Burnett where they narrow) the corridor lists `joins`: cars reaching the end of one road drive straight onto the next. At each narrowing the kerb lane of the wider road is turn-only (Grosvenor southbound at Burnett, Duxbury westbound at Jan Shoba as a short left-turn lane). The northbound lane of Hilda ends at Burnett because Hilda is one-way north of it. Where the Jan Shoba pair meets the divided road, the kerb lane each side tapers over 40 m (southbound a lane drop, northbound a lane gain); at Francis Baard the southbound kerb lane is left-turn only because the road drops to 3 lanes past it. The Lunnon turn roads merge into and peel off the Jan Shoba kerb lanes partway along it."
+        "directions": "Francis Baard and Park eastbound, Pretorius and Burnett westbound, Hilda southbound, Festival northbound. Jan Shoba north of Arcadia: the east carriageway southbound, the west one northbound (left-hand traffic), 4 lanes each north of Francis Baard and 3 south of it.",
+        "demandSource": "Sinusoidal fluctuation between min and max, 300 s period. Five arterials carry the network's through traffic - Stanza Bopape 3-8, Pretorius and Francis Baard 5-11, Lynnwood 3-9 and Jan Shoba 3-7 (2-5 on its one-way pair) vehicles per lane per minute - and every other street is a side street at 1-3. A simulation-demand hierarchy, not measured volumes. Saturation flow stays 1250 veh/h/lane everywhere: it is the rate the simulation's cars actually discharge from a queue (calibrated 2026-09-25), so it is the same on every road.",
+        "geometryUnits": "metres",
+        "distanceSource": "Festival-Hilda-Grosvenor-Jan Shoba 245 m (the northbound Jan Shoba carriageway 245 m past Grosvenor at Francis Baard and 243 m at Pretorius and Stanza, where it is a lane wider on its kerb side, the southbound one another 245 m east; they merge 70 m south of Arcadia). North-south: Stanza-Pretorius 275 and Pretorius-Francis Baard 164 from the report; Francis Baard-Arcadia, Arcadia-Park, Park-Burnett, Burnett-Prospect and Prospect-South 250 (estimates); South to the bend 100, bend to Duxbury 300, Duxbury-Lunnon 280, Lunnon-Lynnwood 320 (estimates, reusing the report's block lengths); Duxbury east turns 140 m past Jan Shoba (estimate)."
     },
+    "name": "Hatfield Grid · realistic network",
+    "joins": [
+        {
+            "to": "conn_jan_shoba_sb_merge:fwd",
+            "from": "conn_jan_shoba_sb:fwd"
+        },
+        {
+            "to": "conn_jan_shoba:fwd",
+            "from": "conn_jan_shoba_sb_merge:fwd"
+        },
+        {
+            "to": "conn_jan_shoba_nb_south:fwd",
+            "from": "conn_jan_shoba:rev"
+        },
+        {
+            "to": "conn_jan_shoba_nb:fwd",
+            "from": "conn_jan_shoba_nb_south:fwd"
+        },
+        {
+            "to": "conn_grosvenor_south:fwd",
+            "from": "conn_grosvenor:fwd"
+        },
+        {
+            "to": "conn_grosvenor:rev",
+            "from": "conn_grosvenor_south:rev"
+        },
+        {
+            "to": "conn_hilda_south:fwd",
+            "from": "conn_hilda:fwd"
+        },
+        {
+            "to": "conn_festival:fwd",
+            "from": "conn_festival_south:fwd"
+        },
+        {
+            "to": "conn_duxbury_west:fwd",
+            "from": "conn_hilda_south:fwd"
+        },
+        {
+            "to": "conn_hilda_south:rev",
+            "from": "conn_duxbury_west:rev"
+        },
+        {
+            "to": "conn_duxbury_east:fwd",
+            "from": "duxbury:fwd"
+        },
+        {
+            "to": "duxbury:rev",
+            "from": "conn_duxbury_east:rev"
+        },
+        {
+            "to": "conn_duxbury_south:fwd",
+            "from": "conn_duxbury_east:fwd"
+        },
+        {
+            "to": "conn_duxbury_east:rev",
+            "from": "conn_duxbury_south:rev"
+        },
+        {
+            "to": "conn_lunnon_w_on:fwd",
+            "from": "conn_lunnon_west:fwd"
+        },
+        {
+            "to": "conn_jan_shoba:rev",
+            "from": "conn_lunnon_w_on:fwd",
+            "toAtM": 580
+        },
+        {
+            "to": "conn_lunnon_w_off:fwd",
+            "from": "conn_jan_shoba:rev",
+            "share": 0.1,
+            "fromAtM": 460
+        },
+        {
+            "to": "conn_lunnon_west:rev",
+            "from": "conn_lunnon_w_off:fwd"
+        },
+        {
+            "to": "conn_lunnon_e_off:fwd",
+            "from": "conn_jan_shoba:fwd",
+            "share": 0.1,
+            "fromAtM": 1547.2
+        },
+        {
+            "to": "lunnon:fwd",
+            "from": "conn_lunnon_e_off:fwd"
+        },
+        {
+            "to": "conn_lunnon_e_on:fwd",
+            "from": "lunnon:rev"
+        },
+        {
+            "to": "conn_jan_shoba:fwd",
+            "from": "conn_lunnon_e_on:fwd",
+            "toAtM": 1667.2
+        },
+        {
+            "to": "conn_prospect_w_on:fwd",
+            "from": "prospect:fwd"
+        },
+        {
+            "to": "conn_jan_shoba:rev",
+            "from": "conn_prospect_w_on:fwd",
+            "toAtM": 1508.2
+        },
+        {
+            "to": "conn_prospect_w_off:fwd",
+            "from": "conn_jan_shoba:rev",
+            "share": 0.1,
+            "fromAtM": 1388.2
+        },
+        {
+            "to": "prospect:rev",
+            "from": "conn_prospect_w_off:fwd"
+        },
+        {
+            "to": "conn_prospect_e_off:fwd",
+            "from": "conn_jan_shoba:fwd",
+            "share": 0.1,
+            "fromAtM": 619
+        },
+        {
+            "to": "conn_prospect_east:fwd",
+            "from": "conn_prospect_e_off:fwd"
+        },
+        {
+            "to": "conn_prospect_e_on:fwd",
+            "from": "conn_prospect_east:rev"
+        },
+        {
+            "to": "conn_jan_shoba:fwd",
+            "from": "conn_prospect_e_on:fwd",
+            "toAtM": 739
+        },
+        {
+            "to": "conn_arcadia_oneway:fwd",
+            "from": "arcadia_west:fwd"
+        },
+        {
+            "to": "arcadia:fwd",
+            "from": "conn_arcadia_oneway:fwd"
+        },
+        {
+            "to": "conn_arcadia_east:fwd",
+            "from": "arcadia:fwd"
+        },
+        {
+            "to": "arcadia:rev",
+            "from": "conn_arcadia_east:rev"
+        },
+        {
+            "to": "conn_park_east:fwd",
+            "from": "park:fwd"
+        },
+        {
+            "to": "burnett:fwd",
+            "from": "conn_burnett_east:fwd"
+        },
+        {
+            "to": "south_janshoba_divided:fwd",
+            "from": "south:fwd"
+        },
+        {
+            "to": "south:rev",
+            "from": "south_janshoba_divided:rev"
+        },
+        {
+            "to": "conn_south_east:fwd",
+            "from": "south_janshoba_divided:fwd"
+        },
+        {
+            "to": "south_janshoba_divided:rev",
+            "from": "conn_south_east:rev"
+        },
+        {
+            "to": "duxbury:fwd",
+            "from": "conn_duxbury_west:fwd"
+        },
+        {
+            "to": "conn_duxbury_west:rev",
+            "from": "duxbury:rev"
+        }
+    ],
+    "tapers": [
+        {
+            "points": [
+                {
+                    "xM": 743.8,
+                    "yM": 760
+                },
+                {
+                    "xM": 743.8,
+                    "yM": 800
+                },
+                {
+                    "xM": 747.3,
+                    "yM": 760
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 726.3,
+                    "yM": 760
+                },
+                {
+                    "xM": 726.3,
+                    "yM": 800
+                },
+                {
+                    "xM": 722.8,
+                    "yM": 760
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 635,
+                    "yM": 1685.5
+                },
+                {
+                    "xM": 605,
+                    "yM": 1685.5
+                },
+                {
+                    "xM": 635,
+                    "yM": 1683.75
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 635,
+                    "yM": 1692.5
+                },
+                {
+                    "xM": 605,
+                    "yM": 1692.5
+                },
+                {
+                    "xM": 635,
+                    "yM": 1694.25
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 835,
+                    "yM": 1685.5
+                },
+                {
+                    "xM": 865,
+                    "yM": 1685.5
+                },
+                {
+                    "xM": 835,
+                    "yM": 1683.75
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 835,
+                    "yM": 1692.5
+                },
+                {
+                    "xM": 865,
+                    "yM": 1692.5
+                },
+                {
+                    "xM": 835,
+                    "yM": 1694.25
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 500.15,
+                    "yM": 1995.77
+                },
+                {
+                    "xM": 474.17,
+                    "yM": 1980.77
+                },
+                {
+                    "xM": 501.02,
+                    "yM": 1994.25
+                }
+            ]
+        },
+        {
+            "points": [
+                {
+                    "xM": 496.65,
+                    "yM": 2001.83
+                },
+                {
+                    "xM": 470.67,
+                    "yM": 1986.83
+                },
+                {
+                    "xM": 495.77,
+                    "yM": 2003.35
+                }
+            ]
+        }
+    ],
     "defaults": {
-        "laneWidthM": 3.5,
         "carLengthM": 4.5,
-        "crossStreetStubLengthM": 70,
+        "handedness": "left",
+        "laneWidthM": 3.5,
         "sensorMode": "inductive_loop",
         "connectorMode": "fixed",
-        "handedness": "left"
+        "crossStreetStubLengthM": 70
     },
     "arterials": [
         {
             "id": "stanza",
-            "name": "Stanza Bopape Street",
-            "shortName": "Stanza Bopape",
-            "targetSpeedKph": 60,
             "mode": "fixed",
+            "name": "Stanza Bopape Street",
+            "lanes": 4,
             "demand": {
-                "spawnRatePerLanePerMinMin": 2,
-                "spawnRatePerLanePerMinMax": 6,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 8,
+                "spawnRatePerLanePerMinMin": 3,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
-            "direction": "eastbound",
-            "lanes": 4,
             "origin": {
                 "xM": 0,
                 "yM": 0
             },
-            "approachLengthM": 250,
+            "direction": "eastbound",
+            "shortName": "Stanza Bopape",
             "exitLengthM": 250,
             "medianWidthM": 3.5,
             "intersections": [
                 {
                     "id": "stanza_festival",
                     "name": "Stanza Bopape & Festival",
-                    "distanceToNextM": 245,
                     "laneUse": {
                         "eastbound": [
                             "straight",
@@ -60,12 +367,12 @@
                             "straight",
                             "straight"
                         ]
-                    }
+                    },
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "stanza_hilda",
                     "name": "Stanza Bopape & Hilda",
-                    "distanceToNextM": 245,
                     "laneUse": {
                         "eastbound": [
                             "straight",
@@ -75,12 +382,20 @@
                             "left_straight",
                             "straight"
                         ]
-                    }
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 40
+                            }
+                        }
+                    },
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "stanza_grosvenor",
                     "name": "Stanza Bopape & Grosvenor",
-                    "distanceToNextM": 243,
                     "laneUse": {
                         "eastbound": [
                             "straight",
@@ -90,22 +405,45 @@
                             "left_straight",
                             "straight"
                         ]
-                    }
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 40
+                            }
+                        }
+                    },
+                    "distanceToNextM": 243
                 },
                 {
                     "id": "stanza_janshoba_nb",
                     "name": "Stanza Bopape & Jan Shoba (northbound)",
-                    "distanceToNextM": 247,
                     "laneUse": {
                         "eastbound": [
-                            "left_straight",
+                            "straight",
                             "straight"
                         ],
                         "westbound": [
                             "straight",
-                            "straight_right"
+                            "straight"
                         ]
-                    }
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "left": {
+                                "laneUse": "left",
+                                "lengthM": 40
+                            }
+                        },
+                        "westbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 20
+                            }
+                        }
+                    },
+                    "distanceToNextM": 247
                 },
                 {
                     "id": "stanza_janshoba_sb",
@@ -116,78 +454,92 @@
                             "straight_right"
                         ],
                         "westbound": [
-                            "left_straight",
+                            "straight",
                             "straight"
                         ]
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 40
+                            }
+                        },
+                        "westbound": {
+                            "left": {
+                                "laneUse": "left",
+                                "lengthM": 20
+                            }
+                        }
                     }
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250
         },
         {
             "id": "pretorius",
-            "name": "Pretorius Street",
-            "shortName": "Pretorius",
-            "targetSpeedKph": 60,
             "mode": "fixed",
+            "name": "Pretorius Street",
+            "lanes": 4,
             "demand": {
-                "spawnRatePerLanePerMinMin": 4,
-                "spawnRatePerLanePerMinMax": 10,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 11,
+                "spawnRatePerLanePerMinMin": 5,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": true,
-            "direction": "westbound",
-            "lanes": 4,
             "origin": {
                 "xM": 980,
                 "yM": 275
             },
-            "approachLengthM": 250,
+            "direction": "westbound",
+            "shortName": "Pretorius",
             "exitLengthM": 250,
             "intersections": [
                 {
                     "id": "pt_janshoba_sb",
                     "name": "Pretorius & Jan Shoba (southbound)",
-                    "distanceToNextM": 247,
                     "laneUse": [
                         "left",
-                        "left",
+                        "left_straight",
                         "straight",
                         "straight"
-                    ]
+                    ],
+                    "distanceToNextM": 247
                 },
                 {
                     "id": "pt_janshoba_nb",
                     "name": "Pretorius & Jan Shoba (northbound)",
-                    "distanceToNextM": 243,
                     "laneUse": [
                         "straight",
                         "straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "distanceToNextM": 243
                 },
                 {
                     "id": "pt_grosvenor",
                     "name": "Pretorius & Grosvenor",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "pt_hilda",
                     "name": "Pretorius & Hilda",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight",
                         "straight"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "pt_festival",
@@ -199,76 +551,82 @@
                         "straight_right"
                     ]
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250
         },
         {
             "id": "francisbaard",
-            "name": "Francis Baard Street",
-            "shortName": "Francis Baard",
-            "targetSpeedKph": 60,
             "mode": "fixed",
+            "name": "Francis Baard Street",
+            "lanes": 4,
             "demand": {
-                "spawnRatePerLanePerMinMin": 4,
-                "spawnRatePerLanePerMinMax": 10,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 11,
+                "spawnRatePerLanePerMinMin": 5,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": true,
-            "direction": "eastbound",
-            "lanes": 4,
             "origin": {
                 "xM": 0,
                 "yM": 439
             },
-            "approachLengthM": 250,
+            "direction": "eastbound",
+            "shortName": "Francis Baard",
             "exitLengthM": 250,
             "intersections": [
                 {
                     "id": "fb_festival",
                     "name": "Francis Baard & Festival",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight",
                         "straight"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "fb_hilda",
                     "name": "Francis Baard & Hilda",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "straight",
                         "straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "fb_grosvenor",
                     "name": "Francis Baard & Grosvenor",
-                    "distanceToNextM": 245,
                     "laneUse": [
-                        "left_straight",
+                        "left",
                         "straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "fb_janshoba_nb",
                     "name": "Francis Baard & Jan Shoba (northbound)",
-                    "distanceToNextM": 245,
-                    "stopLineBackM": {
-                        "arterial": 4
-                    },
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight",
                         "straight"
-                    ]
+                    ],
+                    "turnLanes": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 40
+                        }
+                    },
+                    "stopLineBackM": {
+                        "arterial": 4
+                    },
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "fb_janshoba_sb",
@@ -277,62 +635,79 @@
                         "straight",
                         "straight",
                         "straight",
-                        "straight_right"
+                        "straight"
                     ]
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250
         },
         {
-            "id": "arcadia",
-            "name": "Arcadia Street",
-            "shortName": "Arcadia",
-            "targetSpeedKph": 50,
+            "id": "arcadia_west",
             "mode": "fixed",
+            "name": "Arcadia Street",
+            "lanes": 2,
+            "scope": "side",
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 4,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
-            "direction": "eastbound",
-            "lanes": 4,
             "origin": {
                 "xM": 0,
                 "yM": 689
             },
-            "approachLengthM": 250,
-            "exitLengthM": 213,
+            "direction": "eastbound",
+            "shortName": "Arcadia",
+            "exitLengthM": 6.25,
             "intersections": [
                 {
                     "id": "arcadia_festival",
                     "name": "Arcadia & Festival",
-                    "distanceToNextM": 245,
                     "laneUse": {
                         "eastbound": [
-                            "left_straight",
-                            "straight"
-                        ],
-                        "westbound": [
-                            "straight",
-                            "straight_right"
+                            "left_straight"
                         ]
                     }
-                },
+                }
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250
+        },
+        {
+            "id": "arcadia",
+            "mode": "fixed",
+            "name": "Arcadia Street",
+            "lanes": 4,
+            "scope": "side",
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "oneWay": false,
+            "origin": {
+                "xM": 245,
+                "yM": 689
+            },
+            "direction": "eastbound",
+            "shortName": "Arcadia",
+            "exitLengthM": 9.75,
+            "medianWidthM": 3.5,
+            "intersections": [
                 {
                     "id": "arcadia_hilda",
                     "name": "Arcadia & Hilda",
-                    "distanceToNextM": 245,
                     "laneUse": {
-                        "eastbound": [
-                            "straight",
-                            "straight_right"
-                        ],
                         "westbound": [
-                            "left_straight",
-                            "straight"
+                            "left",
+                            "left"
                         ]
-                    }
+                    },
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "arcadia_grosvenor",
@@ -346,162 +721,158 @@
                             "left_straight",
                             "straight_right"
                         ]
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 40
+                            }
+                        }
                     }
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 0
         },
         {
             "id": "park",
-            "name": "Park Street",
-            "shortName": "Park",
-            "targetSpeedKph": 50,
             "mode": "fixed",
+            "name": "Park Street",
+            "lanes": 3,
             "demand": {
-                "spawnRatePerLanePerMinMin": 2,
-                "spawnRatePerLanePerMinMax": 8,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": true,
-            "direction": "eastbound",
-            "lanes": 3,
             "origin": {
-                "xM": 0,
+                "xM": 245,
                 "yM": 939
             },
-            "approachLengthM": 250,
-            "exitLengthM": 250,
+            "direction": "eastbound",
+            "shortName": "Park",
+            "exitLengthM": 0,
             "intersections": [
-                {
-                    "id": "park_festival",
-                    "name": "Park & Festival",
-                    "distanceToNextM": 245,
-                    "laneUse": [
-                        "left_straight",
-                        "straight",
-                        "straight"
-                    ]
-                },
                 {
                     "id": "park_hilda",
                     "name": "Park & Hilda",
-                    "distanceToNextM": 245,
-                    "laneUse": [
-                        "straight",
-                        "straight",
-                        "straight_right"
-                    ]
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "park_grosvenor",
                     "name": "Park & Grosvenor",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "park_janshoba",
                     "name": "Park & Jan Shoba",
                     "laneUse": [
-                        "left_straight",
+                        "left",
                         "straight",
-                        "straight_right"
+                        "right"
                     ]
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 0,
+            "scope": "side"
         },
         {
             "id": "burnett",
-            "name": "Burnett Street",
-            "shortName": "Burnett",
-            "targetSpeedKph": 50,
             "mode": "fixed",
+            "name": "Burnett Street",
+            "lanes": 3,
             "demand": {
-                "spawnRatePerLanePerMinMin": 2,
-                "spawnRatePerLanePerMinMax": 8,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": true,
-            "direction": "westbound",
-            "lanes": 3,
             "origin": {
                 "xM": 735,
                 "yM": 1189
             },
-            "approachLengthM": 250,
+            "direction": "westbound",
+            "shortName": "Burnett",
             "exitLengthM": 250,
             "intersections": [
                 {
                     "id": "burnett_janshoba",
                     "name": "Burnett & Jan Shoba",
-                    "distanceToNextM": 245,
-                    "laneUse": [
-                        "left_straight",
-                        "straight",
-                        "straight_right"
-                    ]
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "burnett_grosvenor",
                     "name": "Burnett & Grosvenor",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "burnett_hilda",
                     "name": "Burnett & Hilda",
-                    "distanceToNextM": 245,
                     "laneUse": [
                         "left_straight",
                         "straight",
                         "straight"
-                    ]
+                    ],
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "burnett_festival",
                     "name": "Burnett & Festival",
                     "laneUse": [
-                        "straight",
+                        "left_straight",
                         "straight",
                         "straight_right"
-                    ]
+                    ],
+                    "turnLanes": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 20
+                        }
+                    }
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 0,
+            "scope": "side"
         },
         {
             "id": "prospect",
-            "name": "Prospect Street",
-            "shortName": "Prospect",
-            "targetSpeedKph": 50,
             "mode": "fixed",
+            "name": "Prospect Street",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
-            "direction": "eastbound",
-            "lanes": 2,
             "origin": {
                 "xM": 0,
                 "yM": 1439
             },
-            "approachLengthM": 250,
+            "direction": "eastbound",
+            "shortName": "Prospect",
             "exitLengthM": 220,
             "intersections": [
                 {
                     "id": "prospect_festival",
                     "name": "Prospect & Festival",
-                    "distanceToNextM": 245,
+                    "control": "allWayStop",
                     "laneUse": {
                         "eastbound": [
                             "left_straight"
@@ -509,12 +880,13 @@
                         "westbound": [
                             "straight_right"
                         ]
-                    }
+                    },
+                    "distanceToNextM": 245
                 },
                 {
                     "id": "prospect_hilda",
                     "name": "Prospect & Hilda",
-                    "distanceToNextM": 245,
+                    "control": "roundabout",
                     "laneUse": {
                         "eastbound": [
                             "all"
@@ -522,11 +894,14 @@
                         "westbound": [
                             "all"
                         ]
-                    }
+                    },
+                    "distanceToNextM": 245,
+                    "roundaboutDiameterM": 36
                 },
                 {
                     "id": "prospect_grosvenor",
                     "name": "Prospect & Grosvenor",
+                    "control": "roundabout",
                     "laneUse": {
                         "eastbound": [
                             "all"
@@ -534,36 +909,38 @@
                         "westbound": [
                             "all"
                         ]
-                    }
+                    },
+                    "roundaboutDiameterM": 36
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250,
+            "scope": "side"
         },
         {
             "id": "south",
-            "name": "South Street",
-            "shortName": "South",
-            "targetSpeedKph": 50,
             "mode": "fixed",
+            "name": "South Street",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
-            "direction": "eastbound",
-            "lanes": 2,
             "origin": {
                 "xM": 245,
                 "yM": 1689
             },
-            "approachLengthM": 250,
-            "exitLengthM": 250,
+            "direction": "eastbound",
+            "shortName": "South",
+            "exitLengthM": 145,
             "intersections": [
                 {
                     "id": "south_hilda",
                     "name": "South & Hilda",
-                    "distanceToNextM": 245,
+                    "control": "roundabout",
                     "laneUse": {
                         "eastbound": [
                             "all"
@@ -571,12 +948,14 @@
                         "westbound": [
                             "all"
                         ]
-                    }
+                    },
+                    "distanceToNextM": 245,
+                    "roundaboutDiameterM": 36
                 },
                 {
                     "id": "south_grosvenor",
                     "name": "South & Grosvenor",
-                    "distanceToNextM": 245,
+                    "control": "roundabout",
                     "laneUse": {
                         "eastbound": [
                             "left_straight"
@@ -584,8 +963,36 @@
                         "westbound": [
                             "straight_right"
                         ]
-                    }
-                },
+                    },
+                    "distanceToNextM": null,
+                    "roundaboutDiameterM": 36
+                }
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250,
+            "scope": "side"
+        },
+        {
+            "id": "south_janshoba_divided",
+            "mode": "fixed",
+            "name": "South Street",
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "oneWay": false,
+            "origin": {
+                "xM": 735,
+                "yM": 1689
+            },
+            "direction": "eastbound",
+            "shortName": "South",
+            "exitLengthM": 100,
+            "medianWidthM": 3.5,
+            "intersections": [
                 {
                     "id": "south_janshoba",
                     "name": "South & Jan Shoba",
@@ -596,79 +1003,90 @@
                         "westbound": [
                             "all"
                         ]
-                    }
-                }
-            ]
-        },
-        {
-            "id": "duxbury",
-            "name": "Duxbury Road",
-            "shortName": "Duxbury",
-            "targetSpeedKph": 50,
-            "mode": "fixed",
-            "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
-                "fluctuationPeriodS": 300,
-                "saturationFlowPerLanePerHour": 1250
-            },
-            "oneWay": false,
-            "direction": "eastbound",
-            "headingDeg": 120,
-            "lanes": 2,
-            "origin": {
-                "xM": 585,
-                "yM": 2048.8
-            },
-            "approachLengthM": 353,
-            "exitLengthM": 9.75,
-            "intersections": [
-                {
-                    "id": "duxbury_janshoba",
-                    "name": "Duxbury & Jan Shoba",
-                    "stopLineBackM": {
-                        "cross": 4
-                    },
-                    "laneUse": {
-                        "eastbound": [
-                            "all"
-                        ],
-                        "westbound": [
-                            "straight_right"
-                        ]
                     },
                     "turnLanes": {
+                        "eastbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 20
+                            }
+                        },
                         "westbound": {
-                            "left": {
-                                "lengthM": 1,
-                                "laneUse": "left"
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 10
                             }
                         }
                     }
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 100,
+            "scope": "side"
         },
         {
-            "id": "lunnon",
-            "name": "Lunnon Road",
-            "shortName": "Lunnon",
-            "targetSpeedKph": 50,
+            "id": "duxbury",
             "mode": "fixed",
+            "name": "Duxbury Road",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
+            "origin": {
+                "xM": 585,
+                "yM": 2048.8
+            },
             "direction": "eastbound",
+            "shortName": "Duxbury",
             "headingDeg": 120,
+            "exitLengthM": 0,
+            "medianWidthM": 3.5,
+            "intersections": [
+                {
+                    "id": "duxbury_janshoba",
+                    "name": "Duxbury & Jan Shoba",
+                    "laneUse": {
+                        "eastbound": [
+                            "straight_right"
+                        ]
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "left": {
+                                "laneUse": "left",
+                                "lengthM": 40
+                            }
+                        }
+                    }
+                }
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 100,
+            "scope": "side"
+        },
+        {
+            "id": "lunnon",
+            "mode": "fixed",
+            "name": "Lunnon Road",
             "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "oneWay": false,
             "origin": {
                 "xM": 808.7,
                 "yM": 2501.3
             },
-            "approachLengthM": 395,
+            "direction": "eastbound",
+            "shortName": "Lunnon",
+            "headingDeg": 120,
             "exitLengthM": 250,
             "intersections": [
                 {
@@ -681,48 +1099,75 @@
                         "westbound": [
                             "all"
                         ]
+                    },
+                    "stopLineBackM": {
+                        "cross": 10.5,
+                        "arterial": 7.5
                     }
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 395,
+            "scope": "side"
         },
         {
             "id": "lynnwood",
-            "name": "Lynnwood Road",
-            "shortName": "Lynnwood",
-            "targetSpeedKph": 60,
             "mode": "fixed",
+            "name": "Lynnwood Road",
+            "lanes": 4,
             "demand": {
-                "spawnRatePerLanePerMinMin": 2,
-                "spawnRatePerLanePerMinMax": 8,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 9,
+                "spawnRatePerLanePerMinMin": 3,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
-            "direction": "eastbound",
-            "headingDeg": 120,
-            "lanes": 4,
             "origin": {
                 "xM": 285,
                 "yM": 2568.4
             },
-            "approachLengthM": 250,
+            "direction": "eastbound",
+            "shortName": "Lynnwood",
+            "headingDeg": 120,
             "exitLengthM": 250,
             "medianWidthM": 3.5,
             "intersections": [
                 {
                     "id": "lynnwood_janshoba",
                     "name": "Lynnwood & Jan Shoba",
-                    "distanceToNextM": 561,
                     "laneUse": {
                         "eastbound": [
-                            "left_straight",
-                            "straight_right"
+                            "straight",
+                            "straight"
                         ],
                         "westbound": [
-                            "left_straight",
-                            "straight_right"
+                            "straight",
+                            "straight"
                         ]
-                    }
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "left": {
+                                "laneUse": "left",
+                                "lengthM": 20
+                            },
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 20
+                            }
+                        },
+                        "westbound": {
+                            "left": {
+                                "laneUse": "left",
+                                "lengthM": 20
+                            },
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 20
+                            }
+                        }
+                    },
+                    "distanceToNextM": 561
                 },
                 {
                     "id": "lynnwood_duxbury",
@@ -760,50 +1205,27 @@
                         }
                     }
                 }
-            ]
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 250
         }
     ],
+    "sortOrder": 2,
     "connectors": [
         {
             "id": "conn_jan_shoba_sb",
-            "name": "Jan Shoba",
-            "scope": "arterial",
-            "targetSpeedKph": 60,
-            "lanes": 4,
-            "twoWay": false,
-            "linksArterialNodes": [
-                "stanza_janshoba_sb",
-                "pt_janshoba_sb",
-                "fb_janshoba_sb"
-            ],
-            "stubStartM": 200,
-            "stubEndM": 8,
-            "crossChance": 0.2,
-            "turnChance": 0.18,
             "mode": "fixed",
+            "name": "Jan Shoba",
+            "lanes": 4,
+            "scope": "arterial",
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 3,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 8,
+                "spawnRatePerLanePerMinMin": 4,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": false,
             "laneUse": {
-                "stanza_janshoba_sb": {
-                    "southbound": [
-                        "left_straight",
-                        "straight",
-                        "straight",
-                        "straight_right"
-                    ]
-                },
-                "pt_janshoba_sb": {
-                    "southbound": [
-                        "straight",
-                        "straight",
-                        "straight",
-                        "straight_right"
-                    ]
-                },
                 "fb_janshoba_sb": {
                     "southbound": [
                         "left",
@@ -811,16 +1233,57 @@
                         "straight",
                         "straight"
                     ]
+                },
+                "pt_janshoba_sb": {
+                    "southbound": [
+                        "straight",
+                        "straight",
+                        "straight_right",
+                        "right"
+                    ]
+                },
+                "stanza_janshoba_sb": {
+                    "southbound": [
+                        "straight",
+                        "straight",
+                        "straight",
+                        "straight_right"
+                    ]
                 }
-            }
+            },
+            "stubEndM": 8,
+            "turnLanes": {
+                "fb_janshoba_sb": {
+                    "southbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 40
+                        }
+                    }
+                },
+                "stanza_janshoba_sb": {
+                    "southbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 10
+                        }
+                    }
+                }
+            },
+            "stubStartM": 200,
+            "turnChance": 0.18,
+            "crossChance": 0.2,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "stanza_janshoba_sb",
+                "pt_janshoba_sb",
+                "fb_janshoba_sb"
+            ]
         },
         {
             "id": "conn_jan_shoba_sb_merge",
+            "mode": "fixed",
             "name": "Jan Shoba",
-            "scope": "arterial",
-            "targetSpeedKph": 60,
-            "lanes": 3,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 978.3,
@@ -859,61 +1322,58 @@
                     "yM": 760
                 }
             ],
-            "crossChance": 0,
+            "lanes": 3,
+            "scope": "arterial",
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 60
         },
         {
             "id": "conn_jan_shoba_nb",
-            "name": "Jan Shoba",
-            "scope": "arterial",
-            "targetSpeedKph": 60,
-            "lanes": 4,
-            "twoWay": false,
-            "linksArterialNodes": [
-                "pt_janshoba_nb",
-                "stanza_janshoba_nb"
-            ],
-            "stubStartM": 156,
-            "stubEndM": 200,
-            "crossChance": 0.2,
-            "turnChance": 0.18,
             "mode": "fixed",
+            "name": "Jan Shoba",
+            "lanes": 4,
+            "scope": "arterial",
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 3,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 8,
+                "spawnRatePerLanePerMinMin": 4,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": false,
             "laneUse": {
+                "pt_janshoba_nb": {
+                    "northbound": [
+                        "left",
+                        "left_straight",
+                        "straight",
+                        "straight"
+                    ]
+                },
                 "stanza_janshoba_nb": {
                     "northbound": [
                         "left_straight",
                         "straight",
                         "straight",
-                        "straight_right"
-                    ]
-                },
-                "pt_janshoba_nb": {
-                    "northbound": [
-                        "left_straight",
-                        "straight",
-                        "straight",
-                        "straight"
+                        "right"
                     ]
                 }
-            }
+            },
+            "stubEndM": 200,
+            "stubStartM": 156,
+            "turnChance": 0.18,
+            "crossChance": 0.2,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "pt_janshoba_nb",
+                "stanza_janshoba_nb"
+            ]
         },
         {
             "id": "conn_jan_shoba_nb_south",
+            "mode": "fixed",
             "name": "Jan Shoba",
-            "scope": "arterial",
-            "targetSpeedKph": 60,
-            "lanes": 3,
-            "twoWay": false,
-            "linksArterialNodes": [
-                "fb_janshoba_nb"
-            ],
             "curve": [
                 {
                     "xM": 728,
@@ -952,15 +1412,15 @@
                     "yM": 431
                 }
             ],
-            "crossChance": 0.2,
-            "turnChance": 0.18,
-            "mode": "fixed",
+            "lanes": 3,
+            "scope": "arterial",
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 4,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 8,
+                "spawnRatePerLanePerMinMin": 4,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": false,
             "laneUse": {
                 "fb_janshoba_nb": {
                     "northbound": [
@@ -969,23 +1429,28 @@
                         "straight_right"
                     ]
                 }
-            }
+            },
+            "turnLanes": {
+                "fb_janshoba_nb": {
+                    "northbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 40
+                        }
+                    }
+                }
+            },
+            "turnChance": 0.18,
+            "crossChance": 0.2,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "fb_janshoba_nb"
+            ]
         },
         {
             "id": "conn_jan_shoba",
+            "mode": "fixed",
             "name": "Jan Shoba",
-            "scope": "arterial",
-            "targetSpeedKph": 60,
-            "lanes": 4,
-            "twoWay": true,
-            "medianWidthM": 3.5,
-            "linksArterialNodes": [
-                "park_janshoba",
-                "burnett_janshoba",
-                "south_janshoba",
-                "duxbury_janshoba",
-                "lynnwood_janshoba"
-            ],
             "curve": [
                 {
                     "xM": 735,
@@ -1016,64 +1481,64 @@
                     "yM": 2741.6
                 }
             ],
-            "crossChance": 0.2,
-            "turnChance": 0.18,
-            "mode": "fixed",
+            "lanes": 4,
+            "scope": "arterial",
             "demand": {
-                "spawnRatePerLanePerMinMin": 2,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 10,
+                "spawnRatePerLanePerMinMin": 5,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
                 "park_janshoba": {
-                    "southbound": [
-                        "left_straight",
-                        "straight"
-                    ],
                     "northbound": [
                         "straight",
                         "straight_right"
-                    ]
-                },
-                "burnett_janshoba": {
+                    ],
                     "southbound": [
                         "straight",
-                        "straight_right"
-                    ],
-                    "northbound": [
-                        "left_straight",
                         "straight"
                     ]
                 },
                 "south_janshoba": {
-                    "southbound": [
-                        "left_straight",
-                        "straight_right"
-                    ],
                     "northbound": [
                         "left_straight",
                         "straight_right"
+                    ],
+                    "southbound": [
+                        "left_straight",
+                        "straight_right"
+                    ]
+                },
+                "burnett_janshoba": {
+                    "northbound": [
+                        "straight",
+                        "straight"
+                    ],
+                    "southbound": [
+                        "straight",
+                        "straight"
                     ]
                 },
                 "duxbury_janshoba": {
-                    "southbound": [
-                        "left_straight",
-                        "straight_right"
-                    ],
                     "northbound": [
-                        "left_straight",
-                        "straight_right"
+                        "straight",
+                        "straight"
+                    ],
+                    "southbound": [
+                        "straight",
+                        "straight"
                     ]
                 },
                 "lynnwood_janshoba": {
-                    "southbound": [
-                        "left_straight",
-                        "straight_right"
-                    ],
                     "northbound": [
-                        "left_straight",
-                        "straight_right"
+                        "straight",
+                        "straight"
+                    ],
+                    "southbound": [
+                        "straight",
+                        "straight"
                     ]
                 }
             },
@@ -1081,217 +1546,272 @@
                 "park_janshoba": {
                     "northbound": {
                         "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                            "laneUse": "right",
+                            "lengthM": 40
                         }
-                    }
-                },
-                "burnett_janshoba": {
+                    },
                     "southbound": {
-                        "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 40
                         }
                     }
                 },
                 "south_janshoba": {
-                    "southbound": {
-                        "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
-                        }
-                    },
                     "northbound": {
                         "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                            "laneUse": "right",
+                            "lengthM": 40
+                        }
+                    },
+                    "southbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 40
+                        }
+                    }
+                },
+                "burnett_janshoba": {
+                    "northbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        }
+                    },
+                    "southbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        },
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 40
                         }
                     }
                 },
                 "duxbury_janshoba": {
-                    "southbound": {
+                    "northbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 40
+                        },
                         "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                            "laneUse": "right",
+                            "lengthM": 40
                         }
                     },
-                    "northbound": {
+                    "southbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        },
                         "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                            "laneUse": "right",
+                            "lengthM": 40
                         }
                     }
                 },
                 "lynnwood_janshoba": {
-                    "southbound": {
+                    "northbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        },
                         "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                            "laneUse": "right",
+                            "lengthM": 40
                         }
                     },
-                    "northbound": {
+                    "southbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        },
                         "right": {
-                            "lengthM": 40,
-                            "laneUse": "right"
+                            "laneUse": "right",
+                            "lengthM": 20
                         }
                     }
                 }
-            }
+            },
+            "turnChance": 0.18,
+            "crossChance": 0.2,
+            "medianWidthM": 3.5,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "park_janshoba",
+                "burnett_janshoba",
+                "south_janshoba",
+                "duxbury_janshoba",
+                "lynnwood_janshoba"
+            ]
         },
         {
             "id": "conn_grosvenor",
-            "name": "Grosvenor",
-            "targetSpeedKph": 60,
-            "lanes": 4,
-            "twoWay": true,
-            "linksArterialNodes": [
-                "stanza_grosvenor",
-                "pt_grosvenor",
-                "fb_grosvenor",
-                "arcadia_grosvenor",
-                "park_grosvenor",
-                "burnett_grosvenor"
-            ],
-            "stubStartM": 0,
-            "stubEndM": 6.25,
-            "crossChance": 0.15,
-            "turnChance": 0.15,
             "mode": "fixed",
+            "name": "Grosvenor",
+            "lanes": 4,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
+                "fb_grosvenor": {
+                    "northbound": [
+                        "straight",
+                        "right"
+                    ],
+                    "southbound": [
+                        "left_straight",
+                        "straight"
+                    ]
+                },
+                "pt_grosvenor": {
+                    "northbound": [
+                        "left",
+                        "straight"
+                    ],
+                    "southbound": [
+                        "straight",
+                        "right"
+                    ]
+                },
                 "stanza_grosvenor": {
                     "northbound": [
                         "left",
                         "right"
                     ]
                 },
-                "pt_grosvenor": {
-                    "southbound": [
-                        "straight",
-                        "straight_right"
-                    ],
-                    "northbound": [
-                        "left_straight",
-                        "straight"
-                    ]
-                },
-                "fb_grosvenor": {
-                    "southbound": [
-                        "left_straight",
-                        "straight"
-                    ],
-                    "northbound": [
-                        "straight",
-                        "straight_right"
-                    ]
-                },
                 "arcadia_grosvenor": {
                     "southbound": [
-                        "left_straight",
-                        "straight_right"
-                    ],
-                    "northbound": [
-                        "left_straight",
-                        "straight_right"
-                    ]
-                },
-                "park_grosvenor": {
-                    "southbound": [
-                        "left_straight",
-                        "straight"
-                    ],
-                    "northbound": [
-                        "straight",
-                        "straight_right"
-                    ]
-                },
-                "burnett_grosvenor": {
-                    "southbound": [
                         "left",
-                        "straight_right"
-                    ],
-                    "northbound": [
-                        "left_straight",
-                        "left_straight"
+                        "straight"
                     ]
                 }
-            }
+            },
+            "stubEndM": 0,
+            "turnLanes": {
+                "fb_grosvenor": {
+                    "northbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 60
+                        }
+                    }
+                },
+                "arcadia_grosvenor": {
+                    "southbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 20
+                        }
+                    }
+                }
+            },
+            "stubStartM": 0,
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "medianWidthM": 3.5,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "stanza_grosvenor",
+                "pt_grosvenor",
+                "fb_grosvenor",
+                "arcadia_grosvenor"
+            ]
         },
         {
             "id": "conn_grosvenor_south",
-            "name": "Grosvenor",
-            "targetSpeedKph": 50,
-            "lanes": 2,
-            "twoWay": true,
-            "linksArterialNodes": [
-                "prospect_grosvenor",
-                "south_grosvenor"
-            ],
-            "stubStartM": 243.75,
-            "stubEndM": 0,
-            "crossChance": 0.15,
-            "turnChance": 0.15,
             "mode": "fixed",
+            "name": "Grosvenor",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
-                "prospect_grosvenor": {
-                    "southbound": [
-                        "all"
-                    ],
+                "park_grosvenor": {
                     "northbound": [
-                        "all"
+                        "straight_right"
+                    ],
+                    "southbound": [
+                        "left_straight"
                     ]
                 },
                 "south_grosvenor": {
                     "southbound": [
                         "left_right"
                     ]
-                }
-            }
-        },
-        {
-            "id": "conn_hilda",
-            "name": "Hilda",
-            "targetSpeedKph": 60,
-            "lanes": 3,
-            "twoWay": false,
-            "linksArterialNodes": [
-                "stanza_hilda",
-                "pt_hilda",
-                "fb_hilda",
-                "arcadia_hilda",
-                "park_hilda",
-                "burnett_hilda"
-            ],
-            "stubStartM": 0,
-            "stubEndM": 6.25,
-            "crossChance": 0.15,
-            "turnChance": 0.15,
-            "mode": "fixed",
-            "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
-                "fluctuationPeriodS": 300,
-                "saturationFlowPerLanePerHour": 1250
-            },
-            "laneUse": {
-                "pt_hilda": {
+                },
+                "arcadia_grosvenor": {
+                    "northbound": [
+                        "straight"
+                    ]
+                },
+                "burnett_grosvenor": {
+                    "northbound": [
+                        "left_straight"
+                    ],
                     "southbound": [
-                        "straight",
-                        "straight",
                         "straight_right"
                     ]
                 },
+                "prospect_grosvenor": {
+                    "northbound": [
+                        "all"
+                    ],
+                    "southbound": [
+                        "all"
+                    ]
+                }
+            },
+            "stubEndM": 0,
+            "turnLanes": {
+                "arcadia_grosvenor": {
+                    "northbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        },
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 20
+                        }
+                    }
+                }
+            },
+            "stubStartM": 0,
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "medianWidthM": 3.5,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "arcadia_grosvenor",
+                "park_grosvenor",
+                "burnett_grosvenor",
+                "prospect_grosvenor",
+                "south_grosvenor"
+            ]
+        },
+        {
+            "id": "conn_hilda",
+            "mode": "fixed",
+            "name": "Hilda",
+            "lanes": 3,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": false,
+            "laneUse": {
                 "fb_hilda": {
                     "southbound": [
                         "left_straight",
@@ -1299,9 +1819,9 @@
                         "straight"
                     ]
                 },
-                "arcadia_hilda": {
+                "pt_hilda": {
                     "southbound": [
-                        "left_straight",
+                        "straight",
                         "straight",
                         "straight_right"
                     ]
@@ -1313,25 +1833,39 @@
                         "straight"
                     ]
                 },
+                "arcadia_hilda": {
+                    "southbound": [
+                        "left_straight",
+                        "straight",
+                        "straight"
+                    ]
+                },
                 "burnett_hilda": {
                     "southbound": [
                         "straight",
-                        "straight",
-                        "straight_right"
+                        "right",
+                        "right"
                     ]
                 }
-            }
+            },
+            "stubEndM": 6.25,
+            "stubStartM": 0,
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "stanza_hilda",
+                "pt_hilda",
+                "fb_hilda",
+                "arcadia_hilda",
+                "park_hilda",
+                "burnett_hilda"
+            ]
         },
         {
             "id": "conn_hilda_south",
+            "mode": "fixed",
             "name": "Hilda",
-            "targetSpeedKph": 50,
-            "lanes": 2,
-            "twoWay": true,
-            "linksArterialNodes": [
-                "prospect_hilda",
-                "south_hilda"
-            ],
             "curve": [
                 {
                     "xM": 245,
@@ -1354,152 +1888,181 @@
                     "yM": 1872.5
                 }
             ],
-            "crossChance": 0.15,
-            "turnChance": 0.15,
-            "mode": "fixed",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
-                "prospect_hilda": {
-                    "southbound": [
+                "south_hilda": {
+                    "northbound": [
                         "all"
                     ],
-                    "northbound": [
+                    "southbound": [
                         "all"
                     ]
                 },
-                "south_hilda": {
-                    "southbound": [
+                "prospect_hilda": {
+                    "northbound": [
                         "all"
                     ],
-                    "northbound": [
+                    "southbound": [
                         "all"
                     ]
                 }
-            }
+            },
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "prospect_hilda",
+                "south_hilda"
+            ]
         },
         {
             "id": "conn_festival",
-            "name": "Festival",
-            "targetSpeedKph": 60,
-            "lanes": 3,
-            "twoWay": false,
-            "linksArterialNodes": [
-                "burnett_festival",
-                "park_festival",
-                "arcadia_festival",
-                "fb_festival",
-                "pt_festival",
-                "stanza_festival"
-            ],
-            "stubStartM": 6.25,
-            "stubEndM": 0,
-            "crossChance": 0.15,
-            "turnChance": 0.15,
             "mode": "fixed",
+            "name": "Festival",
+            "lanes": 3,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": false,
             "laneUse": {
-                "stanza_festival": {
+                "fb_festival": {
                     "northbound": [
-                        "left",
-                        "left",
+                        "straight",
+                        "straight_right",
                         "right"
                     ]
                 },
                 "pt_festival": {
                     "northbound": [
+                        "left",
                         "left_straight",
-                        "straight",
                         "straight"
                     ]
                 },
-                "fb_festival": {
+                "stanza_festival": {
                     "northbound": [
-                        "straight",
-                        "straight",
-                        "straight_right"
+                        "left",
+                        "left_right",
+                        "right"
                     ]
                 },
                 "arcadia_festival": {
                     "northbound": [
                         "left_straight",
-                        "straight",
-                        "straight_right"
-                    ]
-                },
-                "park_festival": {
-                    "northbound": [
-                        "straight",
-                        "straight",
-                        "straight_right"
-                    ]
-                },
-                "burnett_festival": {
-                    "northbound": [
-                        "left_straight",
-                        "straight",
-                        "straight"
+                        "straight_right",
+                        "right"
                     ]
                 }
-            }
+            },
+            "stubEndM": 0,
+            "stubStartM": 0,
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "burnett_festival",
+                "arcadia_festival",
+                "fb_festival",
+                "pt_festival",
+                "stanza_festival"
+            ]
         },
         {
             "id": "conn_festival_south",
-            "name": "Festival",
-            "targetSpeedKph": 50,
-            "lanes": 2,
-            "twoWay": true,
-            "direction": "southbound",
-            "linksArterialNodes": [
-                "prospect_festival"
-            ],
-            "stubStartM": 243.75,
-            "stubEndM": 0,
-            "crossChance": 0.15,
-            "turnChance": 0.15,
             "mode": "fixed",
+            "name": "Festival",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
+                "burnett_festival": {
+                    "northbound": [
+                        "left_straight"
+                    ]
+                },
                 "prospect_festival": {
                     "southbound": [
                         "left_right"
                     ]
                 }
-            }
+            },
+            "stubEndM": 0,
+            "turnLanes": {
+                "burnett_festival": {
+                    "northbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 20
+                        }
+                    }
+                }
+            },
+            "stubStartM": 0,
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "prospect_festival",
+                "burnett_festival"
+            ]
+        },
+        {
+            "id": "conn_duxbury_west",
+            "mode": "fixed",
+            "name": "Duxbury",
+            "curve": [
+                {
+                    "xM": 279.29,
+                    "yM": 1872.3
+                },
+                {
+                    "xM": 388.85,
+                    "yM": 1935.55
+                },
+                {
+                    "xM": 498.4,
+                    "yM": 1998.8
+                }
+            ],
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60
         },
         {
             "id": "conn_duxbury_east",
+            "mode": "fixed",
             "name": "Duxbury",
-            "targetSpeedKph": 50,
-            "lanes": 4,
-            "twoWay": true,
-            "medianWidthM": 3.5,
-            "linksArterialNodes": [
-                "lunnon_duxbury",
-                "lynnwood_duxbury"
-            ],
             "curve": [
                 {
-                    "xM": 593.4,
-                    "yM": 2053.7
+                    "xM": 585,
+                    "yM": 2048.8
                 },
                 {
-                    "xM": 632.5,
-                    "yM": 2076.2
+                    "xM": 628.3,
+                    "yM": 2073.8
                 },
                 {
                     "xM": 671.6,
@@ -1538,24 +2101,29 @@
                     "yM": 2848.9
                 }
             ],
-            "crossChance": 0.15,
-            "turnChance": 0.15,
-            "mode": "fixed",
+            "lanes": 4,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
                 "lunnon_duxbury": {
                     "northbound": [
                         "left_straight",
-                        "straight_right"
+                        "straight"
                     ],
                     "southbound": [
                         "left_straight",
                         "straight_right"
+                    ]
+                },
+                "duxbury_janshoba": {
+                    "westbound": [
+                        "straight",
+                        "right"
                     ]
                 },
                 "lynnwood_duxbury": {
@@ -1566,6 +2134,32 @@
                 }
             },
             "turnLanes": {
+                "lunnon_duxbury": {
+                    "northbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 40
+                        }
+                    },
+                    "southbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 40
+                        }
+                    }
+                },
+                "duxbury_janshoba": {
+                    "westbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 40
+                        },
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 40
+                        }
+                    }
+                },
                 "lynnwood_duxbury": {
                     "southbound": {
                         "right": {
@@ -1574,17 +2168,21 @@
                         }
                     }
                 }
-            }
+            },
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "medianWidthM": 3.5,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "duxbury_janshoba",
+                "lunnon_duxbury",
+                "lynnwood_duxbury"
+            ]
         },
         {
             "id": "conn_duxbury_south",
+            "mode": "fixed",
             "name": "Duxbury",
-            "targetSpeedKph": 50,
-            "lanes": 2,
-            "twoWay": true,
-            "linksArterialNodes": [
-                "lynnwood_duxbury"
-            ],
             "curve": [
                 {
                     "xM": 770.84,
@@ -1599,15 +2197,14 @@
                     "yM": 3072.6
                 }
             ],
-            "crossChance": 0.15,
-            "turnChance": 0.15,
-            "mode": "fixed",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
             },
+            "twoWay": true,
             "laneUse": {
                 "lynnwood_duxbury": {
                     "northbound": [
@@ -1620,18 +2217,22 @@
                     "northbound": {
                         "left": {
                             "laneUse": "left",
-                            "lengthM": 10
+                            "lengthM": 20
                         }
                     }
                 }
-            }
+            },
+            "turnChance": 0.15,
+            "crossChance": 0.15,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "lynnwood_duxbury"
+            ]
         },
         {
             "id": "conn_lunnon_west",
+            "mode": "fixed",
             "name": "Lunnon",
-            "targetSpeedKph": 50,
-            "lanes": 2,
-            "twoWay": true,
             "curve": [
                 {
                     "xM": 228.5,
@@ -1646,22 +2247,22 @@
                     "yM": 2278.8
                 }
             ],
-            "crossChance": 0,
-            "turnChance": 0,
-            "mode": "fixed",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
-            }
+            },
+            "twoWay": true,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60
         },
         {
             "id": "conn_lunnon_w_on",
+            "mode": "fixed",
             "name": "Lunnon",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 424.2,
@@ -1676,16 +2277,16 @@
                     "yM": 2235.8
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_lunnon_w_off",
+            "mode": "fixed",
             "name": "Lunnon",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 408.9,
@@ -1700,16 +2301,16 @@
                     "yM": 2280.3
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_lunnon_e_off",
+            "mode": "fixed",
             "name": "Lunnon",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 481.1,
@@ -1724,16 +2325,16 @@
                     "yM": 2302.3
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_lunnon_e_on",
+            "mode": "fixed",
             "name": "Lunnon",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 465.8,
@@ -1748,16 +2349,16 @@
                     "yM": 2346.8
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_prospect_east",
+            "mode": "fixed",
             "name": "Prospect",
-            "targetSpeedKph": 50,
-            "lanes": 2,
-            "twoWay": true,
             "curve": [
                 {
                     "xM": 760,
@@ -1772,22 +2373,22 @@
                     "yM": 1439
                 }
             ],
-            "crossChance": 0,
-            "turnChance": 0,
-            "mode": "fixed",
+            "lanes": 2,
             "demand": {
-                "spawnRatePerLanePerMinMin": 1,
-                "spawnRatePerLanePerMinMax": 5,
                 "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
                 "saturationFlowPerLanePerHour": 1250
-            }
+            },
+            "twoWay": true,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60
         },
         {
             "id": "conn_prospect_w_on",
+            "mode": "fixed",
             "name": "Prospect",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 710,
@@ -1802,16 +2403,16 @@
                     "yM": 1379
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_prospect_w_off",
+            "mode": "fixed",
             "name": "Prospect",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 728,
@@ -1826,16 +2427,16 @@
                     "yM": 1440.8
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_prospect_e_off",
+            "mode": "fixed",
             "name": "Prospect",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 742,
@@ -1850,16 +2451,16 @@
                     "yM": 1437.3
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
             "id": "conn_prospect_e_on",
+            "mode": "fixed",
             "name": "Prospect",
-            "targetSpeedKph": 40,
-            "lanes": 1,
-            "twoWay": false,
             "curve": [
                 {
                     "xM": 760,
@@ -1874,177 +2475,176 @@
                     "yM": 1499
                 }
             ],
-            "crossChance": 0,
+            "lanes": 1,
+            "twoWay": false,
             "turnChance": 0,
-            "mode": "fixed"
-        }
-    ],
-    "joins": [
-        {
-            "from": "conn_jan_shoba_sb:fwd",
-            "to": "conn_jan_shoba_sb_merge:fwd"
+            "crossChance": 0,
+            "targetSpeedKph": 40
         },
         {
-            "from": "conn_jan_shoba_sb_merge:fwd",
-            "to": "conn_jan_shoba:fwd"
-        },
-        {
-            "from": "conn_jan_shoba:rev",
-            "to": "conn_jan_shoba_nb_south:fwd"
-        },
-        {
-            "from": "conn_jan_shoba_nb_south:fwd",
-            "to": "conn_jan_shoba_nb:fwd"
-        },
-        {
-            "from": "conn_grosvenor:fwd",
-            "to": "conn_grosvenor_south:fwd"
-        },
-        {
-            "from": "conn_grosvenor_south:rev",
-            "to": "conn_grosvenor:rev"
-        },
-        {
-            "from": "conn_hilda:fwd",
-            "to": "conn_hilda_south:fwd"
-        },
-        {
-            "from": "conn_festival_south:rev",
-            "to": "conn_festival:fwd"
-        },
-        {
-            "from": "conn_hilda_south:fwd",
-            "to": "duxbury:fwd"
-        },
-        {
-            "from": "duxbury:rev",
-            "to": "conn_hilda_south:rev"
-        },
-        {
-            "from": "duxbury:fwd",
-            "to": "conn_duxbury_east:fwd"
-        },
-        {
-            "from": "conn_duxbury_east:rev",
-            "to": "duxbury:rev"
-        },
-        {
-            "from": "conn_duxbury_east:fwd",
-            "to": "conn_duxbury_south:fwd"
-        },
-        {
-            "from": "conn_duxbury_south:rev",
-            "to": "conn_duxbury_east:rev"
-        },
-        {
-            "from": "conn_lunnon_west:fwd",
-            "to": "conn_lunnon_w_on:fwd"
-        },
-        {
-            "from": "conn_lunnon_w_on:fwd",
-            "to": "conn_jan_shoba:rev",
-            "toAtM": 580
-        },
-        {
-            "from": "conn_jan_shoba:rev",
-            "to": "conn_lunnon_w_off:fwd",
-            "fromAtM": 460,
-            "share": 0.1
-        },
-        {
-            "from": "conn_lunnon_w_off:fwd",
-            "to": "conn_lunnon_west:rev"
-        },
-        {
-            "from": "conn_jan_shoba:fwd",
-            "to": "conn_lunnon_e_off:fwd",
-            "fromAtM": 1547.2,
-            "share": 0.1
-        },
-        {
-            "from": "conn_lunnon_e_off:fwd",
-            "to": "lunnon:fwd"
-        },
-        {
-            "from": "lunnon:rev",
-            "to": "conn_lunnon_e_on:fwd"
-        },
-        {
-            "from": "conn_lunnon_e_on:fwd",
-            "to": "conn_jan_shoba:fwd",
-            "toAtM": 1667.2
-        },
-        {
-            "from": "prospect:fwd",
-            "to": "conn_prospect_w_on:fwd"
-        },
-        {
-            "from": "conn_prospect_w_on:fwd",
-            "to": "conn_jan_shoba:rev",
-            "toAtM": 1508.2
-        },
-        {
-            "from": "conn_jan_shoba:rev",
-            "to": "conn_prospect_w_off:fwd",
-            "fromAtM": 1388.2,
-            "share": 0.1
-        },
-        {
-            "from": "conn_prospect_w_off:fwd",
-            "to": "prospect:rev"
-        },
-        {
-            "from": "conn_jan_shoba:fwd",
-            "to": "conn_prospect_e_off:fwd",
-            "fromAtM": 619,
-            "share": 0.1
-        },
-        {
-            "from": "conn_prospect_e_off:fwd",
-            "to": "conn_prospect_east:fwd"
-        },
-        {
-            "from": "conn_prospect_east:rev",
-            "to": "conn_prospect_e_on:fwd"
-        },
-        {
-            "from": "conn_prospect_e_on:fwd",
-            "to": "conn_jan_shoba:fwd",
-            "toAtM": 739
-        }
-    ],
-    "tapers": [
-        {
-            "points": [
-                {
-                    "xM": 743.8,
-                    "yM": 760
-                },
-                {
-                    "xM": 743.8,
-                    "yM": 800
-                },
-                {
-                    "xM": 747.3,
-                    "yM": 760
+            "id": "conn_arcadia_oneway",
+            "mode": "fixed",
+            "name": "Arcadia",
+            "lanes": 3,
+            "twoWay": false,
+            "laneUse": {
+                "arcadia_hilda": {
+                    "eastbound": [
+                        "straight",
+                        "straight",
+                        "right"
+                    ]
                 }
+            },
+            "stubEndM": 0,
+            "direction": "eastbound",
+            "turnLanes": {
+                "arcadia_hilda": {
+                    "eastbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 20
+                        }
+                    }
+                }
+            },
+            "stubStartM": 238.75,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "arcadia_hilda"
             ]
         },
         {
-            "points": [
+            "id": "conn_arcadia_east",
+            "mode": "fixed",
+            "name": "Arcadia",
+            "curve": [
                 {
-                    "xM": 726.3,
-                    "yM": 760
+                    "xM": 499.75,
+                    "yM": 689
                 },
                 {
-                    "xM": 726.3,
-                    "yM": 800
+                    "xM": 601.4,
+                    "yM": 689
                 },
                 {
-                    "xM": 722.8,
-                    "yM": 760
+                    "xM": 703,
+                    "yM": 689
                 }
+            ],
+            "lanes": 4,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60
+        },
+        {
+            "id": "conn_park_east",
+            "mode": "fixed",
+            "name": "Park",
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "laneUse": {
+                "park_janshoba": {
+                    "westbound": [
+                        "left_right"
+                    ]
+                }
+            },
+            "stubEndM": 250,
+            "direction": "eastbound",
+            "stubStartM": 0,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "park_janshoba"
             ]
+        },
+        {
+            "id": "conn_burnett_east",
+            "mode": "fixed",
+            "name": "Burnett",
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "laneUse": {
+                "burnett_janshoba": {
+                    "westbound": [
+                        "left_straight"
+                    ]
+                }
+            },
+            "stubEndM": 0,
+            "direction": "westbound",
+            "turnLanes": {
+                "burnett_janshoba": {
+                    "westbound": {
+                        "right": {
+                            "laneUse": "straight_right",
+                            "lengthM": 30
+                        }
+                    }
+                }
+            },
+            "stubStartM": 250,
+            "turnChance": 0,
+            "crossChance": 0,
+            "medianWidthM": 3.5,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "burnett_janshoba"
+            ]
+        },
+        {
+            "id": "conn_south_east",
+            "mode": "fixed",
+            "name": "South",
+            "curve": [
+                {
+                    "xM": 835,
+                    "yM": 1689
+                },
+                {
+                    "xM": 910,
+                    "yM": 1689
+                },
+                {
+                    "xM": 985,
+                    "yM": 1689
+                }
+            ],
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 60
         }
-    ]
+    ],
+    "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (a side street: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, 2 + 2 divided to Grosvenor, then 2 + 2 to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - Festival and Hilda narrow to 1 + 1 two-way south of Burnett, Grosvenor south of Arcadia - and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data."
 }

@@ -123,6 +123,9 @@ const PALETTES = {
     },
 };
 
+/** Stop-sign red - like the lit lenses, the same in both themes. */
+const STOP_SIGN_RED = '#c81e1e';
+
 /** Bright lit-lens colours - universal traffic-light hues, not theme-dependent. */
 const LIT_LENS_COLOURS = ['#ef4444', '#f59e0b', '#22c55e'];
 
@@ -428,8 +431,9 @@ export class LayoutRenderer {
     eachRoad(callback) {
         for (const arterial of this.layout.arterials) {
             callback({
-                from: arterial.startPoint,
-                to: arterial.endPoint,
+                // Drawn only to the junction box edge where it hands over to another road there (corridor.js's drawHandOversAtBoxEdge()).
+                from: arterial.drawnStartPoint ?? arterial.startPoint,
+                to: arterial.drawnEndPoint ?? arterial.endPoint,
                 widthM: arterial.roadWidthM,
                 lanes: arterial.lanes,
                 laneWidthM: arterial.laneWidthM,
@@ -447,9 +451,10 @@ export class LayoutRenderer {
             });
         }
         for (const connector of this.layout.connectors) {
+            const { drawnStartPoint, drawnEndPoint } = connector;
             callback({
-                from: connector.startPoint,
-                to: connector.endPoint,
+                from: drawnStartPoint ?? connector.startPoint,
+                to: drawnEndPoint ?? connector.endPoint,
                 widthM: connector.roadWidthM,
                 lanes: connector.lanes,
                 laneWidthM: connector.laneWidthM,
@@ -458,7 +463,8 @@ export class LayoutRenderer {
                 heading: connector.heading,
                 // Set only for a curved connector (a ramp) - drawing code below
                 // strokes a polyline through these instead of one straight line.
-                curvePoints: connector.curve ? connector.curve.points : null,
+                // ...run back to the box edge where it takes over from an arterial's stub (drawHandOversAtBoxEdge()).
+                curvePoints: connector.curve ? [...(drawnStartPoint ? [drawnStartPoint] : []), ...connector.curve.points, ...(drawnEndPoint ? [drawnEndPoint] : [])] : null,
                 ref: connector,
                 kind: 'connector',
             });
@@ -708,9 +714,13 @@ export class LayoutRenderer {
         for (const arterial of this.layout.arterials) {
             if (arterial.curve) continue; // curved-road arrow placement is a follow-up polish, not load-bearing - see the matching connector skip below
             const offsets = laneCentreOffsetsFor(arterial.roadWidthM, arterial.lanes, !arterial.oneWay, arterial.laneWidthM);
-            this.arrowsAlong(arterial.startPoint, arterial.centrelineLengthM, arterial.heading, offsets, spacingM);
+            // Only along the road as drawn - not on a hand-over stub past a junction box (corridor.js's drawHandOversAtBoxEdge()).
+            const from = arterial.drawnStartPoint ?? arterial.startPoint;
+            const to = arterial.drawnEndPoint ?? arterial.endPoint;
+            const lengthM = Math.hypot(to.x - from.x, to.y - from.y);
+            this.arrowsAlong(from, lengthM, arterial.heading, offsets, spacingM);
             if (arterial.oneWay) continue;
-            this.arrowsAlong(arterial.endPoint, arterial.centrelineLengthM, { x: -arterial.heading.x, y: -arterial.heading.y }, offsets, spacingM);
+            this.arrowsAlong(to, lengthM, { x: -arterial.heading.x, y: -arterial.heading.y }, offsets, spacingM);
         }
         for (const connector of this.layout.connectors) {
             if (connector.curve) continue; // curved-ramp arrow placement is a follow-up polish, not load-bearing
@@ -785,7 +795,9 @@ export class LayoutRenderer {
                     ctx.restore();
                 }
 
-                if (scale > 2.4) {
+                if (node.control === 'roundabout') {
+                    this.drawRoundaboutCircle(node);
+                } else if (scale > 2.4) {
                     ctx.save();
                     ctx.strokeStyle = PALETTE.junctionInner;
                     ctx.lineWidth = 1;
@@ -795,6 +807,29 @@ export class LayoutRenderer {
                 }
             }
         }
+    }
+
+    /** A roundabout (corridor.js's node.roundabout): its circle of road over the approaches' ends, and the island cars drive round. */
+    drawRoundaboutCircle(node) {
+        const { ctx } = this;
+        const { scale } = this.camera;
+        const { radiusM, islandRadiusM } = node.roundabout;
+        const c = this.camera.toScreen(node.point);
+        ctx.save();
+        ctx.lineWidth = 1;
+        ctx.fillStyle = PALETTE.junction;
+        ctx.strokeStyle = PALETTE.junctionEdge;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, radiusM * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = PALETTE.median;
+        ctx.strokeStyle = PALETTE.asphaltEdge;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, Math.max(1.5, islandRadiusM * scale), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
     }
 
     pathRotatedRect(centre, axis, alongM, acrossM) {
@@ -824,20 +859,25 @@ export class LayoutRenderer {
         ctx.strokeStyle = PALETTE.stopLine;
         ctx.lineWidth = Math.min(5, Math.max(1.5, scale * 0.55));
         ctx.lineCap = 'butt';
-        ctx.beginPath();
-        for (const arterial of this.layout.arterials) {
-            for (const node of arterial.intersections) {
-                // A highway merge point (mode:"none") has no stop line at all.
-                if (this.dynamic.signals.get(node.id)?.freeFlow) continue;
-                for (const approach of node.approaches) {
-                    const a = this.camera.toScreen(approach.stopLine.a);
-                    const b = this.camera.toScreen(approach.stopLine.b);
-                    ctx.moveTo(a.x, a.y);
-                    ctx.lineTo(b.x, b.y);
+        const dashPx = Math.max(2, scale * 0.6);
+        for (const giveWay of [false, true]) {
+            ctx.setLineDash(giveWay ? [dashPx, dashPx] : []);
+            ctx.beginPath();
+            for (const arterial of this.layout.arterials) {
+                for (const node of arterial.intersections) {
+                    // A highway merge point (mode:"none") has no stop line at all.
+                    if (this.dynamic.signals.get(node.id)?.freeFlow) continue;
+                    if ((node.control === 'roundabout') !== giveWay) continue;
+                    for (const approach of node.approaches) {
+                        const a = this.camera.toScreen(approach.stopLine.a);
+                        const b = this.camera.toScreen(approach.stopLine.b);
+                        ctx.moveTo(a.x, a.y);
+                        ctx.lineTo(b.x, b.y);
+                    }
                 }
             }
+            ctx.stroke();
         }
-        ctx.stroke();
         ctx.restore();
     }
 
@@ -925,6 +965,11 @@ export class LayoutRenderer {
             for (const node of arterial.intersections) {
                 const signal = this.dynamic.signals.get(node.id) ?? null;
                 if (signal?.freeFlow) continue; // highway merge point - no signal housing to draw
+                if (node.control === 'roundabout') continue; // no signals - its painted circle and give-way lines say what it is
+                if (node.control === 'allWayStop') {
+                    for (const approach of node.approaches) this.drawStopSign(this.camera.toScreen(approach.signalHead), r * 1.6);
+                    continue;
+                }
 
                 for (const approach of node.approaches) {
                     const p = this.camera.toScreen(approach.signalHead);
@@ -955,6 +1000,28 @@ export class LayoutRenderer {
             }
         }
 
+        ctx.restore();
+    }
+
+    /** A stop sign - a small red octagon - where a signal head would stand, at a 4-way stop. */
+    drawStopSign(p, radiusPx) {
+        const { ctx } = this;
+        if (p.x < -radiusPx || p.y < -radiusPx || p.x > this.camera.viewport.width + radiusPx || p.y > this.camera.viewport.height + radiusPx) return;
+        ctx.save();
+        ctx.fillStyle = STOP_SIGN_RED;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < 8; i += 1) {
+            const angle = Math.PI / 8 + (i * Math.PI) / 4;
+            const x = p.x + Math.cos(angle) * radiusPx;
+            const y = p.y + Math.sin(angle) * radiusPx;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
     }
 

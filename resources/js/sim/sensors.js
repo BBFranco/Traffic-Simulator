@@ -44,6 +44,20 @@ export function readQueueLength(groundTruthCars, stopLineDistanceM, mode, rng) {
 }
 
 /**
+ * Is any stopped vehicle inside this sensor's window at all? Presence, unlike
+ * `readQueueLength()`'s count, is reliable even for radar - its noise blurs how
+ * many, not whether - so this draws no RNG and never flickers on a lone car.
+ *
+ * @returns boolean
+ */
+export function detectQueuePresence(groundTruthCars, stopLineDistanceM, mode) {
+    const windowM = SENSE_WINDOW_M[mode] ?? 0;
+    return groundTruthCars.some(
+        (c) => c.stoppedNow && stopLineDistanceM - c.distanceM <= windowM && stopLineDistanceM - c.distanceM >= 0
+    );
+}
+
+/**
  * Stop-line presence detector for gap-out timing - the small loop right at
  * the line that a real actuated signal always has regardless of whatever
  * advance/system detection (`mode` above) it also uses for queue estimates.

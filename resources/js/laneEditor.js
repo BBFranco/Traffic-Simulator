@@ -84,10 +84,10 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
         onChange(dirtyCount);
     }
 
-    /** Markings `lane` can take - only movements its junction actually offers (engine.movementsAt()); a turn lane never goes straight. */
+    /** Markings `lane` can take - only movements its junction actually offers (engine.movementsAt()); a turn lane has to turn (it may also go straight). */
     function optionsFor(approach, lane) {
         const possible = getEngine().movementsAt(approach);
-        return LANE_USE_OPTIONS.filter((moves) => moves.every((m) => possible.includes(m)) && (typeof lane === 'number' || !moves.includes('straight')));
+        return LANE_USE_OPTIONS.filter((moves) => moves.every((m) => possible.includes(m)) && (typeof lane === 'number' || moves.some((m) => m !== 'straight')));
     }
 
     /** Steps one lane's marking forward/back, skipping any that would leave the approach with no straight-ahead lane. */
