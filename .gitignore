@@ -31,3 +31,6 @@ Thumbs.db
 *.pt
 __pycache__/
 *.pyc
+
+# Local change history notes
+CHANGES-HISTORY.md
