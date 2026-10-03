@@ -1400,7 +1400,8 @@ function vehicleFillColour(car, randomEvents) {
 /** Lens index (0 red, 1 amber, 2 green) that should be lit for this approach, or -1 for unlit/dark. */
 export function litLensIndexFor(approach, signal) {
     if (!signal || signal.dark) return -1;
-    const green = approach.kind === 'arterial' ? signal.arterialGreen : signal.crossGreen;
+    // A lone lead approach's ball is green alongside its arrow (engine.js#_turnArrowFor).
+    const green = (approach.kind === 'arterial' ? signal.arterialGreen : signal.crossGreen) || Boolean(signal.turns?.[approach.id]?.through);
     const yellow = approach.kind === 'arterial' ? signal.arterialYellow : signal.crossYellow;
     if (green) return 2;
     if (yellow) return 1;

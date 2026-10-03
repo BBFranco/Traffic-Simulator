@@ -39,10 +39,10 @@ export function buildStages(turn) {
     return stages;
 }
 
-/** Each stage's flow ratio: the road's own for a through stage, the busiest turn lane's (times its weight - a busy turn is held longer) for a turn stage. */
+/** Each stage's flow ratio: the road's own for a through stage, the busiest turn lane's for a turn stage. Only real q goes into Webster - a turn's `weight` acts on its minimum green (minGreenOf()), not on its share. */
 export function stageRatios(stages, arterialDemand, crossDemand, turn) {
     const through = [flowRatio(arterialDemand), flowRatio(crossDemand)];
-    return stages.map((s) => (s.turn ? flowRatio(turn[s.phase].demand) * turn[s.phase].weight : through[s.phase]));
+    return stages.map((s) => (s.turn ? flowRatio(turn[s.phase].demand) : through[s.phase]));
 }
 
 export function lostTimeS(stages) {

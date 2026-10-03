@@ -95,6 +95,15 @@ const TURN_SPEED_KPH = { left: 18, right: 22 };
  * opposed turn at a signalised junction.
  */
 const ONCOMING_CRITICAL_GAP_S = 4.5;
+/**
+ * Right-turners who pull into the junction on a green ball to wait for their gap, then clear as the oncoming side
+ * stops - legal in SA, and a large part of a real right turn's capacity. At most this many per approach at once.
+ */
+const MAX_WAITING_IN_BOX = 2;
+/** Where along its turn path such a car waits - short of the oncoming lanes. */
+const BOX_WAIT_SHARE = 0.4;
+/** Backstop: a car that has waited in the box this long goes anyway, so a stuck signal can't lock it there. */
+const BOX_WAIT_MAX_S = 60;
 /** Comfortable braking a driver plans on when slowing for a turn (m/s^2) - the approach speed limit follows v^2 = vTurn^2 + 2*b*d. */
 const TURN_APPROACH_DECEL_MPS2 = 1.5;
 /** Shortest straight run into and out of a turn's corner (m) - keeps even a kerbside left turn a real curve, not a pivot. */
@@ -619,10 +628,19 @@ export class SimulationEngine {
             info.turnStages = [null, null];
             for (const { approach, movement, weight } of info.node.turnPhases ?? []) {
                 const gate = this.gatesByApproachId.get(approach.id);
-                gate.turnPhase = { movement };
+                gate.turnPhase = { movement, full: false };
                 const stage = (info.turnStages[gate.phase] ??= { gates: [], weight: 0 });
                 stage.gates.push(gate);
                 stage.weight = Math.max(stage.weight, weight);
+            }
+            // A lone lead (the approach opposite has no arrow of its own) runs its whole approach with the arrow - green ball
+            // and arrow together, the opposing side held so the turn is protected. Where both opposing approaches have
+            // arrows, only the turn lanes go (each side's through would cross the other's turn).
+            for (const stage of info.turnStages) {
+                for (const gate of stage?.gates ?? []) {
+                    const h = gate.approach.heading;
+                    gate.turnPhase.full = !stage.gates.some((other) => other !== gate && other.approach.heading.x * h.x + other.approach.heading.y * h.y < -0.5);
+                }
             }
         }
 
@@ -1227,12 +1245,18 @@ export class SimulationEngine {
                 arterialYellow: isYellow && !inTurn && info.controller.phase === 0,
                 crossGreen: !dark && info.controller.isCrossGreen(),
                 crossYellow: isYellow && !inTurn && info.controller.phase === 1,
-                /** Per approach with a protected turn, the state of its arrow: `{ [approachId]: { movement, green, yellow } }`. */
+                /** Per approach with a protected turn, the state of its arrow: `{ [approachId]: { movement, green, yellow, through } }`. */
                 turns: Object.fromEntries(
                     info.turnStages.flatMap((stage, phase) =>
                         (stage?.gates ?? []).map((gate) => [
                             gate.approach.id,
-                            { movement: gate.turnPhase.movement, green: !dark && Boolean(info.controller.turnGreen?.(phase)), yellow: !dark && Boolean(info.controller.turnYellow?.(phase)) },
+                            {
+                                movement: gate.turnPhase.movement,
+                                green: !dark && Boolean(info.controller.turnGreen?.(phase)),
+                                yellow: !dark && Boolean(info.controller.turnYellow?.(phase)),
+                                /** A lone lead approach's own through green, on alongside its arrow - see _turnArrowFor(). */
+                                through: !dark && gate.turnPhase.full && Boolean(info.controller.inTurn) && info.controller.phase === phase,
+                            },
                         ])
                     )
                 ),
@@ -2317,7 +2341,9 @@ export class SimulationEngine {
 
         const turnAhead = this.turningCars.some((c) => c.turnPath.key === pathKey && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (turnAhead || this._turnExitBlocked(landing.lanes, laneIndex, exitDistanceM, car.lengthM)) return false;
-        if (turnOption.movement === 'right' && this._oncomingConnectorBlocksTurn(connector, dirKey, node, gate)) return false;
+        const mustYield = turnOption.movement === 'right' ? () => this._oncomingConnectorBlocksTurn(connector, dirKey, node, gate) : null;
+        const waitInBox = Boolean(mustYield?.());
+        if (waitInBox && !this._mayWaitInBox(gate)) return false;
 
         const exit = lanePoint(landing.road, laneIndex, exitDistanceM);
         const path = buildTurnPath(from, fromHeading, exit.point, exit.heading);
@@ -2339,6 +2365,7 @@ export class SimulationEngine {
                     exitDistanceM,
                     movement: turnOption.movement,
                     speedLimitMps: turnSpeedMps(car, turnOption.movement),
+                    ...(waitInBox ? this._boxWait(path, gate, mustYield) : {}),
                 },
             })
         );
@@ -3223,12 +3250,20 @@ export class SimulationEngine {
         return Boolean(moves) && isTurnOnlyLane(moves, 'left');
     }
 
-    /** The protected turn's green arrow at `gate`, for a car in a lane that only makes that turn - everything else on the road waits for its through green. */
+    /**
+     * Released by `gate`'s protected turn stage: a car in a lane that only makes that turn while the arrow is green, and - on a
+     * lone lead approach (`turnPhase.full`) - every other lane of it for the whole stage, the arrow's clearance included, since
+     * its own through green carries straight on into the next stage. The rest of the road waits for its through green.
+     */
     _turnArrowFor(gate, car) {
         if (this._isSlipCar(gate, car)) return true;
-        if (!gate.turnPhase || !gate.info.controller.turnGreen?.(gate.phase)) return false;
+        const controller = gate.info.controller;
+        if (!gate.turnPhase || !controller.inTurn || controller.phase !== gate.phase) return false;
         const moves = gate.slotLaneUse?.[car.lane];
-        return Boolean(moves) && isTurnOnlyLane(moves, gate.turnPhase.movement);
+        if (moves && isTurnOnlyLane(moves, gate.turnPhase.movement)) return controller.phaseState === 'green';
+        if (!gate.turnPhase.full) return false;
+        // A shared-lane car making the protected turn only starts it while the arrow is green - not into the clearance before the other side goes.
+        return controller.phaseState === 'green' || car.turnPlan?.nodeId !== gate.node.id || car.turnPlan.movement !== gate.turnPhase.movement;
     }
 
     /** Resolves a single named gate (near or far linked node) to a virtual stationary obstacle if it currently blocks this car. */
@@ -3367,7 +3402,9 @@ export class SimulationEngine {
         // right off a two-way arterial, for a gap in the oncoming half.
         const turnAhead = this.turningCars.some((c) => c.turnPath.key === pathKey && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (turnAhead || this._turnExitBlocked(landing.lanes, laneIndex, exitDistanceM, car.lengthM)) return false;
-        if (movement === 'right' && this._oncomingArterialBlocksTurn(gate)) return false;
+        const mustYield = movement === 'right' ? () => this._oncomingArterialBlocksTurn(gate) : null;
+        const waitInBox = Boolean(mustYield?.());
+        if (waitInBox && !this._mayWaitInBox(gate)) return false;
 
         const exit = lanePoint(landing.road, laneIndex, exitDistanceM);
         const path = buildTurnPath(from, fromHeading, exit.point, exit.heading);
@@ -3389,6 +3426,7 @@ export class SimulationEngine {
                     movement,
                     exitDistanceM,
                     speedLimitMps: turnSpeedMps(car, movement),
+                    ...(waitInBox ? this._boxWait(path, gate, mustYield) : {}),
                 },
             })
         );
@@ -3465,6 +3503,23 @@ export class SimulationEngine {
      * waits at the end of the junction. At the end of its path a car joins its
      * cross-street lane, carrying on with any distance it overshot.
      */
+    /**
+     * May a right-turner with no gap yet pull into `gate`'s junction to wait for one: only on a green ball at a signal
+     * (an arrow holds the oncoming side, so there is always a gap then), and only while fewer than MAX_WAITING_IN_BOX
+     * from this approach are already waiting in there.
+     */
+    _mayWaitInBox(gate) {
+        if (!['fixed', 'greenWave', 'adaptive'].includes(gate.info.controllerType)) return false;
+        const controller = gate.info.controller;
+        if (!(gate.phase === 0 ? controller.isArterialGreen() : controller.isCrossGreen())) return false;
+        return this.turningCars.filter((c) => c.turnPath.boxWait?.gate === gate).length < MAX_WAITING_IN_BOX;
+    }
+
+    /** The turn-path fields that make a turning car stop partway into the box until `mustYield()` clears (see _stepTurningCars()). */
+    _boxWait(path, gate, mustYield) {
+        return { boxWait: { gate, atM: path.lengthM * BOX_WAIT_SHARE, mustYield, sinceS: this.simTimeS } };
+    }
+
     _stepTurningCars(dt) {
         if (!this.turningCars.length) return;
         this.turningCars.sort((a, b) => b.distanceM - a.distanceM);
@@ -3478,7 +3533,11 @@ export class SimulationEngine {
             const exitBlocked = this._turnExitBlocked(targetLanes, car.lane, path.exitDistanceM, car.lengthM);
             const pathEnd = exitBlocked ? { distanceM: path.lengthM, speedMps: 0 } : null;
             const ringLeader = path.ringNodeId ? this._ringLeader(car, onRings.get(path.ringNodeId)) : null;
-            const ahead = nearestAhead(nearestAhead(leaderByKey.get(path.key) ?? null, pathEnd), ringLeader);
+            // Waiting in the box for a gap: held short of the oncoming lanes until there is one - which the oncoming side
+            // stopping for its amber/red gives at the latest. Once it goes, it is committed.
+            if (path.boxWait && (!path.boxWait.mustYield() || this.simTimeS - path.boxWait.sinceS > BOX_WAIT_MAX_S)) path.boxWait = null;
+            const boxHold = path.boxWait ? { distanceM: path.boxWait.atM, speedMps: 0 } : null;
+            const ahead = nearestAhead(nearestAhead(nearestAhead(leaderByKey.get(path.key) ?? null, pathEnd), ringLeader), boxHold);
             stepCar(car, ahead, dt, Infinity, path.speedLimitMps);
             leaderByKey.set(path.key, car);
 
