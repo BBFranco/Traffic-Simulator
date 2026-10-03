@@ -70,6 +70,8 @@ const JOIN_FEED_REACH_M = 5;
 const MINOR_STOP_CRITICAL_GAP_S = 4;
 /** After a minor-road car is let go, the next waits this share of the all-way stop's junction-clear time. */
 const MINOR_STOP_LOCK_SHARE = 0.6;
+/** Backstop: a car let into an all-way stop's box stops counting as in it after this long, even if it was never seen leaving. */
+const ALL_WAY_STOP_OCCUPANT_MAX_S = 20;
 /** A car merging from a turn road (or a slip road) gives way to one on the road it joins that would reach the merge point within this many seconds. */
 const MERGE_GIVE_WAY_S = 2.5;
 /** How far before the end of its road a merging car starts watching for a gap - it stops at the end if there isn't one. */
@@ -409,6 +411,21 @@ function mergeDropBackCap(car) {
 /** A junction run by traffic lights: signal control, with something arriving on the arterial side to stop the cross street for. */
 function isSignalled(info) {
     return info.node.control === 'signal' && info.arterialGates.length > 0;
+}
+
+/** Do all-way stop approaches `a` and `b` face each other across the box? */
+function allWayStopOpposing(a, b) {
+    const ha = a.approach?.heading;
+    const hb = b.approach?.heading;
+    return Boolean(ha && hb) && ha.x * hb.x + ha.y * hb.y < -0.5;
+}
+
+/** Would front cars `a` and `b`, from opposite approaches at `nodeId`, cross paths - a right turn across the other side's straight or left (left-hand traffic: two right turns pass each other). */
+function allWayStopPathsCross(nodeId, a, b) {
+    const moves = (cars) => cars.map((c) => (c.turnPlan?.nodeId === nodeId ? c.turnPlan.movement : 'straight'));
+    const ma = moves(a);
+    const mb = moves(b);
+    return (ma.includes('right') && mb.some((m) => m !== 'right')) || (mb.includes('right') && ma.some((m) => m !== 'right'));
 }
 
 /** An all-way stop, a stop street or a roundabout: no lights - each car waits for its own release (car.releasedNodeIds) instead. */
@@ -1676,11 +1693,10 @@ export class SimulationEngine {
             // Fresh outage, fresh junction - don't let a lock timestamp or an
             // approach's arrival clock from a previous load-shedding window
             // (simTimeS never resets mid-run) leak into this one.
-            info.allWayStopLockedUntilS = 0;
-            info.allWayStopLegs = {
-                0: { arrivedAtS: null, requiredDwellS: null },
-                1: { arrivedAtS: null, requiredDwellS: null },
-            };
+            /** Per approach (gate) -> { arrivedAtS, requiredDwellS } - see _updateAllWayStopLegClock(). */
+            info.allWayStopLegs = new Map();
+            /** Cars let into the box and not yet out the far side - car id -> { car, gate, road, releasedAtS, seenTurning }. */
+            info.allWayStopOccupants = new Map();
         } else if (arterialState.mode === 'fixed') {
             info.controllerType = 'fixed';
             info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand, this._turnStagesAt(info));
@@ -2400,8 +2416,7 @@ export class SimulationEngine {
      * is up, matching "any number of lanes go together, gated by whoever's
      * actually been there longest."
      */
-    _updateAllWayStopLegClock(info, legKey, hasQueue) {
-        const legState = info.allWayStopLegs[legKey];
+    _updateAllWayStopLegClock(legState, hasQueue) {
         if (hasQueue && legState.arrivedAtS === null) {
             legState.arrivedAtS = this.simTimeS;
             legState.requiredDwellS = MIN_STOP_DWELL_S + this.rng.next() * STOP_DWELL_JITTER_S;
@@ -2413,28 +2428,25 @@ export class SimulationEngine {
 
     /**
      * Once per tick, decide which all-way-stop approach(es) - if any - get
-     * released past each node: true first-come-first-served between the two
-     * conflicting sides (arterial vs. cross - the same phase 0/1 convention
-     * every other controller uses; a road's own lanes/directions don't
-     * conflict with each other so they're one side each), by comparing which
-     * side's arrival clock (`_updateAllWayStopLegClock` above) started
-     * first, not a fixed turn order. A side only ever loses its priority
-     * once it drains empty - a fixed "alternate every turn" rule let a
-     * heavy-traffic side that merely refills faster win the race for a
-     * freed lock again and again, forcing a light side to keep re-queueing
-     * behind fresh arrivals and wait far longer than whoever's actually been
-     * sitting there longest. If the longest-waiting side's own clock hasn't
-     * finished yet, the lock is held idle rather than letting the other
-     * side cut in - exactly the "first one at the stop line goes first"
-     * rule of a real all-way stop. EVERY currently-queued lane on the
-     * winning side releases together (any number of lanes), since same-side
-     * traffic doesn't conflict with itself. The occupancy lock
-     * (`allWayStopLockedUntilS`) is what actually stops the two conflicting
-     * sides crossing the box at once - this only picks who's next once the
-     * box is free. Reading queue state that's up to one tick stale (this
-     * runs before this tick's car stepping) is harmless at dt-scale (~0.1s).
+     * released past each node. One approach (one direction of one road, its
+     * front car in each lane) at a time, first-come-first-served by its
+     * arrival clock (`_updateAllWayStopLegClock` above) - a side only loses
+     * its place once it drains, so a heavy side that refills faster can't
+     * starve a light one. If the longest-waiting approach hasn't finished its
+     * own hesitation, nobody else cuts in. The approach straight opposite may
+     * go with it - drivers facing each other at a 4-way stop do - but only
+     * when their paths don't cross: a right turn crosses the oncoming
+     * straight/left (left-hand traffic), two right turns pass each other.
+     *
+     * Nobody is let in until every car released last time is out the far
+     * side of the box (_allWayStopBoxOccupied()) - an earlier fixed-time
+     * lock (box width / 6 m/s) expired while a car pulling away from a dead
+     * stop was still crossing, so the next side drove through it, and
+     * releasing a whole road (both directions, right-turners and all) at
+     * once made the box run like a synchronised green.
      */
     _updateAllWayStopReleases() {
+        let turningById = null;
         for (const info of this.nodesInfo.values()) {
             if (info.controllerType === 'minorStop') {
                 this._updateMinorStopReleases(info);
@@ -2442,30 +2454,72 @@ export class SimulationEngine {
             }
             if (info.controllerType !== 'allWayStop') continue;
 
-            const arterialQueued = this._allWayStopQueuedCars(info, 0);
-            const crossQueued = this._allWayStopQueuedCars(info, 1);
-            this._updateAllWayStopLegClock(info, 0, arterialQueued.length > 0);
-            this._updateAllWayStopLegClock(info, 1, crossQueued.length > 0);
-
-            if (this.simTimeS < (info.allWayStopLockedUntilS ?? 0)) continue;
-            if (!arterialQueued.length && !crossQueued.length) continue;
-
-            const arterialArrival = arterialQueued.length ? info.allWayStopLegs[0].arrivedAtS : Infinity;
-            const crossArrival = crossQueued.length ? info.allWayStopLegs[1].arrivedAtS : Infinity;
-            const legKey = arterialArrival <= crossArrival ? 0 : 1;
-            const legState = info.allWayStopLegs[legKey];
-            if (this.simTimeS - legState.arrivedAtS < legState.requiredDwellS) continue; // the longest-waiting side hasn't finished its own hesitation yet - hold, don't let the other side jump ahead
-
-            const releasing = legKey === 0 ? arterialQueued : crossQueued;
-            for (const car of releasing) {
-                car.releasedNodeIds.add(info.node.id);
-                car.startupDelayS = RELEASE_HESITATION_MIN_S + this.rng.next() * RELEASE_HESITATION_JITTER_S;
-                car.startupTimerS = 0;
+            const groups = this._allWayStopGroups(info);
+            if (info.allWayStopOccupants.size) {
+                turningById ??= new Map(this.turningCars.map((c) => [c.id, c]));
+                if (this._allWayStopBoxOccupied(info, turningById)) continue;
             }
-            legState.arrivedAtS = null;
-            legState.requiredDwellS = null;
-            info.allWayStopLockedUntilS = this.simTimeS + junctionClearTimeS(info.node);
+            const ready = groups.filter((g) => g.cars.length && this.simTimeS - g.leg.arrivedAtS >= g.leg.requiredDwellS);
+            const waiting = groups.filter((g) => g.cars.length);
+            if (!waiting.length) continue;
+
+            const first = waiting.reduce((a, b) => (b.leg.arrivedAtS < a.leg.arrivedAtS ? b : a));
+            if (!ready.includes(first)) continue; // the longest-waiting approach hasn't finished its own hesitation yet - hold, don't let another jump ahead
+            const partner = ready.find((g) => g !== first && allWayStopOpposing(first.gate, g.gate) && !allWayStopPathsCross(info.node.id, first.cars, g.cars));
+            for (const group of partner ? [first, partner] : [first]) {
+                for (const car of group.cars) {
+                    car.releasedNodeIds.add(info.node.id);
+                    car.startupDelayS = RELEASE_HESITATION_MIN_S + this.rng.next() * RELEASE_HESITATION_JITTER_S;
+                    car.startupTimerS = 0;
+                    info.allWayStopOccupants.set(car.id, { car, gate: group.gate, road: car.road, releasedAtS: this.simTimeS, seenTurning: false });
+                }
+                group.leg.arrivedAtS = null;
+                group.leg.requiredDwellS = null;
+            }
         }
+    }
+
+    /** Each approach at all-way stop `info` with its front-of-queue cars and its own arrival clock (kept current here). */
+    _allWayStopGroups(info) {
+        const groups = [];
+        for (const [phase, gates] of [[0, info.arterialGates], [1, info.crossGates]]) {
+            for (const gate of gates) {
+                const cars = this._allWayStopQueuedAtGate(info, gate, phase);
+                this._pushFedAllWayStopCars(info, [gate], cars);
+                if (!info.allWayStopLegs.has(gate)) info.allWayStopLegs.set(gate, { arrivedAtS: null, requiredDwellS: null });
+                const leg = info.allWayStopLegs.get(gate);
+                this._updateAllWayStopLegClock(leg, cars.length > 0);
+                groups.push({ gate, phase, cars, leg });
+            }
+        }
+        return groups;
+    }
+
+    /**
+     * True while a car let into all-way stop `info` is still in (or pulling up to) the box - the rear of a car
+     * going straight not yet past the far kerb of the road it crosses, or a turning car still on its turn path.
+     * Drops the ones that are out; OCCUPANT_MAX_S is only a backstop against a car that vanished (despawned, or
+     * handed onto a road this can't follow).
+     */
+    _allWayStopBoxOccupied(info, turningById) {
+        const { node } = info;
+        for (const [id, o] of info.allWayStopOccupants) {
+            const turning = turningById.get(id);
+            let inBox;
+            if (turning) {
+                o.seenTurning = true;
+                inBox = true;
+            } else if (o.seenTurning) {
+                inBox = false; // finished its turn - it joins the new road past the far edge
+            } else {
+                const gateRoad = o.gate.carriageway?.road ?? o.gate.dir?.road;
+                const crossedWidthM = o.gate.phase === 0 ? node.crossRoadWidthM : node.arterialRoadWidthM;
+                if (o.car.road === gateRoad) inBox = o.car.distanceM - o.car.lengthM / 2 < o.gate.centreDistanceM + crossedWidthM / 2;
+                else inBox = o.car.road === o.road; // still on the road feeding the approach
+            }
+            if (!inBox || this.simTimeS - o.releasedAtS > ALL_WAY_STOP_OCCUPANT_MAX_S) info.allWayStopOccupants.delete(id);
+        }
+        return info.allWayStopOccupants.size > 0;
     }
 
     /**
@@ -2474,7 +2528,7 @@ export class SimulationEngine {
      */
     _updateMinorStopReleases(info) {
         const queued = this._allWayStopQueuedCars(info, 1);
-        this._updateAllWayStopLegClock(info, 1, queued.length > 0);
+        this._updateAllWayStopLegClock(info.allWayStopLegs[1], queued.length > 0);
         if (!queued.length || this.simTimeS < (info.allWayStopLockedUntilS ?? 0)) return;
         const legState = info.allWayStopLegs[1];
         if (this.simTimeS - legState.arrivedAtS < legState.requiredDwellS) return;
@@ -2519,41 +2573,30 @@ export class SimulationEngine {
      * individual cars - see `_updateAllWayStopLegClock()`.
      */
     _allWayStopQueuedCars(info, phase) {
+        const gates = phase === 0 ? info.arterialGates : info.crossGates;
+        const result = gates.flatMap((gate) => this._allWayStopQueuedAtGate(info, gate, phase));
+        this._pushFedAllWayStopCars(info, gates, result);
+        return result;
+    }
+
+    /** _allWayStopQueuedCars() for one approach `gate` - its own lanes only, not the roads joined onto it. */
+    _allWayStopQueuedAtGate(info, gate, phase) {
         const result = [];
-
-        if (phase === 0) {
-            for (const gate of info.arterialGates) {
-                const { carriageway } = gate;
-                for (const lane of this._gateLanes(gate)) {
-                    for (let i = 0; i < lane.cars.length; i += 1) {
-                        const car = lane.cars[i];
-                        if (!car.stoppedNow) continue;
-                        // Same real-leader-vs-virtual-signal resolution _stepCarriagewayCars()
-                        // itself uses (lane.cars is front-first) - a car queued behind a
-                        // REAL car ahead of it isn't yet the true front of the queue for
-                        // this node, so it isn't counted as part of this approach yet.
-                        const realAhead = i > 0 ? lane.cars[i - 1] : null;
-                        const ahead = nearestAhead(realAhead, carriageway ? this._signalAheadFor(carriageway.gates, car) : this._connectorSignalAheadOnDir(gate.dir, car));
-                        if (ahead?.isSignal && ahead.nodeId === info.node.id) result.push(car);
-                    }
-                }
-            }
-            this._pushFedAllWayStopCars(info, info.arterialGates, result);
-            return result;
-        }
-
-        for (const { connector, dir, dirKey } of info.crossGates) {
-            for (const lane of this.connectorState.get(connector.id)[dirKey].lanes) {
-                for (let i = 0; i < lane.cars.length; i += 1) {
-                    const car = lane.cars[i];
-                    if (!car.stoppedNow) continue;
-                    const realAhead = i > 0 ? lane.cars[i - 1] : null;
-                    const ahead = nearestAhead(realAhead, this._connectorSignalAheadOnDir(dir, car));
-                    if (ahead?.isSignal && ahead.nodeId === info.node.id) result.push(car);
-                }
+        const lanes = phase === 0 ? this._gateLanes(gate) : this.connectorState.get(gate.connector.id)[gate.dirKey].lanes;
+        for (const lane of lanes) {
+            for (let i = 0; i < lane.cars.length; i += 1) {
+                const car = lane.cars[i];
+                if (!car.stoppedNow) continue;
+                // Same real-leader-vs-virtual-signal resolution _stepCarriagewayCars()
+                // itself uses (lane.cars is front-first) - a car queued behind a
+                // REAL car ahead of it isn't yet the true front of the queue for
+                // this node, so it isn't counted as part of this approach yet.
+                const realAhead = i > 0 ? lane.cars[i - 1] : null;
+                const signal = phase === 0 && gate.carriageway ? this._signalAheadFor(gate.carriageway.gates, car) : this._connectorSignalAheadOnDir(gate.dir, car);
+                const ahead = nearestAhead(realAhead, signal);
+                if (ahead?.isSignal && ahead.nodeId === info.node.id) result.push(car);
             }
         }
-        this._pushFedAllWayStopCars(info, info.crossGates, result);
         return result;
     }
 

@@ -16,19 +16,18 @@
  *    the same instant would peel off in two separate waves, whichever pair's
  *    own random timer happened to finish first, instead of going together
  *    the moment the FIRST car in the group had waited long enough.
- * 2. A junction occupancy lock (`junctionClearTimeS()`): once ANY approach
- *    releases its cars, the engine (engine.js#_updateAllWayStopReleases)
- *    records "this node is occupied until T" and withholds release from
- *    every other approach until T passes, even if its own dwell is already
- *    up. This is what stops two cars from opposite/crossing approaches
- *    being released into the box on the same tick and driving into each
- *    other.
- * 3. True first-come-first-served between the two conflicting sides
- *    (arterial vs. cross), by comparing whose arrival clock started first -
- *    not a fixed alternating turn order, which let a heavy-traffic side win
- *    the race for a freed lock again and again and starve a lighter side
- *    far past its own wait time. See engine.js#_updateAllWayStopReleases
- *    for the actual comparison.
+ * 2. A box occupancy lock: once an approach releases its cars, nobody else
+ *    is let in until every one of them is out the far side of the box
+ *    (engine.js#_allWayStopBoxOccupied) - tracked per car, not a fixed
+ *    timer, which ran out while a car pulling away from a dead stop was
+ *    still crossing.
+ * 3. First-come-first-served per approach (one direction of one road), by
+ *    whose arrival clock started first - not a fixed alternating turn
+ *    order, which let a heavy-traffic side win the race for a freed box
+ *    again and again. The approach straight opposite may go along when the
+ *    two don't cross paths. See engine.js#_updateAllWayStopReleases.
+ *
+ * `junctionClearTimeS()` is still the stop street's (minorStop) fixed lock.
  */
 export const MIN_STOP_DWELL_S = 2;
 /** Upper bound of the extra randomised wait on top of MIN_STOP_DWELL_S - real drivers don't all count to exactly the same number before going. */
