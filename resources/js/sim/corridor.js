@@ -164,10 +164,11 @@ function parseTurnLanes(raw, label, { oneWay, medianWidthM, laneWidthM }) {
 /**
  * An intersection's `control`: 'signal' (the default - traffic lights, timed by
  * the arterial's mode), 'roundabout' (no lights, give way to traffic already in
- * it) or 'allWayStop' (a permanent 4-way stop). Only signals change with the
+ * it), 'allWayStop' (a permanent 4-way stop) or 'stop' (a stop street: the minor road
+ * stops and gives way, the arterial runs free). Only signals change with the
  * arterial's mode or go dark in load shedding.
  */
-export const JUNCTION_CONTROLS = ['signal', 'roundabout', 'allWayStop'];
+export const JUNCTION_CONTROLS = ['signal', 'roundabout', 'allWayStop', 'stop'];
 
 function parseControl(raw, label) {
     const control = raw ?? 'signal';
@@ -478,6 +479,8 @@ export function buildLayout(config) {
             if (node.control === 'roundabout') shapeRoundabout(node);
             node.arterialArms = arterialArms(node, arterial, joins);
             node.approaches = buildApproaches(node, arterial, laneWidthM, connectors);
+            node.turnPhases = parseTurnPhases(node);
+            parseSlipLanes(node);
         }
     }
     for (const connector of connectors) checkConnectorLaneUseKeys(connector, nodesById);
@@ -623,6 +626,10 @@ function buildArterial(raw, laneWidthM) {
             rawLaneUse: oneWay ? null : rawTwoWayLaneUse(node, raw.id),
             /** The arterial approach's `turnLanes` as written in the config (keyed by compass direction on a two-way arterial) - parsed in buildApproaches(). */
             rawTurnLanes: node.turnLanes ?? null,
+            /** The protected turns this junction's signal gives their own arrow, as written (`{ direction, movement, weight? }` each) - resolved to approaches in parseTurnPhases(). */
+            rawTurnPhases: node.turnPhases ?? [],
+            /** The approaches whose left-turn lane leaves as a slip road (`{ direction, backM }` each - the road itself is a connector joined with `slip: true`) - resolved in parseSlipLanes(). */
+            rawSlipLanes: node.slipLanes ?? [],
             /**
              * `{ arterial?, cross? }` metres to pull that road's stop lines further back than the
              * junction box edge - where the road carrying on beyond is wider than the box (a lane
@@ -879,10 +886,12 @@ function parseJoins(rawJoins, arterials, connectors) {
         return { kind: arterial ? 'arterial' : 'connector', id, dirKey, key: arterial ? (dirKey === 'fwd' ? id : `${id}:rev`) : `${id}:${dirKey}`, connector };
     };
     const joins = rawJoins.map((raw, i) => {
-        const join = { from: parseRef(raw.from, `${i} from`), to: parseRef(raw.to, `${i} to`), fromAtM: raw.fromAtM ?? null, toAtM: raw.toAtM ?? null, share: raw.share ?? null };
+        const join = { from: parseRef(raw.from, `${i} from`), to: parseRef(raw.to, `${i} to`), fromAtM: raw.fromAtM ?? null, toAtM: raw.toAtM ?? null, share: raw.share ?? null, slip: raw.slip === true };
         if (join.fromAtM != null && join.toAtM != null) throw new Error(`Join ${i}: give fromAtM (peel off partway) or toAtM (merge partway), not both.`);
-        if (join.fromAtM != null && !(join.share > 0 && join.share <= 1)) throw new Error(`Join ${i}: peeling off at fromAtM needs a share between 0 and 1.`);
-        if (join.fromAtM != null && join.from.kind !== 'connector') throw new Error(`Join ${i}: only a connector can be peeled off partway.`);
+        if (join.slip && join.fromAtM == null) throw new Error(`Join ${i}: a slip join leaves its road partway, so it needs fromAtM.`);
+        // A slip road takes whoever is in the left-turn lane there; any other peel-off takes a share of the kerb lane.
+        if (join.fromAtM != null && !join.slip && !(join.share > 0 && join.share <= 1)) throw new Error(`Join ${i}: peeling off at fromAtM needs a share between 0 and 1.`);
+        if (join.fromAtM != null && !join.slip && join.from.kind !== 'connector') throw new Error(`Join ${i}: only a connector can be peeled off partway.`);
         return join;
     });
     // One road end carries on into one road start; partway merges/peel-offs don't count against that.
@@ -1377,6 +1386,51 @@ function widenForJoinedArm(node, arterial, joins, arterials, connectors) {
             const road = other.kind === 'arterial' ? arterials.find((a) => a.id === other.id) : connectors.find((c) => c.id === other.id);
             node.arterialRoadWidthM = Math.max(node.arterialRoadWidthM, road.roadWidthM);
         }
+    }
+}
+
+/** Does `lane` - a lane's movements - serve `movement` without also going straight on: what a protected-turn arrow releases. */
+export function isTurnOnlyLane(moves, movement) {
+    return moves.includes(movement) && !moves.includes('straight');
+}
+
+/**
+ * A node's `turnPhases`: `[{ direction, movement, weight? }]`, naming the approach by its
+ * compass direction of travel (as `laneUse` keys do) and the turn that gets its own green
+ * arrow ahead of that road's through green. Resolved to `[{ approach, movement, weight }]`.
+ * `weight` (default 1) lengthens the stage for a busy turn.
+ */
+function parseTurnPhases(node) {
+    return node.rawTurnPhases.map((entry) => {
+        const label = `Intersection "${node.id}" turnPhases ${entry.direction}`;
+        if (!['left', 'right'].includes(entry.movement)) throw new Error(`${label}: movement must be left or right, got "${entry.movement}".`);
+        const weight = entry.weight ?? 1;
+        if (!(weight > 0)) throw new Error(`${label}: weight must be above 0, got ${entry.weight}.`);
+        const approach = node.approaches.find((a) => compassDirection(a.heading) === entry.direction);
+        if (!approach) {
+            throw new Error(`${label}: no approach runs ${entry.direction} here (${node.approaches.map((a) => compassDirection(a.heading)).join(' / ')}).`);
+        }
+        const lanes = [...approach.laneUse, ...TURN_LANE_SIDES.map((side) => approach.turnLanes?.[side]?.laneUse).filter(Boolean)];
+        if (!lanes.some((moves) => isTurnOnlyLane(moves, entry.movement))) {
+            throw new Error(`${label}: it has no ${entry.movement}-only lane for the arrow to serve.`);
+        }
+        return { approach, movement: entry.movement, weight };
+    });
+}
+
+/**
+ * A node's `slipLanes`: `[{ direction, backM }]`, the approach (by compass direction of travel) whose left-turn
+ * lane peels off as a slip road `backM` before the stop line. Only drawn differently here - the lane stops at
+ * the slip road, which is a connector of its own (see the join with `slip: true`). Sets `approach.slip`.
+ */
+function parseSlipLanes(node) {
+    for (const entry of node.rawSlipLanes) {
+        const label = `Intersection "${node.id}" slipLanes ${entry.direction}`;
+        const approach = node.approaches.find((a) => compassDirection(a.heading) === entry.direction);
+        if (!approach) throw new Error(`${label}: no approach runs ${entry.direction} here.`);
+        if (!approach.turnLanes?.left?.laneUse.includes('left')) throw new Error(`${label}: it has no left-turn lane to turn into a slip road.`);
+        if (!(entry.backM > 0)) throw new Error(`${label}: backM must be above 0, got ${entry.backM}.`);
+        approach.slip = { backM: entry.backM };
     }
 }
 

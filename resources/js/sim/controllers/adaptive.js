@@ -12,25 +12,38 @@
  * hands this controller a plain boolean, so it stays sensor-agnostic.
  */
 import { ADAPTIVE_DEFAULTS, shouldExtendGreen } from '../equations.js';
+import { ALL_RED_S, MIN_TURN_GREEN_S, YELLOW_S } from './phasePlan.js';
 
-const YELLOW_S = 3;
-const ALL_RED_S = 1;
+/** A protected turn stage's longest green before its weight - it also ends as soon as its lane stops actuating the detector. */
+const MAX_TURN_GREEN_S = 25;
 
 export class AdaptiveController {
-    constructor(params = ADAPTIVE_DEFAULTS) {
+    /** turnWeights: per road (0 arterial, 1 cross) null, or the weight of the protected turn stage in front of its through green. */
+    constructor(params = ADAPTIVE_DEFAULTS, turnWeights = [null, null]) {
         this.params = params;
+        this.turnWeights = turnWeights;
         this.phase = 0; // 0 = arterial, 1 = cross
+        this.inTurn = false; // the current stage is road `phase`'s lead turn stage rather than its through green
         this.phaseState = 'green';
         this.phaseElapsed = 0;
         this.secondsSinceLastDetection = 0; // gap timer for the current green's stop-line detector
     }
 
     isArterialGreen() {
-        return this.phase === 0 && this.phaseState === 'green';
+        return this.phase === 0 && !this.inTurn && this.phaseState === 'green';
     }
 
     isCrossGreen() {
-        return this.phase === 1 && this.phaseState === 'green';
+        return this.phase === 1 && !this.inTurn && this.phaseState === 'green';
+    }
+
+    /** Is road `phase`'s protected turn showing its green arrow. */
+    turnGreen(phase) {
+        return this.inTurn && this.phase === phase && this.phaseState === 'green';
+    }
+
+    turnYellow(phase) {
+        return this.inTurn && this.phase === phase && this.phaseState === 'yellow';
     }
 
     /**
@@ -41,11 +54,25 @@ export class AdaptiveController {
      *
      * Resting on green and gap-extension both still bow out at `maxGreen` - it's a hard cap on
      * every branch, not just the gap-extension one.
+     *
+     * turnCalls: per road, is a vehicle waiting in its protected turn lane(s) - a road with a turn
+     * stage and a call opens it with the turn stage (otherwise it skips straight to the through green).
+     * While a turn stage is green `vehicleDetectedThisTick` is the turn lanes' own detector, and the
+     * stage holds for at least the minimum, gaps out like any green, and caps at its weighted maximum.
      */
-    tick(dt, vehicleDetectedThisTick, otherCallSufficient = false) {
+    tick(dt, vehicleDetectedThisTick, otherCallSufficient = false, turnCalls = [false, false]) {
         this.phaseElapsed += dt;
 
-        if (this.phaseState === 'green') {
+        if (this.phaseState === 'green' && this.inTurn) {
+            this.secondsSinceLastDetection = vehicleDetectedThisTick ? 0 : this.secondsSinceLastDetection + dt;
+            const extend =
+                this.phaseElapsed < MAX_TURN_GREEN_S * this.turnWeights[this.phase] &&
+                (this.phaseElapsed < MIN_TURN_GREEN_S * this.turnWeights[this.phase] || this.secondsSinceLastDetection < this.params.gapOutS);
+            if (!extend) {
+                this.phaseState = 'yellow';
+                this.phaseElapsed = 0;
+            }
+        } else if (this.phaseState === 'green') {
             this.secondsSinceLastDetection = vehicleDetectedThisTick ? 0 : this.secondsSinceLastDetection + dt;
 
             const extend =
@@ -59,7 +86,12 @@ export class AdaptiveController {
             this.phaseState = 'allRed';
             this.phaseElapsed = 0;
         } else if (this.phaseState === 'allRed' && this.phaseElapsed >= ALL_RED_S) {
-            this.phase = 1 - this.phase;
+            if (this.inTurn) {
+                this.inTurn = false; // the turn stage hands over to its own road's through green
+            } else {
+                this.phase = 1 - this.phase;
+                this.inTurn = this.turnWeights[this.phase] != null && turnCalls[this.phase];
+            }
             this.phaseState = 'green';
             this.phaseElapsed = 0;
             this.secondsSinceLastDetection = 0;

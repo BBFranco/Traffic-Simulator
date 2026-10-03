@@ -23,7 +23,7 @@
  * labels stay in a text token with a coloured dot beside them.
  */
 import { laneArrowShapes, laneArrowTargets } from '../renderers/laneArrows.js';
-import { turnLaneShapes } from '../renderers/turnLaneShapes.js';
+import { turnLaneShapes, alignedDashes } from '../renderers/turnLaneShapes.js';
 import { carShapeFor } from './carShapes.js';
 
 export const ARTERIAL_ACCENTS = ['#0284c7', '#ea580c', '#8b5cf6', '#059669'];
@@ -263,7 +263,7 @@ export class LayoutRenderer {
         Object.assign(this.options, partial);
     }
 
-    /** `{ cars: [{point, stopped, heading}], signals: Map<nodeId, {dark, arterialGreen, arterialYellow, crossGreen, crossYellow}> }` */
+    /** `{ cars: [{point, stopped, heading}], signals: Map<nodeId, {dark, arterialGreen, arterialYellow, crossGreen, crossYellow, turns: {[approachId]: {movement, green, yellow}}}> }` */
     setDynamicState(dynamic) {
         this.dynamic = dynamic;
     }
@@ -560,13 +560,43 @@ export class LayoutRenderer {
         ctx.strokeStyle = PALETTE.edgeLine;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        for (const [a, b] of this.turnLanes.edges) {
+        for (const [a, b] of this.turnLanes.solidEdges) {
             const p = this.camera.toScreen(a);
             const q = this.camera.toScreen(b);
             ctx.moveTo(p.x, p.y);
             ctx.lineTo(q.x, q.y);
         }
         ctx.stroke();
+        ctx.restore();
+    }
+
+    /** Each turn lane's inner boundary and taper as a lane divider: paints out the road's solid edge line beneath, then dashes it. */
+    drawTurnLaneDividers() {
+        const { ctx } = this;
+        const { dividers } = this.turnLanes;
+        if (!dividers.length) return;
+        const roads = [];
+        this.eachRoad(({ from, to, widthM, curvePoints }) => roads.push({ from, to, widthM, curvePoints }));
+        const { scale } = this.camera;
+        const trace = (segments) => {
+            ctx.beginPath();
+            for (const [a, b] of segments) {
+                const p = this.camera.toScreen(a);
+                const q = this.camera.toScreen(b);
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(q.x, q.y);
+            }
+            ctx.stroke();
+        };
+        ctx.save();
+        ctx.lineCap = 'butt';
+        ctx.strokeStyle = PALETTE.asphalt;
+        ctx.lineWidth = 3;
+        trace(dividers);
+        // Same 7 px dash / 9 px gap as the road's own lane dashes, in metres so the phase matches along the road.
+        ctx.strokeStyle = PALETTE.laneDash;
+        ctx.lineWidth = 1.2;
+        trace(dividers.flatMap((segment) => alignedDashes(segment, roads, 7 / scale, 9 / scale, 0)));
         ctx.restore();
     }
 
@@ -644,6 +674,7 @@ export class LayoutRenderer {
                 }
             }
         });
+        this.drawTurnLaneDividers();
 
         if (scale >= 2.2) {
             this.drawDirectionArrows();
@@ -869,6 +900,7 @@ export class LayoutRenderer {
                     if (this.dynamic.signals.get(node.id)?.freeFlow) continue;
                     if ((node.control === 'roundabout') !== giveWay) continue;
                     for (const approach of node.approaches) {
+                        if (node.control === 'stop' && approach.kind === 'arterial') continue; // the arterial isn't held
                         const a = this.camera.toScreen(approach.stopLine.a);
                         const b = this.camera.toScreen(approach.stopLine.b);
                         ctx.moveTo(a.x, a.y);
@@ -955,6 +987,8 @@ export class LayoutRenderer {
         const gap = r * 2.2;
         const housingW = r * 3.1;
         const housingH = gap * 3 + r * 1.2;
+        /** A head with protected-turn arrows has a second column of lenses beside the three, as South African heads do. */
+        const arrowColumnGap = r * 2.4;
         const radius = Math.min(3.5, r * 0.7);
         const lensR = r * 0.74;
 
@@ -966,8 +1000,12 @@ export class LayoutRenderer {
                 const signal = this.dynamic.signals.get(node.id) ?? null;
                 if (signal?.freeFlow) continue; // highway merge point - no signal housing to draw
                 if (node.control === 'roundabout') continue; // no signals - its painted circle and give-way lines say what it is
-                if (node.control === 'allWayStop') {
-                    for (const approach of node.approaches) this.drawStopSign(this.camera.toScreen(approach.signalHead), r * 1.6);
+                if (node.control === 'allWayStop' || node.control === 'stop') {
+                    // A stop street stops only the minor road.
+                    for (const approach of node.approaches) {
+                        if (node.control === 'stop' && approach.kind === 'arterial') continue;
+                        this.drawStopSign(this.camera.toScreen(approach.signalHead), r * 1.6);
+                    }
                     continue;
                 }
 
@@ -983,9 +1021,12 @@ export class LayoutRenderer {
                         continue;
                     }
 
+                    const turn = signal?.turns?.[approach.id] ?? null;
+                    const topY = p.y - gap;
+
                     ctx.fillStyle = PALETTE.signalHousing;
                     ctx.strokeStyle = PALETTE.signalHousingEdge;
-                    roundRect(ctx, p.x - housingW / 2, p.y - housingH / 2, housingW, housingH, radius);
+                    roundRect(ctx, p.x - housingW / 2, p.y - housingH / 2, housingW + (turn ? arrowColumnGap : 0), housingH, radius);
                     ctx.fill();
                     ctx.stroke();
 
@@ -993,14 +1034,37 @@ export class LayoutRenderer {
                     for (let i = 0; i < 3; i += 1) {
                         ctx.fillStyle = i === litIndex ? LIT_LENS_COLOURS[i] : PALETTE.signalLensOff[i];
                         ctx.beginPath();
-                        ctx.arc(p.x, p.y - gap + i * gap, lensR, 0, Math.PI * 2);
+                        ctx.arc(p.x, topY + i * gap, lensR, 0, Math.PI * 2);
                         ctx.fill();
+                    }
+                    if (turn) {
+                        // The amber arrow level with the amber lens, the green one level with the green.
+                        for (const i of [1, 2]) {
+                            ctx.fillStyle = i === 2 ? (turn.green ? LIT_LENS_COLOURS[2] : PALETTE.signalLensOff[2]) : turn.yellow ? LIT_LENS_COLOURS[1] : PALETTE.signalLensOff[1];
+                            this.drawTurnArrow(p.x + arrowColumnGap, topY + i * gap, lensR * 1.05, turn.movement);
+                        }
                     }
                 }
             }
         }
 
         ctx.restore();
+    }
+
+    /** A turn arrow glyph centred on (x, y), `size` px across - pointing left or right as the driver sees the head. */
+    drawTurnArrow(x, y, size, movement) {
+        const { ctx } = this;
+        const dir = movement === 'left' ? -1 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x + dir * size, y);
+        ctx.lineTo(x, y - size);
+        ctx.lineTo(x, y - size * 0.4);
+        ctx.lineTo(x - dir * size, y - size * 0.4);
+        ctx.lineTo(x - dir * size, y + size * 0.4);
+        ctx.lineTo(x, y + size * 0.4);
+        ctx.lineTo(x, y + size);
+        ctx.closePath();
+        ctx.fill();
     }
 
     /** A stop sign - a small red octagon - where a signal head would stand, at a 4-way stop. */
@@ -1095,6 +1159,7 @@ export class LayoutRenderer {
         ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
         ctx.textAlign = 'center';
         for (const connector of this.layout.connectors) {
+            if (!connector.name) continue; // a slip road is the road it serves, not a street of its own
             const p = this.camera.toScreen(connector.startPoint);
             const q = this.camera.toScreen(connector.endPoint);
             const anchor = p.y <= q.y ? p : q;

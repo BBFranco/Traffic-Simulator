@@ -36,6 +36,7 @@ import {
     RELEASE_HESITATION_JITTER_S,
 } from './controllers/allWayStop.js';
 import { buildGreenWaveControllers } from './controllers/greenWave.js';
+import { MinorStopController } from './controllers/minorStop.js';
 import {
     RoundaboutController,
     ROUNDABOUT_SPEED_KPH,
@@ -45,7 +46,7 @@ import {
 } from './controllers/roundabout.js';
 import { carShapeFor } from './carShapes.js';
 import { readQueueLength, detectQueuePresence, detectPresenceAtStopLine, sensorAvailable } from './sensors.js';
-import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal } from './corridor.js';
+import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane } from './corridor.js';
 
 /** Upstream window counted as "queued" for the stats-footer chips. */
 const QUEUE_WINDOW_M = 150;
@@ -65,8 +66,14 @@ const JOIN_PLAN_REACH_M = 150;
 const JOIN_LOOKAHEAD_M = 150;
 /** A joined road whose first stop line sits within this of its start is approached from the road before it - that road's cars queue for its signal. */
 const JOIN_FEED_REACH_M = 5;
-/** A car merging from a turn road gives way to one on the road it joins that would reach the merge point within this many seconds. */
-const MERGE_GIVE_WAY_S = 1.5;
+/** A minor-road driver at a stop street waits until no arterial vehicle would reach the junction within this many seconds. */
+const MINOR_STOP_CRITICAL_GAP_S = 4;
+/** After a minor-road car is let go, the next waits this share of the all-way stop's junction-clear time. */
+const MINOR_STOP_LOCK_SHARE = 0.6;
+/** A car merging from a turn road (or a slip road) gives way to one on the road it joins that would reach the merge point within this many seconds. */
+const MERGE_GIVE_WAY_S = 2.5;
+/** How far before the end of its road a merging car starts watching for a gap - it stops at the end if there isn't one. */
+const MERGE_WATCH_M = 40;
 /** How far before a peel-off point a car decides whether it takes it, and works its way into the kerb lane if so. */
 const DIVERGE_DECISION_M = 200;
 /** How far before the end of a road that joins a narrower one a car in an ending lane starts merging out of it. */
@@ -404,9 +411,14 @@ function isSignalled(info) {
     return info.node.control === 'signal' && info.arterialGates.length > 0;
 }
 
-/** An all-way stop or a roundabout: no lights - each car waits for its own release (car.releasedNodeIds) instead. */
+/** An all-way stop, a stop street or a roundabout: no lights - each car waits for its own release (car.releasedNodeIds) instead. */
 function entersByRelease(controllerType) {
-    return controllerType === 'allWayStop' || controllerType === 'roundabout';
+    return controllerType === 'allWayStop' || controllerType === 'minorStop' || controllerType === 'roundabout';
+}
+
+/** `entersByRelease()` for a car on road `phase` (0 the arterial, 1 the cross street): at a stop street the arterial isn't held. */
+function entersByReleaseAt(controllerType, phase) {
+    return entersByRelease(controllerType) && !(controllerType === 'minorStop' && phase === 0);
 }
 
 /** Turning speed for `movement` for this vehicle (m/s). */
@@ -584,6 +596,19 @@ export class SimulationEngine {
             }
         }
 
+        // The protected turns each junction's signal gives their own arrow (corridor.js's parseTurnPhases()).
+        for (const info of this.nodesInfo.values()) {
+            /** Per road (0 arterial, 1 cross), the turn stage in front of its through green: `{ gates, weight }` - or null. */
+            info.turnStages = [null, null];
+            for (const { approach, movement, weight } of info.node.turnPhases ?? []) {
+                const gate = this.gatesByApproachId.get(approach.id);
+                gate.turnPhase = { movement };
+                const stage = (info.turnStages[gate.phase] ??= { gates: [], weight: 0 });
+                stage.gates.push(gate);
+                stage.weight = Math.max(stage.weight, weight);
+            }
+        }
+
         // Road-to-road joins (corridor.js's parseJoins()): a car reaching the end of
         // `from` drives onto the start of `to` instead of leaving the map.
         this.joinsFrom = new Map();
@@ -594,10 +619,15 @@ export class SimulationEngine {
         this.mergesInto = new Map();
         this.divergesFrom = new Map();
         for (const raw of layout.joins ?? []) {
-            const join = { from: this._joinRoad(raw.from), to: this._joinRoad(raw.to), fromAtM: raw.fromAtM, toAtM: raw.toAtM, share: raw.share };
+            const join = { from: this._joinRoad(raw.from), to: this._joinRoad(raw.to), fromAtM: raw.fromAtM, toAtM: raw.toAtM, share: raw.share, slip: raw.slip };
             // A road started by a join spawns none of its own traffic (a partway merge into it doesn't change that).
             if (join.toAtM == null) join.to.dir.fed = true;
             if (join.fromAtM != null) {
+                if (join.slip) {
+                    // A slip road takes the left-turn lane's cars ahead of the stop line, so that gate's signal doesn't hold them.
+                    join.gate = this._slipGateOf(join);
+                    if (join.gate) join.gate.slipJoin = join;
+                }
                 if (!this.divergesFrom.has(join.from.key)) this.divergesFrom.set(join.from.key, []);
                 this.divergesFrom.get(join.from.key).push(join);
                 this.joinsInto.set(join.to.key, join);
@@ -614,6 +644,11 @@ export class SimulationEngine {
             // Not a gate with no approach on a road along the arterial's line that only leaves its junction - an arterial direction or an arm road (its traffic arrives through the junction).
             if (first && first.stopLineDistanceM < JOIN_FEED_REACH_M && (first.approach || (!first.node.crossSplit && !first.carriageway && !first.node.arterialArmRoads?.includes(first.connector)))) this.feedersByGate.set(first, join);
         }
+    }
+
+    /** The gate a slip road's join (`slip: true`) leaves ahead of: the next stop line on its road past where it peels off. */
+    _slipGateOf(join) {
+        return join.from.gates.find((gate) => gate.stopLineDistanceM > join.fromAtM && gate.approach) ?? null;
     }
 
     /** One end of a join as the engine sees it: the road direction, its geometry and gates, and its live lanes. */
@@ -670,7 +705,7 @@ export class SimulationEngine {
             const centreDistanceM = isFwd ? arterial.approachLengthM + node.sAlongM : arterial.exitLengthM + lastNode.sAlongM - node.sAlongM;
             const setbackM = approach?.setbackM ?? node.crossRoadWidthM / 2;
             const arms = node.arterialArms[isFwd ? 0 : 1];
-            const gate = new Gate({ node, info, carriageway, approach, centreDistanceM, stopLineDistanceM: centreDistanceM - setbackM, turnOptions: [], hasDownstream: arms.hasDownstream });
+            const gate = new Gate({ node, info, carriageway, approach, phase: 0, centreDistanceM, stopLineDistanceM: centreDistanceM - setbackM, turnOptions: [], hasDownstream: arms.hasDownstream });
             /** Every arterial direction through the junction, arriving or only leaving - what a cross-street car can turn into. */
             info.arterialExits.push(gate);
             if (approach) {
@@ -1071,9 +1106,10 @@ export class SimulationEngine {
 
         for (const info of this.nodesInfo.values()) {
             if (info.controllerType === 'adaptive') {
-                const detected = this._vehicleDetectedAtStopLine(info, info.controller.phase);
-                const otherCallSufficient = this._isOtherCallSufficient(info, info.controller.phase, dt);
-                info.controller.tick(dt, detected, otherCallSufficient);
+                const { controller } = info;
+                const detected = controller.inTurn ? this._turnLaneDetected(info, controller.phase) : this._vehicleDetectedAtStopLine(info, controller.phase);
+                const otherCallSufficient = this._isOtherCallSufficient(info, controller.phase, dt);
+                controller.tick(dt, detected, otherCallSufficient, [this._turnLaneCalled(info, 0), this._turnLaneCalled(info, 1)]);
             } else if (info.controllerType === 'greenWave') {
                 info.controller.tick(dt, this.simTimeS);
             } else {
@@ -1167,12 +1203,22 @@ export class SimulationEngine {
         for (const [nodeId, info] of this.nodesInfo) {
             const dark = this.powerState === 'load_shedding';
             const isYellow = !dark && info.controllerType !== 'none' && info.controller.phaseState === 'yellow';
+            const inTurn = Boolean(info.controller.inTurn);
             signals.set(nodeId, {
                 dark,
                 arterialGreen: !dark && info.controller.isArterialGreen(),
-                arterialYellow: isYellow && info.controller.phase === 0,
+                arterialYellow: isYellow && !inTurn && info.controller.phase === 0,
                 crossGreen: !dark && info.controller.isCrossGreen(),
-                crossYellow: isYellow && info.controller.phase === 1,
+                crossYellow: isYellow && !inTurn && info.controller.phase === 1,
+                /** Per approach with a protected turn, the state of its arrow: `{ [approachId]: { movement, green, yellow } }`. */
+                turns: Object.fromEntries(
+                    info.turnStages.flatMap((stage, phase) =>
+                        (stage?.gates ?? []).map((gate) => [
+                            gate.approach.id,
+                            { movement: gate.turnPhase.movement, green: !dark && Boolean(info.controller.turnGreen?.(phase)), yellow: !dark && Boolean(info.controller.turnYellow?.(phase)) },
+                        ])
+                    )
+                ),
                 // A highway merge point (an arterial with mode:"none") has no
                 // signal at all, not just an unlit one - the renderer skips
                 // drawing its stop lines/housings entirely instead of showing
@@ -1365,6 +1411,8 @@ export class SimulationEngine {
             flows.set(info.node.id, {
                 arterialPerLanePerMin: info.arterialGates.reduce((max, gate) => Math.max(max, (arrivals.get(gate) ?? 0) * this._criticalLaneShareAt(gate, gate.carriageway?.road ?? gate.dir.road)), 0),
                 crossPerLanePerMin: info.crossGates.reduce((max, gate) => Math.max(max, (arrivals.get(gate) ?? 0) * this._criticalLaneShareAt(gate, gate.dir.road)), 0),
+                /** Per road (0 arterial, 1 cross): the busiest protected-turn lane's flow - the q of its turn stage. */
+                turnPerLanePerMin: info.turnStages.map((stage) => (stage ? stage.gates.reduce((max, gate) => Math.max(max, this._turnLaneFlow(gate, arrivals.get(gate) ?? 0)), 0) : 0)),
             });
         }
         return flows;
@@ -1385,6 +1433,11 @@ export class SimulationEngine {
         if (!gate.slotLaneUse) return 1 / (covered?.length ?? road.lanes);
 
         const slots = gate.slotLaneUse.map((_, slot) => slot).filter((slot) => gate.slotLaneUse[slot].length && (!covered || !mainSlots.includes(slot) || covered.includes(slot)));
+        return criticalLaneShare(gate.slotLaneUse, slots, this._movementShares(gate));
+    }
+
+    /** The share of `gate`'s arriving flow making each movement - the turn shares are the ones the turn rolls use. */
+    _movementShares(gate) {
         const options = this._allowedTurnOptions(gate);
         const turnShare = !options.length
             ? 0
@@ -1397,7 +1450,41 @@ export class SimulationEngine {
                 : 0;
         const shares = { straight: 1 - turnShare, left: 0, right: 0 };
         for (const option of options) shares[option.movement] += turnShare / options.length;
-        return criticalLaneShare(gate.slotLaneUse, slots, shares);
+        if (gate.slipJoin && shares.left > 0 && shares.left < 1) {
+            // The left turners took the slip road: the rest are what reaches the stop line.
+            const rest = 1 - shares.left;
+            shares.straight /= rest;
+            shares.right /= rest;
+            shares.left = 0;
+        }
+        return shares;
+    }
+
+    /** The flow (veh/min) in each lane of `gate`'s protected turn: its share of the `arrivalPerMin` arriving, over the lanes that only make that turn. */
+    _turnLaneFlow(gate, arrivalPerMin) {
+        const { movement } = gate.turnPhase;
+        const lanes = gate.slotLaneUse.filter((moves) => isTurnOnlyLane(moves, movement)).length;
+        return lanes ? (arrivalPerMin * this._movementShares(gate)[movement]) / lanes : 0;
+    }
+
+    /**
+     * Webster input for each road's protected-turn stage at `info`'s junction (phasePlan.js):
+     * `{ demand, weight }`, or null for a road with none. q is its busiest turn lane's flow,
+     * s the road's saturation flow, as for its through stage.
+     */
+    _turnStagesAt(info) {
+        const flow = this._plannedApproachFlows().get(info.node.id);
+        return info.turnStages.map((stage, phase) =>
+            stage
+                ? {
+                      demand: {
+                          spawnRatePerLanePerMin: flow.turnPerLanePerMin[phase],
+                          saturationFlowPerLanePerHour: stage.gates[0].connector?.demand.saturationFlowPerLanePerHour ?? this.arterialState.get(info.arterial.id).saturationFlowPerLanePerHour,
+                      },
+                      weight: stage.weight,
+                  }
+                : null
+        );
     }
 
     /** The turns out of `roads`' gates this pass, by the road they turn into: `[{ entryDistanceM, perMin }]` in the order they were found. */
@@ -1405,9 +1492,9 @@ export class SimulationEngine {
         const turnIns = new Map();
         for (const road of roads) {
             for (const gate of road.gates) {
-                const options = this._allowedTurnOptions(gate);
+                const { options, share } = this._gateTurns(gate, road);
                 if (!options.length) continue;
-                const turningOff = (arrivals.get(gate) ?? 0) * road.turnShare(gate);
+                const turningOff = (arrivals.get(gate) ?? 0) * share;
                 for (const option of options) {
                     const key = road.turnInKey(option);
                     if (!turnIns.has(key)) turnIns.set(key, []);
@@ -1425,8 +1512,10 @@ export class SimulationEngine {
         const peelOff = (flow, fromM, toM) => {
             for (const join of this.divergesFrom.get(road.key) ?? []) {
                 if (join.fromAtM <= fromM || join.fromAtM > toM) continue;
-                road.divergedPerMin[join.to.key] = flow * join.share;
-                flow -= flow * join.share;
+                // A slip road takes the left turners, ahead of the gate they would have turned at.
+                const share = join.slip ? this._slipShare(join, road) : join.share;
+                road.divergedPerMin[join.to.key] = flow * share;
+                flow -= flow * share;
             }
             return flow;
         };
@@ -1443,12 +1532,33 @@ export class SimulationEngine {
             const turningIn = turnIns
                 .filter((t) => t.entryDistanceM > gate.stopLineDistanceM && (!next || t.entryDistanceM < next.stopLineDistanceM))
                 .reduce((sum, t) => sum + t.perMin, 0);
-            const share = this._allowedTurnOptions(gate).length ? road.turnShare(gate) : 0;
+            const share = this._gateTurns(gate, road).share;
             const nextStopM = next ? next.stopLineDistanceM : Infinity;
             flow = peelOff(road.lose(flow, share) + turningIn, gate.stopLineDistanceM, nextStopM) + merging(gate.stopLineDistanceM, nextStopM);
             // Past the last gate the flow leaves the map - or carries on into a joined road.
             if (!next) road.exitPerMin = flow;
         });
+    }
+
+    /** The share of a slip gate's flow that took the slip road before the stop line: the left turners (zero where there's no left-turn lane). */
+    _slipShare(join, road) {
+        const options = this._allowedTurnOptions(join.gate);
+        return options.some((o) => o.movement === 'left') ? road.turnShare(join.gate) / options.length : 0;
+    }
+
+    /**
+     * The turns still made AT `gate`'s stop line and the share of the flow reaching it that makes them. At
+     * a slip gate the left turners left earlier, so the rest turn at the rate they always did - out of a flow with
+     * the left turners taken out.
+     */
+    _gateTurns(gate, road) {
+        const all = this._allowedTurnOptions(gate);
+        if (!all.length) return { options: all, share: 0 };
+        const share = road.turnShare(gate);
+        if (!gate.slipJoin) return { options: all, share };
+        const options = all.filter((o) => o.movement !== 'left');
+        const left = options.length < all.length ? share / all.length : 0;
+        return { options, share: options.length && left < 1 ? ((share * options.length) / all.length) / (1 - left) : 0 };
     }
 
     /** The turns out of `gate` its lane use allows at all. */
@@ -1510,7 +1620,7 @@ export class SimulationEngine {
         }
         for (const info of nodeInfos) {
             if (info.controllerType === 'fixed') {
-                info.controller.recompute(this._arterialDemandAt(info.node), this._crossDemandFor(info.node));
+                info.controller.recompute(this._arterialDemandAt(info.node), this._crossDemandFor(info.node), this._turnStagesAt(info));
             }
         }
     }
@@ -1525,6 +1635,7 @@ export class SimulationEngine {
             nodeInfos,
             (node) => this._arterialDemandAt(node),
             (node) => this._crossDemandFor(node),
+            (node) => this._turnStagesAt(this.nodesInfo.get(node.id)),
             targetSpeedMps
         );
         for (const info of nodeInfos) {
@@ -1541,7 +1652,7 @@ export class SimulationEngine {
         if (!info.arterialGates.length) {
             // Nothing arrives on the arterial side (a one-way street starting at a T): nothing to stop the cross street for.
             info.controllerType = 'none';
-            info.controller = { phase: 0, phaseState: 'green', isArterialGreen: () => true, isCrossGreen: () => true, tick: () => {} };
+            info.controller = { phase: 0, inTurn: false, phaseState: 'green', isArterialGreen: () => true, isCrossGreen: () => true, tick: () => {} };
         } else if (info.node.control === 'roundabout') {
             // No signals to lose in load shedding - a roundabout runs the same either way.
             info.controllerType = 'roundabout';
@@ -1550,6 +1661,15 @@ export class SimulationEngine {
             info.roundaboutOccupants = new Map();
             /** Cars waiting at the yield line - car -> when they got there (s). */
             info.roundaboutWaiting = new Map();
+        } else if (info.node.control === 'stop') {
+            // A stop street keeps its signs through load shedding too - there are no lights to lose.
+            info.controllerType = 'minorStop';
+            info.controller = new MinorStopController();
+            info.allWayStopLockedUntilS = 0;
+            info.allWayStopLegs = {
+                0: { arrivedAtS: null, requiredDwellS: null },
+                1: { arrivedAtS: null, requiredDwellS: null },
+            };
         } else if (this.powerState === 'load_shedding' || info.node.control === 'allWayStop') {
             info.controllerType = 'allWayStop';
             info.controller = new AllWayStopController();
@@ -1563,10 +1683,10 @@ export class SimulationEngine {
             };
         } else if (arterialState.mode === 'fixed') {
             info.controllerType = 'fixed';
-            info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand);
+            info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand, this._turnStagesAt(info));
         } else if (arterialState.mode === 'adaptive') {
             info.controllerType = 'adaptive';
-            info.controller = new AdaptiveController();
+            info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null));
             info.callPersistenceS = [0, 0];
             info.radarSamples = [[], []];
         } else {
@@ -1574,7 +1694,7 @@ export class SimulationEngine {
             // _rebuildControllersForArterial and never reaches here while power is
             // normal. Free-flow placeholder for any other/unknown mode value.
             info.controllerType = 'none';
-            info.controller = { phase: 0, phaseState: 'green', isArterialGreen: () => true, isCrossGreen: () => true, tick: () => {} };
+            info.controller = { phase: 0, inTurn: false, phaseState: 'green', isArterialGreen: () => true, isCrossGreen: () => true, tick: () => {} };
         }
     }
 
@@ -1674,6 +1794,7 @@ export class SimulationEngine {
                 this._recordNodeClears(arterialState, gates, car);
             }
 
+            this._peelOff(carriageway.id, state, lane);
             while (lane.cars.length && lane.cars[0].distanceM > carriageway.lengthM) {
                 if (this.joinsFrom.has(carriageway.id)) {
                     if (!this._handOff(this.joinsFrom.get(carriageway.id), lane)) break; // no room on the next road yet
@@ -2120,8 +2241,7 @@ export class SimulationEngine {
         if (car.crossRollNodeId === nodeId) return false;
 
         if (gate.stopLineDistanceM - car.distanceM > CROSS_DECISION_WINDOW_M) return false;
-        const green = gate.phase === 0 ? gate.info.controller.isArterialGreen() : gate.info.controller.isCrossGreen();
-        const mayEnter = entersByRelease(gate.info.controllerType) ? car.releasedNodeIds.has(nodeId) : green;
+        const mayEnter = entersByReleaseAt(gate.info.controllerType, gate.phase) ? car.releasedNodeIds.has(nodeId) : this._mayProceed(gate, car);
         if (!mayEnter) return false;
 
         car.turnPlan = this._resolvePlanAtStopLine(car, nodeId, gate.slotLaneUse, gate.turnOptions, car.turnPlan);
@@ -2316,6 +2436,10 @@ export class SimulationEngine {
      */
     _updateAllWayStopReleases() {
         for (const info of this.nodesInfo.values()) {
+            if (info.controllerType === 'minorStop') {
+                this._updateMinorStopReleases(info);
+                continue;
+            }
             if (info.controllerType !== 'allWayStop') continue;
 
             const arterialQueued = this._allWayStopQueuedCars(info, 0);
@@ -2342,6 +2466,43 @@ export class SimulationEngine {
             legState.requiredDwellS = null;
             info.allWayStopLockedUntilS = this.simTimeS + junctionClearTimeS(info.node);
         }
+    }
+
+    /**
+     * A stop street: the minor road's front car, once it has stopped for its hesitation (the all-way stop's clock), is
+     * released when no arterial vehicle is in the junction or about to reach it - the arterial never waits.
+     */
+    _updateMinorStopReleases(info) {
+        const queued = this._allWayStopQueuedCars(info, 1);
+        this._updateAllWayStopLegClock(info, 1, queued.length > 0);
+        if (!queued.length || this.simTimeS < (info.allWayStopLockedUntilS ?? 0)) return;
+        const legState = info.allWayStopLegs[1];
+        if (this.simTimeS - legState.arrivedAtS < legState.requiredDwellS) return;
+        if (this._arterialBlocksMinorStop(info)) return;
+
+        for (const car of queued) {
+            car.releasedNodeIds.add(info.node.id);
+            car.startupDelayS = RELEASE_HESITATION_MIN_S + this.rng.next() * RELEASE_HESITATION_JITTER_S;
+            car.startupTimerS = 0;
+        }
+        legState.arrivedAtS = null;
+        legState.requiredDwellS = null;
+        info.allWayStopLockedUntilS = this.simTimeS + junctionClearTimeS(info.node) * MINOR_STOP_LOCK_SHARE;
+    }
+
+    /** True if an arterial vehicle is in `info`'s junction or would reach its stop line within MINOR_STOP_CRITICAL_GAP_S - the minor road waits. */
+    _arterialBlocksMinorStop(info) {
+        for (const gate of info.arterialGates) {
+            for (const lane of this._gateLanes(gate)) {
+                for (const car of lane.cars) {
+                    const toStopM = gate.stopLineDistanceM - car.distanceM;
+                    if (toStopM < -info.node.crossRoadWidthM) continue; // already through
+                    if (toStopM <= 0) return true; // in it now
+                    if (toStopM / Math.max(car.speedMps, 1) < MINOR_STOP_CRITICAL_GAP_S) return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -2723,10 +2884,15 @@ export class SimulationEngine {
         const offsetM = join.from.lengthM;
         const { leader, follower } = aroundPoint(lane, join.toAtM);
         const ahead = leader ? { distanceM: offsetM + leader.distanceM - join.toAtM, speedMps: leader.speedMps, lengthM: leader.lengthM } : null;
-        if (offsetM - car.distanceM < 25 && follower && !mergeGapBehind(follower, car, join.toAtM)) {
+        if (offsetM - car.distanceM < MERGE_WATCH_M && ((follower && !mergeGapBehind(follower, car, join.toAtM)) || this._turnComingInto(join.to.road, lane, join.toAtM))) {
             return nearestAhead(ahead, { distanceM: offsetM, speedMps: 0 });
         }
         return ahead;
+    }
+
+    /** Is a car still sweeping round a turn into `lane` of `road` about to come out within reach of `pointM` - a merge there has to wait for it. */
+    _turnComingInto(road, lane, pointM) {
+        return this.turningCars.some((c) => c.road === road && c.turnPath && Math.abs(c.turnPath.exitDistanceM - pointM) < 25 && this._turnTargetLanes(c.turnPath)[c.lane] === lane);
     }
 
     /** The signal (or all-way stop) at a fed gate right after the join, as it applies to `car` still on the road before it. */
@@ -2823,7 +2989,7 @@ export class SimulationEngine {
         let blocked;
         if (join.toAtM != null) {
             const { leader, follower } = aroundPoint(target, entryM);
-            blocked = (leader && leader.distanceM - (leader.lengthM + car.lengthM) / 2 - entryM < 0.5) || (follower && !mergeGapBehind(follower, car, entryM));
+            blocked = (leader && leader.distanceM - (leader.lengthM + car.lengthM) / 2 - entryM < 0.5) || (follower && !mergeGapBehind(follower, car, entryM)) || this._turnComingInto(join.to.road, target, entryM);
         } else {
             const tail = lastCarIn(target);
             blocked = tail && tail.distanceM - (tail.lengthM + car.lengthM) / 2 - entryM < 0.5;
@@ -2865,6 +3031,7 @@ export class SimulationEngine {
     _divergeAhead(dir, car) {
         const key = this._dirKeyOf(dir);
         for (const join of this.divergesFrom.get(key) ?? []) {
+            if (join.slip) continue; // taken from the left-turn lane, not decided by a share
             const toGoM = join.fromAtM - car.distanceM;
             if (toGoM < 0 || toGoM > DIVERGE_DECISION_M) continue;
             car.peelDecisions ??= new Map();
@@ -2874,18 +3041,24 @@ export class SimulationEngine {
         return null;
     }
 
-    /** Moves cars in the kerb lane that have just reached a peel-off they decided to take onto its road - or, with no room there, lets them carry on. */
+    /**
+     * Moves cars that have just reached a peel-off they decided to take onto its road - or, with no room there, lets them carry on.
+     * A share peel-off takes them from the kerb lane; a slip road takes whoever is in the left-turn lane (and only
+     * once it can see a gap to merge into - see _slipEntryBlocked()).
+     */
     _peelOff(key, dirState, lane) {
         const joins = this.divergesFrom.get(key);
-        if (!joins || lane !== dirState.lanes[dirState.laneLayout.kerbSlots]) return;
+        if (!joins) return;
+        const kerbLane = dirState.lanes[dirState.laneLayout.kerbSlots];
         for (const join of joins) {
+            if (join.slip ? !join.gate || !isTurnOnlyLane(join.gate.slotLaneUse?.[dirState.lanes.indexOf(lane)] ?? [], 'left') : lane !== kerbLane) continue;
             for (const car of [...lane.cars]) {
                 if (car.distanceM < join.fromAtM || car.distanceM > join.fromAtM + 15) continue;
-                if (!car.peelDecisions?.get(join)) continue;
-                car.peelDecisions.delete(join);
+                if (!join.slip && !car.peelDecisions?.get(join)) continue;
                 const target = join.to.lanes()[join.to.laneLayout.kerbSlots];
                 const tail = lastCarIn(target);
                 const entryM = car.distanceM - join.fromAtM;
+                if (!join.slip) car.peelDecisions.delete(join);
                 if (tail && tail.distanceM - (tail.lengthM + car.lengthM) / 2 - entryM < 0.5) continue; // no room - it misses the turn
                 lane.cars.splice(lane.cars.indexOf(car), 1);
                 const drawnAt = carWorldPoint(car);
@@ -2960,7 +3133,7 @@ export class SimulationEngine {
             };
         }
 
-        if (entersByRelease(nearest.controllerType)) {
+        if (entersByReleaseAt(nearest.controllerType, nearest.phase)) {
             if (car.releasedNodeIds.has(nearest.node.id)) return null;
             if (nearest.controllerType === 'roundabout' && !this._roundaboutHolds(nearest.info, nearest.approach?.id)) return null;
             return {
@@ -2972,7 +3145,7 @@ export class SimulationEngine {
             };
         }
 
-        if (!nearest.controller.isArterialGreen()) {
+        if (!this._mayProceed(nearest, car)) {
             return {
                 distanceM: nearest.stopLineDistanceM,
                 speedMps: 0,
@@ -2993,16 +3166,38 @@ export class SimulationEngine {
         return nearest;
     }
 
+    /** Does `car` have the go at `gate` - its road's green, or the green arrow of a protected turn it is in the lane for. */
+    _mayProceed(gate, car) {
+        const controller = gate.info.controller;
+        if (gate.phase === 0 ? controller.isArterialGreen() : controller.isCrossGreen()) return true;
+        return this._turnArrowFor(gate, car);
+    }
+
+    /** Is `car` in the left-turn lane of `gate` that leaves as a slip road - it never meets the stop line, so no signal holds it. */
+    _isSlipCar(gate, car) {
+        if (!gate.slipJoin) return false;
+        const moves = gate.slotLaneUse?.[car.lane];
+        return Boolean(moves) && isTurnOnlyLane(moves, 'left');
+    }
+
+    /** The protected turn's green arrow at `gate`, for a car in a lane that only makes that turn - everything else on the road waits for its through green. */
+    _turnArrowFor(gate, car) {
+        if (this._isSlipCar(gate, car)) return true;
+        if (!gate.turnPhase || !gate.info.controller.turnGreen?.(gate.phase)) return false;
+        const moves = gate.slotLaneUse?.[car.lane];
+        return Boolean(moves) && isTurnOnlyLane(moves, gate.turnPhase.movement);
+    }
+
     /** Resolves a single named gate (near or far linked node) to a virtual stationary obstacle if it currently blocks this car. */
     _connectorSignalAhead(gateInfo, gateDistanceM, car, approachId = null, phase = 1) {
         if (gateDistanceM <= car.distanceM) return null; // already past it, or entered past it (see _divertCarToConnector)
 
-        if (entersByRelease(gateInfo.controllerType)) {
+        if (entersByReleaseAt(gateInfo.controllerType, phase)) {
             if (car.releasedNodeIds.has(gateInfo.node.id)) return null;
             if (gateInfo.controllerType === 'roundabout' && !this._roundaboutHolds(gateInfo, approachId)) return null;
             return { distanceM: gateDistanceM, speedMps: 0, isSignal: true, nodeId: gateInfo.node.id, controllerType: gateInfo.controllerType };
         }
-        if (!(phase === 0 ? gateInfo.controller.isArterialGreen() : gateInfo.controller.isCrossGreen())) {
+        if (!(phase === 0 ? gateInfo.controller.isArterialGreen() : gateInfo.controller.isCrossGreen()) && !this._turnArrowFor(this.gatesByApproachId.get(approachId) ?? {}, car)) {
             return { distanceM: gateDistanceM, speedMps: 0, isSignal: true, nodeId: gateInfo.node.id, controllerType: gateInfo.controllerType };
         }
         return null;
@@ -3063,9 +3258,9 @@ export class SimulationEngine {
         const distanceToStop = nearest.stopLineDistanceM - car.distanceM;
         if (distanceToStop > CROSS_DECISION_WINDOW_M) return false;
         const mayEnter =
-            entersByRelease(nearest.controllerType)
+            entersByReleaseAt(nearest.controllerType, nearest.phase)
                 ? car.releasedNodeIds.has(nearest.node.id)
-                : nearest.controller.isArterialGreen();
+                : this._mayProceed(nearest, car);
         if (!mayEnter) return false;
 
         car.turnPlan = this._resolvePlanAtStopLine(car, nearest.node.id, nearest.slotLaneUse, nearest.turnOptions, plan);
@@ -3310,6 +3505,26 @@ export class SimulationEngine {
         return this._phaseApproaches(info, phase).some((a) => detectPresenceAtStopLine(a.cars, a.gateDistanceM));
     }
 
+    /** The cars in the lane(s) road `phase`'s protected turn serves, per gate with its stop-line distance - what its detectors watch. */
+    _turnLaneApproaches(info, phase) {
+        return (info.turnStages[phase]?.gates ?? []).map((gate) => ({
+            cars: this._gateLanes(gate)
+                .flatMap((lane) => lane.cars)
+                .filter((car) => isTurnOnlyLane(gate.slotLaneUse?.[car.lane] ?? [], gate.turnPhase.movement)),
+            gateDistanceM: gate.stopLineDistanceM,
+        }));
+    }
+
+    /** Is a vehicle waiting in road `phase`'s turn lane(s), as the junction's sensors see it - what calls its turn stage. */
+    _turnLaneCalled(info, phase) {
+        return this._turnLaneApproaches(info, phase).some((a) => detectQueuePresence(a.cars, a.gateDistanceM, this.sensorMode));
+    }
+
+    /** Stop-line detector over road `phase`'s turn lane(s), for the turn stage's gap-out - see _vehicleDetectedAtStopLine(). */
+    _turnLaneDetected(info, phase) {
+        return this._turnLaneApproaches(info, phase).some((a) => detectPresenceAtStopLine(a.cars, a.gateDistanceM));
+    }
+
     /**
      * Is the phase that would receive the next green already worth taking green away for?
      * `inductive_loop`/`magnetometer` have detection windows too short to ever count up to
@@ -3422,6 +3637,9 @@ export class SimulationEngine {
                 etaLabel: `give way to traffic from the right already in it (a driver waiting ${ROUNDABOUT_MAX_YIELD_S}s gets the next gap)`,
             };
         }
+        if (info.controllerType === 'minorStop') {
+            return { ...base, phaseLabel: 'Stop street', elapsedS: null, etaLabel: 'minor road stops, then goes once no arterial vehicle is within 4 s of the junction' };
+        }
         if (info.controllerType === 'allWayStop') {
             return {
                 ...base,
@@ -3436,9 +3654,13 @@ export class SimulationEngine {
 
         const phaseLabel =
             controller.phaseState === 'green'
-                ? controller.phase === 0
-                    ? 'Arterial green'
-                    : 'Cross green'
+                ? controller.inTurn
+                    ? controller.phase === 0
+                        ? 'Arterial turn arrow'
+                        : 'Cross turn arrow'
+                    : controller.phase === 0
+                      ? 'Arterial green'
+                      : 'Cross green'
                 : controller.phaseState === 'yellow'
                   ? 'Yellow'
                   : 'All-red';
@@ -3454,10 +3676,11 @@ export class SimulationEngine {
         if (phaseState === 'allRed') return `${Math.max(0, ALL_RED_S - phaseElapsed).toFixed(1)}s (all-red)`;
 
         if (info.controllerType === 'fixed' || info.controllerType === 'greenWave') {
-            const duration = controller.greenDurations[phase];
+            const duration = controller.inTurn ? controller.turnDurations[phase] : controller.greenDurations[phase];
             return `${Math.max(0, duration - phaseElapsed).toFixed(1)}s (fixed split)`;
         }
 
+        if (info.controllerType === 'adaptive' && controller.inTurn) return 'turn arrow - holds while its lane keeps actuating, gaps out after';
         if (info.controllerType === 'adaptive') {
             const { minGreen, maxGreen, gapOutS, minCallToSwitch, callDebounceS, maxCallWaitS } = controller.params;
             const otherQueue = phase === 0 ? crossQueue : arterialQueue; // ground truth, for the human reading this

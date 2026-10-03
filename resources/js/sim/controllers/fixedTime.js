@@ -1,63 +1,84 @@
 /**
  * controllers/fixedTime.js - build step 3.
  *
- * One two-phase, fixed-time controller per intersection:
+ * One fixed-time controller per intersection, cycling through its stages:
  *   phase 0 - arterial through movement green
  *   phase 1 - cross-street movement green (both directions together; they
  *             do not conflict with each other, only with the arterial)
+ * A road with a protected turn gets a lead turn stage in front of its through green
+ * (phasePlan.js) - `inTurn` says which of the two the current stage is.
  *
  * Timing is computed once from the node's demand via Webster's method
  * (equations.js) whenever `recompute()` runs (on load and on demand-slider
  * change) - it never adapts mid-cycle. That is the adaptive controller's job
  * (controllers/adaptive.js, build step 5).
  */
-import { websterOptimumCycle, websterGreenSplit } from '../equations.js';
+import { ALL_RED_S, YELLOW_S, buildStages, fallbackGreens, flowRatio, lostTimeS, minGreenOf, stageRatios, websterCycleFor, websterGreens } from './phasePlan.js';
 
-/** Startup + clearance lost time per phase (standard textbook default), realised below as YELLOW_S + ALL_RED_S. */
-const LOST_TIME_PER_PHASE_S = 4;
-const YELLOW_S = 3;
-const ALL_RED_S = 1;
-/** Floor so a near-zero-demand phase (e.g. an unmodelled cross stub) still gets a legal minimum green. */
-const MIN_GREEN_S = 6;
-/** Used when Webster's method is undefined (Y >= 1, oversaturated) - keep cycling rather than throw mid-run. */
-const FALLBACK_CYCLE_S = 120;
+export { flowRatio };
 
 export class FixedTimeController {
-    constructor(arterialDemand, crossDemand) {
-        this.phase = 0; // 0 = arterial, 1 = cross
+    /** turn: per road (0 arterial, 1 cross) null, or `{ demand, weight }` for the protected turn stage in front of its through green. */
+    constructor(arterialDemand, crossDemand, turn = [null, null]) {
+        this.stepIndex = 0;
         this.phaseState = 'green'; // 'green' | 'yellow' | 'allRed'
         this.phaseElapsed = 0;
-        this.recompute(arterialDemand, crossDemand);
+        this.recompute(arterialDemand, crossDemand, turn);
+    }
+
+    /** The road whose stage this is - 0 arterial, 1 cross. */
+    get phase() {
+        return this.stages[this.stepIndex].phase;
+    }
+
+    /** Is the current stage a lead turn stage rather than a through green. */
+    get inTurn() {
+        return this.stages[this.stepIndex].turn;
     }
 
     /** demand: { spawnRatePerLanePerMin, saturationFlowPerLanePerHour } | null */
-    recompute(arterialDemand, crossDemand) {
-        const L = LOST_TIME_PER_PHASE_S * 2;
-        const flowRatios = [flowRatio(arterialDemand), flowRatio(crossDemand)];
+    recompute(arterialDemand, crossDemand, turn = [null, null]) {
+        this.stages = buildStages(turn);
+        this.stepIndex = Math.min(this.stepIndex, this.stages.length - 1);
 
         let greens;
         try {
-            const cycle = websterOptimumCycle(L, flowRatios);
-            greens = websterGreenSplit(cycle, L, flowRatios);
+            const ratios = stageRatios(this.stages, arterialDemand, crossDemand, turn);
+            greens = websterGreens(this.stages, ratios, websterCycleFor(this.stages, ratios));
         } catch {
-            greens = [FALLBACK_CYCLE_S / 2 - L / 2, FALLBACK_CYCLE_S / 2 - L / 2];
+            greens = fallbackGreens(this.stages, turn);
         }
 
-        this.greenDurations = greens.map((g) => Math.max(MIN_GREEN_S, g));
-        this.cycleLengthS = this.greenDurations[0] + this.greenDurations[1] + L;
+        this.stageGreens = greens.map((g, i) => Math.max(minGreenOf(this.stages[i]), g));
+        /** The through green of each road, and the turn green in front of it (null where it has none). */
+        this.greenDurations = [0, 1].map((p) => this.stageGreens[this.stages.findIndex((s) => s.phase === p && !s.turn)]);
+        this.turnDurations = [0, 1].map((p) => {
+            const i = this.stages.findIndex((s) => s.phase === p && s.turn);
+            return i < 0 ? null : this.stageGreens[i];
+        });
+        this.cycleLengthS = this.stageGreens.reduce((sum, g) => sum + g, 0) + lostTimeS(this.stages);
     }
 
     isArterialGreen() {
-        return this.phase === 0 && this.phaseState === 'green';
+        return this.phase === 0 && !this.inTurn && this.phaseState === 'green';
     }
 
     isCrossGreen() {
-        return this.phase === 1 && this.phaseState === 'green';
+        return this.phase === 1 && !this.inTurn && this.phaseState === 'green';
+    }
+
+    /** Is road `phase`'s protected turn showing its green arrow. */
+    turnGreen(phase) {
+        return this.inTurn && this.phase === phase && this.phaseState === 'green';
+    }
+
+    turnYellow(phase) {
+        return this.inTurn && this.phase === phase && this.phaseState === 'yellow';
     }
 
     tick(dt) {
         this.phaseElapsed += dt;
-        const greenDuration = this.greenDurations[this.phase];
+        const greenDuration = this.stageGreens[this.stepIndex];
 
         if (this.phaseState === 'green' && this.phaseElapsed >= greenDuration) {
             this.phaseState = 'yellow';
@@ -66,15 +87,9 @@ export class FixedTimeController {
             this.phaseState = 'allRed';
             this.phaseElapsed = 0;
         } else if (this.phaseState === 'allRed' && this.phaseElapsed >= ALL_RED_S) {
-            this.phase = 1 - this.phase;
+            this.stepIndex = (this.stepIndex + 1) % this.stages.length;
             this.phaseState = 'green';
             this.phaseElapsed = 0;
         }
     }
-}
-
-export function flowRatio(demand) {
-    if (!demand) return 0;
-    const qPerHour = demand.spawnRatePerLanePerMin * 60;
-    return qPerHour / demand.saturationFlowPerLanePerHour;
 }

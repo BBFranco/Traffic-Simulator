@@ -32,6 +32,7 @@ import {
     DirectionalLight,
     DoubleSide,
     DynamicDrawUsage,
+    ExtrudeGeometry,
     Frustum,
     HemisphereLight,
     InstancedBufferAttribute,
@@ -43,6 +44,7 @@ import {
     PerspectiveCamera,
     PlaneGeometry,
     Scene,
+    Shape,
     Sphere,
     SphereGeometry,
     SRGBColorSpace,
@@ -55,7 +57,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { ARTERIAL_ACCENTS, LayoutRenderer, litLensIndexFor } from '../sim/renderer.js';
 import { SnapshotBuffer } from './SnapshotBuffer.js';
 import { laneArrowShapes } from './laneArrows.js';
-import { turnLaneShapes, medianTurnLaneReachM } from './turnLaneShapes.js';
+import { turnLaneShapes, alignedDashes, medianTurnLaneReachM } from './turnLaneShapes.js';
 import { SHAPE_KEYS, buildVehicleGeometries, shapeFor } from './vehicleModels.js';
 
 const PALETTES = {
@@ -145,6 +147,10 @@ const POLE_HEIGHT_M = 3.2 * SIGNAL_SCALE;
 const HOUSING = { depth: 0.35 * SIGNAL_SCALE, height: 1.1 * SIGNAL_SCALE, width: 0.42 * SIGNAL_SCALE };
 const LENS_RADIUS_M = 0.14 * SIGNAL_SCALE;
 const LENS_GAP_M = 0.34 * SIGNAL_SCALE;
+/** A South African turn head has a second column of lenses beside the red/amber/green - an amber arrow level with the amber lens, a green arrow level with the green. This far to the driver's right of the main column. */
+const ARROW_COLUMN_OFFSET_M = HOUSING.width * 1.05;
+const ARROW_RADIUS_M = LENS_RADIUS_M * 1.5;
+const ARROW_THICKNESS_M = 0.06 * SIGNAL_SCALE;
 
 /** Light levels under normal power vs. during a load-shedding outage. */
 const LIGHTING = { normal: { hemi: 1.15, sun: 1.5 }, outage: { hemi: 0.38, sun: 0.45 } };
@@ -389,6 +395,7 @@ export class Renderer3D {
         this.lensOffColours = p.lensOff.map((hex) => new Color(hex));
         this.lensOnColours = LIT_LENS_COLOURS.map((hex) => new Color(hex));
         this.signalState = null; // force a lens repaint in the new palette
+        this.arrowState = null;
         this.applyBackground();
     }
 
@@ -441,6 +448,9 @@ export class Renderer3D {
         this.stopLineKey = null;
         this.approaches = [];
         this.signalState = null;
+        this.arrows = null;
+        this.arrowHalos = null;
+        this.arrowState = null;
     }
 
     /* ---------------------------------------------------------------- labels */
@@ -598,6 +608,7 @@ export class Renderer3D {
     buildLabels() {
         const northEnd = (a, b) => (a.y <= b.y ? a : b);
         for (const connector of this.layout.connectors) {
+            if (!connector.name) continue; // a slip road is the road it serves, not a street of its own
             this.addLabel(connector.name, northEnd(connector.startPoint, connector.endPoint), 'street');
         }
 
@@ -658,7 +669,9 @@ export class Renderer3D {
         const junction = new FlatLayer();
 
         // Same road list (arterials, connectors, cross stubs) the 2D map strokes.
+        const roads = [];
         LayoutRenderer.prototype.eachRoad.call({ layout: this.layout }, ({ from, to, widthM, lanes, laneWidthM, medianWidthM, twoWay, curvePoints }) => {
+            roads.push({ from, to, widthM, curvePoints });
             const points = curvePoints ?? [from, to];
             const half = widthM / 2;
             const halfMedian = medianWidthM / 2;
@@ -680,7 +693,13 @@ export class Renderer3D {
 
         const turnLanes = turnLaneShapes(this.layout);
         for (const [a, b, c, d] of turnLanes.surfaces) asphalt.quad(a, b, c, d);
-        for (const segment of turnLanes.edges) edgeLine.line(segment, 0, 0.14);
+        for (const segment of turnLanes.solidEdges) edgeLine.line(segment, 0, 0.14);
+        // The road's solid edge line runs along a pocket's inner side: paint it out, then dash the boundary like any lane divider.
+        const edgeMask = new FlatLayer();
+        for (const segment of turnLanes.dividers) {
+            edgeMask.line(segment, 0, 0.3);
+            for (const piece of alignedDashes(segment, roads, 3, 6, 3)) laneDash.line(piece, 0, 0.13);
+        }
 
         // Same two-rectangle union drawJunctions() uses, so skewed connectors are covered.
         for (const arterial of this.layout.arterials) {
@@ -700,7 +719,8 @@ export class Renderer3D {
         this.addStatic(arrows.build(), m.laneDash, LAYER_ORDER.markings);
         this.addStatic(asphalt.build(), m.asphalt, LAYER_ORDER.asphalt);
         this.addStatic(edgeLine.build(), m.edgeLine, LAYER_ORDER.markings);
-        this.addStatic(laneDash.build(), m.laneDash, LAYER_ORDER.markings);
+        this.addStatic(edgeMask.build(), m.asphalt, LAYER_ORDER.markings + 0.3);
+        this.addStatic(laneDash.build(), m.laneDash, LAYER_ORDER.markings + 0.6);
         this.addStatic(centreLine.build(), m.centreLine, LAYER_ORDER.markings);
         this.addStatic(junction.build(), m.junction, LAYER_ORDER.junction);
         this.buildMedians();
@@ -793,6 +813,7 @@ export class Renderer3D {
             for (const node of arterial.intersections) {
                 if (skip.has(node.id)) continue;
                 for (const approach of node.approaches) {
+                    if (node.control === 'stop' && approach.kind === 'arterial') continue; // the arterial isn't held
                     const line = [approach.stopLine.a, approach.stopLine.b];
                     if (node.control === 'roundabout') layer.dashed(line, 0, 0.45, 0.6, 0.6);
                     else layer.line(line, 0, 0.45);
@@ -815,8 +836,13 @@ export class Renderer3D {
             for (const node of arterial.intersections) {
                 // A roundabout has no signals at all, a 4-way stop a stop sign per approach.
                 if (node.control === 'allWayStop') stopApproaches.push(...node.approaches);
+                if (node.control === 'stop') stopApproaches.push(...node.approaches.filter((a) => a.kind === 'cross')); // a stop street stops only the minor road
                 if (node.control !== 'signal') continue;
-                for (const approach of node.approaches) this.approaches.push({ nodeId: node.id, approach });
+                for (const approach of node.approaches) {
+                    /** 'left' / 'right' where this approach's signal has a protected-turn arrow, else null. */
+                    const turn = node.turnPhases?.find((t) => t.approach === approach)?.movement ?? null;
+                    this.approaches.push({ nodeId: node.id, approach, turn });
+                }
             }
         }
         this.buildStopSigns(stopApproaches);
@@ -836,6 +862,35 @@ export class Renderer3D {
         this.lenses.instanceColor = new InstancedBufferAttribute(new Float32Array(n * 9), 3);
         this.halos.instanceColor = new InstancedBufferAttribute(new Float32Array(n * 3), 3);
 
+        // The arrow lens of each head that has one - a flat arrow plate facing the traffic, with its own halo.
+        const turnEntries = this.approaches.filter((entry) => entry.turn);
+        this.turnEntries = turnEntries;
+        const arrowShape = new Shape();
+        arrowShape.moveTo(ARROW_RADIUS_M, 0);
+        arrowShape.lineTo(0, ARROW_RADIUS_M);
+        arrowShape.lineTo(0, ARROW_RADIUS_M * 0.4);
+        arrowShape.lineTo(-ARROW_RADIUS_M, ARROW_RADIUS_M * 0.4);
+        arrowShape.lineTo(-ARROW_RADIUS_M, -ARROW_RADIUS_M * 0.4);
+        arrowShape.lineTo(0, -ARROW_RADIUS_M * 0.4);
+        arrowShape.lineTo(0, -ARROW_RADIUS_M);
+        arrowShape.closePath();
+        const arrowGeometry = new ExtrudeGeometry(arrowShape, { depth: ARROW_THICKNESS_M, bevelEnabled: false });
+        arrowGeometry.rotateY(Math.PI / 2); // points to the driver's right (local -z), plate facing out (+x)
+        // Mirrored for a left arrow, so it has to be double-sided.
+        this.arrowMaterial ??= new MeshBasicMaterial({ side: DoubleSide });
+        // Two per head (instance j * 2 + slot): slot 0 the amber arrow, slot 1 the green.
+        const arrowCount = turnEntries.length * 2;
+        this.arrows = arrowCount ? this.addSignalMesh(arrowGeometry, this.arrowMaterial, arrowCount) : null;
+        this.arrowHalos = arrowCount ? this.addSignalMesh(new SphereGeometry(ARROW_RADIUS_M * 1.6, 12, 8), m.halo, arrowCount) : null;
+        if (this.arrows) {
+            this.arrows.instanceColor = new InstancedBufferAttribute(new Float32Array(arrowCount * 3), 3);
+            this.arrowHalos.instanceColor = new InstancedBufferAttribute(new Float32Array(arrowCount * 3), 3);
+        }
+        this.arrowState = null;
+
+        // A head with arrows is wider: the housing is stretched out to the driver's right (local -z), pinned at its far edge, to hold the second column.
+        const housingRightEdge = HOUSING.width / 2;
+        const housingStretch = (HOUSING.width / 2 + ARROW_COLUMN_OFFSET_M + LENS_RADIUS_M + 0.12) / HOUSING.width;
         const matrix = new Matrix4();
         this.approaches.forEach((entry, k) => {
             const { signalHead, heading } = entry.approach;
@@ -844,6 +899,13 @@ export class Renderer3D {
             const yaw = Math.atan2(-face.y, face.x);
             matrix.makeRotationY(yaw).setPosition(signalHead.x, 0, signalHead.y);
             entry.base = matrix.clone();
+            entry.housingMatrix = entry.turn
+                ? entry.base
+                      .clone()
+                      .multiply(new Matrix4().makeTranslation(0, 0, housingRightEdge))
+                      .multiply(new Matrix4().makeScale(1, 1, housingStretch))
+                      .multiply(new Matrix4().makeTranslation(0, 0, -housingRightEdge))
+                : entry.base;
             entry.lensPoints = [0, 1, 2].map((i) =>
                 toThree(
                     { x: signalHead.x + face.x * (HOUSING.depth / 2), y: signalHead.y + face.y * (HOUSING.depth / 2) },
@@ -852,9 +914,25 @@ export class Renderer3D {
             );
             entry.freeFlow = null;
             this.poles.setMatrixAt(k, matrix);
-            this.housings.setMatrixAt(k, matrix);
+            this.housings.setMatrixAt(k, entry.housingMatrix);
             for (let i = 0; i < 3; i += 1) {
                 this.lenses.setMatrixAt(k * 3 + i, new Matrix4().setPosition(entry.lensPoints[i]));
+            }
+        });
+
+        turnEntries.forEach((entry, j) => {
+            entry.turnIndex = j;
+            entry.arrowMatrices = [];
+            entry.arrowCentres = [];
+            // Slot 0 level with the amber lens (second row), slot 1 with the green (third), in the column to the driver's right.
+            for (const slot of [0, 1]) {
+                const local = new Matrix4().makeTranslation(HOUSING.depth / 2 + 0.01, POLE_HEIGHT_M + HOUSING.height / 2 - 0.1 + LENS_GAP_M - (slot + 1) * LENS_GAP_M, -ARROW_COLUMN_OFFSET_M);
+                const matrix = entry.base.clone().multiply(local).multiply(new Matrix4().makeScale(1, 1, entry.turn === 'left' ? -1 : 1));
+                const centre = new Vector3().setFromMatrixPosition(matrix).add(new Vector3(-entry.approach.heading.x, 0, -entry.approach.heading.y).multiplyScalar(ARROW_THICKNESS_M));
+                entry.arrowMatrices.push(matrix);
+                entry.arrowCentres.push(centre);
+                this.arrows.setMatrixAt(j * 2 + slot, matrix);
+                this.arrowHalos.setMatrixAt(j * 2 + slot, new Matrix4().makeScale(0, 0, 0));
             }
         });
     }
@@ -907,7 +985,8 @@ export class Renderer3D {
                 // A free-flow merge has no signal at all - hide the whole head rather than show a dark one.
                 entry.freeFlow = freeFlow;
                 this.poles.setMatrixAt(k, freeFlow ? zero : entry.base);
-                this.housings.setMatrixAt(k, freeFlow ? zero : entry.base);
+                this.housings.setMatrixAt(k, freeFlow ? zero : entry.housingMatrix);
+                if (entry.turn) for (const slot of [0, 1]) this.arrows.setMatrixAt(entry.turnIndex * 2 + slot, freeFlow ? zero : entry.arrowMatrices[slot]);
                 for (let i = 0; i < 3; i += 1) {
                     this.lenses.setMatrixAt(k * 3 + i, freeFlow ? zero : new Matrix4().setPosition(entry.lensPoints[i]));
                 }
@@ -938,12 +1017,46 @@ export class Renderer3D {
         if (framesDirty) {
             this.poles.instanceMatrix.needsUpdate = true;
             this.housings.instanceMatrix.needsUpdate = true;
+            if (this.arrows) this.arrows.instanceMatrix.needsUpdate = true;
         }
+        this.updateTurnArrows(signals);
         if (lensesDirty || framesDirty) {
             this.lenses.instanceMatrix.needsUpdate = true;
             this.lenses.instanceColor.needsUpdate = true;
             this.halos.instanceMatrix.needsUpdate = true;
             this.halos.instanceColor.needsUpdate = true;
+        }
+    }
+
+    /** The arrow lenses: the amber one lit while its protected turn clears, the green one while it runs, both dark otherwise - repainted only when one changes. */
+    updateTurnArrows(signals) {
+        if (!this.arrows) return;
+        if (!this.arrowState) this.arrowState = new Int8Array(this.turnEntries.length).fill(-2);
+        const zero = new Matrix4().makeScale(0, 0, 0);
+        let dirty = false;
+        this.turnEntries.forEach((entry, j) => {
+            const signal = signals.get(entry.nodeId) ?? null;
+            const turn = signal?.freeFlow ? null : signal?.turns?.[entry.approach.id];
+            // 2 green arrow lit, 1 amber arrow lit, -1 both off
+            const lit = !turn ? -1 : turn.green ? 2 : turn.yellow ? 1 : -1;
+            if (lit === this.arrowState[j]) return;
+            this.arrowState[j] = lit;
+            dirty = true;
+            // Slot 0 is the amber lens (colour 1), slot 1 the green (colour 2) - each lights only on its own state.
+            for (const slot of [0, 1]) {
+                const index = j * 2 + slot;
+                const colourIndex = slot + 1;
+                const on = lit === colourIndex;
+                const colour = on ? this.lensOnColours[colourIndex] : this.lensOffColours[colourIndex];
+                this.arrows.instanceColor.setXYZ(index, colour.r, colour.g, colour.b);
+                this.arrowHalos.setMatrixAt(index, on ? new Matrix4().makeTranslation(entry.arrowCentres[slot]) : zero);
+                if (on) this.arrowHalos.instanceColor.setXYZ(index, colour.r, colour.g, colour.b);
+            }
+        });
+        if (dirty) {
+            this.arrows.instanceColor.needsUpdate = true;
+            this.arrowHalos.instanceMatrix.needsUpdate = true;
+            this.arrowHalos.instanceColor.needsUpdate = true;
         }
     }
 

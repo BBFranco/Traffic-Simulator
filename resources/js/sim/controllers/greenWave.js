@@ -20,14 +20,8 @@
  * demand change never loses "where in the cycle" it was - there is nothing
  * to lose.
  */
-import { websterOptimumCycle, websterGreenSplit, greenWaveOffset, IDM_DEFAULTS } from '../equations.js';
-import { flowRatio } from './fixedTime.js';
-
-const LOST_TIME_PER_PHASE_S = 4;
-const YELLOW_S = 3;
-const ALL_RED_S = 1;
-const MIN_GREEN_S = 6;
-const FALLBACK_CYCLE_S = 120;
+import { greenWaveOffset, IDM_DEFAULTS } from '../equations.js';
+import { ALL_RED_S, FALLBACK_CYCLE_S, YELLOW_S, buildStages, floorWithinCycle, lostTimeS, minGreenOf, stageRatios, websterCycleFor, websterGreens } from './phasePlan.js';
 
 /**
  * Extra link travel time for a platoon that leaves the upstream stop line from rest rather
@@ -42,44 +36,60 @@ function startFromRestLagS(targetSpeedMps) {
 }
 
 export class GreenWaveController {
-    constructor({ offsetS, cycleLengthS, greenDurations }) {
+    /** stages: phasePlan.js's buildStages(); stageGreens: each stage's green, in the same order. */
+    constructor({ offsetS, cycleLengthS, stages, stageGreens }) {
         this.offsetS = offsetS;
         this.cycleLengthS = cycleLengthS;
-        this.greenDurations = greenDurations;
+        this.stages = stages;
+        this.stageGreens = stageGreens;
+        this.greenDurations = [0, 1].map((p) => stageGreens[stages.findIndex((s) => s.phase === p && !s.turn)]);
+        this.turnDurations = [0, 1].map((p) => {
+            const i = stages.findIndex((s) => s.phase === p && s.turn);
+            return i < 0 ? null : stageGreens[i];
+        });
+        this.segments = stages.flatMap((stage, i) => [
+            [stage, 'green', stageGreens[i]],
+            [stage, 'yellow', YELLOW_S],
+            [stage, 'allRed', ALL_RED_S],
+        ]);
         this.phase = 0;
+        this.inTurn = false;
         this.phaseState = 'green';
+        this.phaseElapsed = 0;
     }
 
     isArterialGreen() {
-        return this.phase === 0 && this.phaseState === 'green';
+        return this.phase === 0 && !this.inTurn && this.phaseState === 'green';
     }
 
     isCrossGreen() {
-        return this.phase === 1 && this.phaseState === 'green';
+        return this.phase === 1 && !this.inTurn && this.phaseState === 'green';
+    }
+
+    /** Is road `phase`'s protected turn showing its green arrow. */
+    turnGreen(phase) {
+        return this.inTurn && this.phase === phase && this.phaseState === 'green';
+    }
+
+    turnYellow(phase) {
+        return this.inTurn && this.phase === phase && this.phaseState === 'yellow';
     }
 
     tick(dt, simTimeS) {
         const t = mod(simTimeS - this.offsetS, this.cycleLengthS);
-        const segments = [
-            [0, 'green', this.greenDurations[0]],
-            [0, 'yellow', YELLOW_S],
-            [0, 'allRed', ALL_RED_S],
-            [1, 'green', this.greenDurations[1]],
-            [1, 'yellow', YELLOW_S],
-            [1, 'allRed', ALL_RED_S],
-        ];
         let acc = 0;
-        for (const [phase, state, len] of segments) {
+        for (const [stage, state, len] of this.segments) {
             if (t < acc + len) {
-                this.phase = phase;
+                this.phase = stage.phase;
+                this.inTurn = stage.turn;
                 this.phaseState = state;
+                this.phaseElapsed = t - acc;
                 return;
             }
             acc += len;
         }
         // Floating-point edge at exactly the cycle boundary.
-        this.phase = 0;
-        this.phaseState = 'green';
+        [this.phase, this.inTurn, this.phaseState, this.phaseElapsed] = [this.segments[0][0].phase, this.segments[0][0].turn, 'green', 0];
     }
 }
 
@@ -87,23 +97,27 @@ export class GreenWaveController {
  * @param nodeInfos      this arterial's node infos, in arterial order (engine.js's `nodeInfosByArterial` entry)
  * @param arterialDemandFor (node) => { spawnRatePerLanePerMin, saturationFlowPerLanePerHour } arriving on the arterial there
  * @param crossDemandFor (node) => demand | null, same shape FixedTimeController expects
+ * @param turnFor        (node) => [null | { demand, weight }, ...] per road (0 arterial, 1 cross), the protected turn stage at that node
  * @param targetSpeedMps progression speed the offset chain is built for
  * @returns Map<nodeId, GreenWaveController>
  */
-export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDemandFor, targetSpeedMps) {
-    const L = LOST_TIME_PER_PHASE_S * 2;
-    const flowRatiosByNode = nodeInfos.map((info) => [flowRatio(arterialDemandFor(info.node)), flowRatio(crossDemandFor(info.node))]);
+export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps) {
+    const plans = nodeInfos.map((info) => {
+        const turn = turnFor(info.node);
+        const stages = buildStages(turn);
+        return { stages, ratios: stageRatios(stages, arterialDemandFor(info.node), crossDemandFor(info.node), turn) };
+    });
 
     // Oversaturated anywhere (Y >= 1) -> Webster is undefined for the critical node, so the
     // whole arterial falls back to the same fixed cycle FixedTimeController uses.
     let cycleLengthS;
     try {
-        cycleLengthS = Math.max(...flowRatiosByNode.map((ys) => websterOptimumCycle(L, ys)));
+        cycleLengthS = Math.max(...plans.map((p) => websterCycleFor(p.stages, p.ratios)));
     } catch {
         cycleLengthS = FALLBACK_CYCLE_S;
     }
     // Every node's minimum greens still have to fit inside the common cycle.
-    cycleLengthS = Math.max(cycleLengthS, 2 * MIN_GREEN_S + L);
+    cycleLengthS = Math.max(cycleLengthS, ...plans.map((p) => p.stages.reduce((sum, s) => sum + minGreenOf(s), 0) + lostTimeS(p.stages)));
 
     const controllers = new Map();
     let offsetS = 0;
@@ -113,23 +127,22 @@ export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDem
             const prevDistanceM = info.node.sAlongM - nodeInfos[i - 1].node.sAlongM;
             offsetS += greenWaveOffset(prevDistanceM, targetSpeedMps) + startFromRestLagS(targetSpeedMps);
         }
-        const greenDurations = splitCommonCycle(cycleLengthS, L, flowRatiosByNode[i]);
-        controllers.set(info.node.id, new GreenWaveController({ offsetS, cycleLengthS, greenDurations }));
+        const { stages, ratios } = plans[i];
+        const stageGreens = splitCommonCycle(cycleLengthS, stages, ratios);
+        // The offset is where the arterial's through green opens, so a lead turn stage in front of it starts earlier.
+        const leadS = stages[0].turn ? stageGreens[0] + YELLOW_S + ALL_RED_S : 0;
+        controllers.set(info.node.id, new GreenWaveController({ offsetS: offsetS - leadS, cycleLengthS, stages, stageGreens }));
     });
     return controllers;
 }
 
 /**
  * One node's Webster split of the arterial's common cycle. The minimum-green floor takes its
- * time from the other phase rather than lengthening the cycle, so every node keeps the exact
+ * time from the other stages rather than lengthening the cycle, so every node keeps the exact
  * common cycle the offsets are built on.
  */
-function splitCommonCycle(cycleLengthS, L, flowRatios) {
-    const effectiveGreen = cycleLengthS - L;
-    const Y = flowRatios[0] + flowRatios[1];
-    const [arterialGreen] = Y > 0 ? websterGreenSplit(cycleLengthS, L, flowRatios) : [effectiveGreen / 2];
-    const clampedArterial = Math.min(Math.max(arterialGreen, MIN_GREEN_S), effectiveGreen - MIN_GREEN_S);
-    return [clampedArterial, effectiveGreen - clampedArterial];
+function splitCommonCycle(cycleLengthS, stages, ratios) {
+    return floorWithinCycle(stages, websterGreens(stages, ratios, cycleLengthS), cycleLengthS);
 }
 
 function mod(a, n) {

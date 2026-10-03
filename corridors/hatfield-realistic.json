@@ -77,13 +77,13 @@
         {
             "to": "conn_jan_shoba:rev",
             "from": "conn_lunnon_w_on:fwd",
-            "toAtM": 580
+            "toAtM": 556.8
         },
         {
             "to": "conn_lunnon_w_off:fwd",
             "from": "conn_jan_shoba:rev",
             "share": 0.1,
-            "fromAtM": 460
+            "fromAtM": 483.1
         },
         {
             "to": "conn_lunnon_west:rev",
@@ -93,7 +93,7 @@
             "to": "conn_lunnon_e_off:fwd",
             "from": "conn_jan_shoba:fwd",
             "share": 0.1,
-            "fromAtM": 1547.2
+            "fromAtM": 1570.5
         },
         {
             "to": "lunnon:fwd",
@@ -106,7 +106,7 @@
         {
             "to": "conn_jan_shoba:fwd",
             "from": "conn_lunnon_e_on:fwd",
-            "toAtM": 1667.2
+            "toAtM": 1644
         },
         {
             "to": "conn_prospect_w_on:fwd",
@@ -115,13 +115,13 @@
         {
             "to": "conn_jan_shoba:rev",
             "from": "conn_prospect_w_on:fwd",
-            "toAtM": 1508.2
+            "toAtM": 1485
         },
         {
             "to": "conn_prospect_w_off:fwd",
             "from": "conn_jan_shoba:rev",
             "share": 0.1,
-            "fromAtM": 1388.2
+            "fromAtM": 1411.3
         },
         {
             "to": "prospect:rev",
@@ -131,7 +131,7 @@
             "to": "conn_prospect_e_off:fwd",
             "from": "conn_jan_shoba:fwd",
             "share": 0.1,
-            "fromAtM": 619
+            "fromAtM": 642.3
         },
         {
             "to": "conn_prospect_east:fwd",
@@ -144,7 +144,7 @@
         {
             "to": "conn_jan_shoba:fwd",
             "from": "conn_prospect_e_on:fwd",
-            "toAtM": 739
+            "toAtM": 715.8
         },
         {
             "to": "conn_arcadia_oneway:fwd",
@@ -193,6 +193,39 @@
         {
             "to": "conn_duxbury_west:rev",
             "from": "duxbury:rev"
+        },
+        {
+            "from": "conn_jan_shoba:fwd",
+            "to": "slip_duxbury_janshoba_southbound:fwd",
+            "fromAtM": 1304.7,
+            "slip": true
+        },
+        {
+            "from": "slip_duxbury_janshoba_southbound:fwd",
+            "to": "conn_duxbury_east:fwd",
+            "toAtM": 45.5
+        },
+        {
+            "from": "lynnwood",
+            "to": "slip_lynnwood_duxbury_eastbound:fwd",
+            "fromAtM": 788.7,
+            "slip": true
+        },
+        {
+            "from": "slip_lynnwood_duxbury_eastbound:fwd",
+            "to": "conn_duxbury_east:rev",
+            "toAtM": 45.5
+        },
+        {
+            "from": "conn_jan_shoba:rev",
+            "to": "slip_burnett_janshoba_northbound:fwd",
+            "fromAtM": 1679.1,
+            "slip": true
+        },
+        {
+            "from": "slip_burnett_janshoba_northbound:fwd",
+            "to": "burnett",
+            "toAtM": 45.5
         }
     ],
     "tapers": [
@@ -471,7 +504,13 @@
                                 "lengthM": 20
                             }
                         }
-                    }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "eastbound",
+                            "movement": "right"
+                        }
+                    ]
                 }
             ],
             "targetSpeedKph": 60,
@@ -729,7 +768,13 @@
                                 "lengthM": 40
                             }
                         }
-                    }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "eastbound",
+                            "movement": "right"
+                        }
+                    ]
                 }
             ],
             "targetSpeedKph": 60,
@@ -768,7 +813,13 @@
                         "straight",
                         "straight_right"
                     ],
-                    "distanceToNextM": 245
+                    "distanceToNextM": 245,
+                    "turnPhases": [
+                        {
+                            "direction": "northbound",
+                            "movement": "right"
+                        }
+                    ]
                 },
                 {
                     "id": "park_janshoba",
@@ -777,6 +828,12 @@
                         "left",
                         "straight",
                         "right"
+                    ],
+                    "turnPhases": [
+                        {
+                            "direction": "eastbound",
+                            "movement": "right"
+                        }
                     ]
                 }
             ],
@@ -807,7 +864,19 @@
                 {
                     "id": "burnett_janshoba",
                     "name": "Burnett & Jan Shoba",
-                    "distanceToNextM": 245
+                    "distanceToNextM": 245,
+                    "turnPhases": [
+                        {
+                            "direction": "southbound",
+                            "movement": "right"
+                        }
+                    ],
+                    "slipLanes": [
+                        {
+                            "direction": "northbound",
+                            "backM": 13.8
+                        }
+                    ]
                 },
                 {
                     "id": "burnett_grosvenor",
@@ -1017,7 +1086,13 @@
                                 "lengthM": 10
                             }
                         }
-                    }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "northbound",
+                            "movement": "right"
+                        }
+                    ]
                 }
             ],
             "targetSpeedKph": 60,
@@ -1051,17 +1126,35 @@
                     "name": "Duxbury & Jan Shoba",
                     "laneUse": {
                         "eastbound": [
-                            "straight_right"
+                            "left_straight"
                         ]
                     },
                     "turnLanes": {
                         "eastbound": {
-                            "left": {
-                                "laneUse": "left",
-                                "lengthM": 40
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 20
                             }
                         }
-                    }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "westbound",
+                            "movement": "right",
+                            "weight": 2
+                        },
+                        {
+                            "direction": "eastbound",
+                            "movement": "right",
+                            "weight": 2
+                        }
+                    ],
+                    "slipLanes": [
+                        {
+                            "direction": "southbound",
+                            "backM": 13.7
+                        }
+                    ]
                 }
             ],
             "targetSpeedKph": 60,
@@ -1081,14 +1174,28 @@
             },
             "oneWay": false,
             "origin": {
-                "xM": 808.7,
-                "yM": 2501.3
+                "xM": 687.9,
+                "yM": 2431.6
             },
             "direction": "eastbound",
             "shortName": "Lunnon",
             "headingDeg": 120,
             "exitLengthM": 250,
             "intersections": [
+                {
+                    "id": "lunnon_dyer",
+                    "name": "Lunnon & Dyer",
+                    "control": "stop",
+                    "laneUse": {
+                        "eastbound": [
+                            "all"
+                        ],
+                        "westbound": [
+                            "all"
+                        ]
+                    },
+                    "distanceToNextM": 139.5
+                },
                 {
                     "id": "lunnon_duxbury",
                     "name": "Lunnon & Duxbury",
@@ -1107,7 +1214,7 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 395,
+            "approachLengthM": 255.5,
             "scope": "side"
         },
         {
@@ -1167,7 +1274,56 @@
                             }
                         }
                     },
-                    "distanceToNextM": 561
+                    "distanceToNextM": 280.5,
+                    "turnPhases": [
+                        {
+                            "direction": "southbound",
+                            "movement": "left"
+                        },
+                        {
+                            "direction": "westbound",
+                            "movement": "right"
+                        },
+                        {
+                            "direction": "northbound",
+                            "movement": "right"
+                        }
+                    ]
+                },
+                {
+                    "id": "lynnwood_dyer",
+                    "name": "Lynnwood & Dyer",
+                    "laneUse": {
+                        "eastbound": [
+                            "straight",
+                            "straight"
+                        ],
+                        "westbound": [
+                            "straight",
+                            "straight"
+                        ]
+                    },
+                    "turnLanes": {
+                        "eastbound": {
+                            "left": {
+                                "laneUse": "left",
+                                "lengthM": 40
+                            }
+                        },
+                        "westbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 40
+                            }
+                        }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "westbound",
+                            "movement": "right"
+                        }
+                    ],
+                    "distanceToNextM": 280.5
                 },
                 {
                     "id": "lynnwood_duxbury",
@@ -1203,11 +1359,77 @@
                                 "lengthM": 20
                             }
                         }
-                    }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "southbound",
+                            "movement": "left"
+                        },
+                        {
+                            "direction": "eastbound",
+                            "movement": "right",
+                            "weight": 2
+                        },
+                        {
+                            "direction": "westbound",
+                            "movement": "right",
+                            "weight": 2
+                        },
+                        {
+                            "direction": "northbound",
+                            "movement": "left"
+                        }
+                    ],
+                    "slipLanes": [
+                        {
+                            "direction": "eastbound",
+                            "backM": 13.6
+                        }
+                    ]
                 }
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 250
+        },
+        {
+            "id": "dyer_mall",
+            "mode": "fixed",
+            "name": "Mall Road",
+            "lanes": 2,
+            "scope": "side",
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "oneWay": false,
+            "origin": {
+                "xM": 607.9,
+                "yM": 2570.1
+            },
+            "direction": "eastbound",
+            "shortName": "Mall",
+            "headingDeg": 120,
+            "exitLengthM": 150,
+            "intersections": [
+                {
+                    "id": "dyer_roundabout",
+                    "name": "Dyer & Mall Road",
+                    "control": "roundabout",
+                    "laneUse": {
+                        "eastbound": [
+                            "all"
+                        ],
+                        "westbound": [
+                            "all"
+                        ]
+                    },
+                    "roundaboutDiameterM": 36
+                }
+            ],
+            "targetSpeedKph": 60,
+            "approachLengthM": 150
         }
     ],
     "sortOrder": 2,
@@ -1784,6 +2006,14 @@
                             "lengthM": 20
                         }
                     }
+                },
+                "park_grosvenor": {
+                    "northbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 15
+                        }
+                    }
                 }
             },
             "stubStartM": 0,
@@ -2269,12 +2499,20 @@
                     "yM": 2277.3
                 },
                 {
-                    "xM": 439.8,
-                    "yM": 2286.3
+                    "xM": 436.7,
+                    "yM": 2284.6
                 },
                 {
-                    "xM": 468.9,
-                    "yM": 2235.8
+                    "xM": 442.7,
+                    "yM": 2274.2
+                },
+                {
+                    "xM": 447.7,
+                    "yM": 2265.5
+                },
+                {
+                    "xM": 457.3,
+                    "yM": 2255.9
                 }
             ],
             "lanes": 1,
@@ -2289,15 +2527,23 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 408.9,
-                    "yM": 2339.8
+                    "xM": 420.5,
+                    "yM": 2319.7
                 },
                 {
-                    "xM": 438.1,
-                    "yM": 2289.3
+                    "xM": 424,
+                    "yM": 2306.6
                 },
                 {
-                    "xM": 422.5,
+                    "xM": 429,
+                    "yM": 2298
+                },
+                {
+                    "xM": 435,
+                    "yM": 2287.6
+                },
+                {
+                    "xM": 422.4,
                     "yM": 2280.3
                 }
             ],
@@ -2313,12 +2559,20 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 481.1,
-                    "yM": 2242.8
+                    "xM": 469.4,
+                    "yM": 2262.9
                 },
                 {
-                    "xM": 451.9,
-                    "yM": 2293.3
+                    "xM": 465.9,
+                    "yM": 2276
+                },
+                {
+                    "xM": 460.9,
+                    "yM": 2284.6
+                },
+                {
+                    "xM": 454.9,
+                    "yM": 2295
                 },
                 {
                     "xM": 467.5,
@@ -2337,16 +2591,24 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 465.8,
+                    "xM": 465.7,
                     "yM": 2305.3
                 },
                 {
-                    "xM": 450.2,
-                    "yM": 2296.3
+                    "xM": 453.2,
+                    "yM": 2298.1
                 },
                 {
-                    "xM": 421.1,
-                    "yM": 2346.8
+                    "xM": 447.2,
+                    "yM": 2308.5
+                },
+                {
+                    "xM": 442.2,
+                    "yM": 2317.1
+                },
+                {
+                    "xM": 432.6,
+                    "yM": 2326.7
                 }
             ],
             "lanes": 1,
@@ -2395,12 +2657,20 @@
                     "yM": 1437.3
                 },
                 {
-                    "xM": 728,
+                    "xM": 724.5,
                     "yM": 1437.3
                 },
                 {
+                    "xM": 724.5,
+                    "yM": 1425.3
+                },
+                {
+                    "xM": 724.5,
+                    "yM": 1415.3
+                },
+                {
                     "xM": 728,
-                    "yM": 1379
+                    "yM": 1402.2
                 }
             ],
             "lanes": 1,
@@ -2416,10 +2686,18 @@
             "curve": [
                 {
                     "xM": 728,
-                    "yM": 1499
+                    "yM": 1475.8
                 },
                 {
-                    "xM": 728,
+                    "xM": 724.5,
+                    "yM": 1462.8
+                },
+                {
+                    "xM": 724.5,
+                    "yM": 1452.8
+                },
+                {
+                    "xM": 724.5,
                     "yM": 1440.8
                 },
                 {
@@ -2440,10 +2718,18 @@
             "curve": [
                 {
                     "xM": 742,
-                    "yM": 1379
+                    "yM": 1402.2
                 },
                 {
-                    "xM": 742,
+                    "xM": 745.5,
+                    "yM": 1415.3
+                },
+                {
+                    "xM": 745.5,
+                    "yM": 1425.3
+                },
+                {
+                    "xM": 745.5,
                     "yM": 1437.3
                 },
                 {
@@ -2467,12 +2753,20 @@
                     "yM": 1440.8
                 },
                 {
-                    "xM": 742,
+                    "xM": 745.5,
                     "yM": 1440.8
                 },
                 {
+                    "xM": 745.5,
+                    "yM": 1452.8
+                },
+                {
+                    "xM": 745.5,
+                    "yM": 1462.8
+                },
+                {
                     "xM": 742,
-                    "yM": 1499
+                    "yM": 1475.8
                 }
             ],
             "lanes": 1,
@@ -2644,6 +2938,125 @@
             "turnChance": 0,
             "crossChance": 0,
             "targetSpeedKph": 60
+        },
+        {
+            "id": "slip_duxbury_janshoba_southbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 605.3,
+                    "yM": 2034.6
+                },
+                {
+                    "xM": 599.3,
+                    "yM": 2044.9
+                },
+                {
+                    "xM": 609.7,
+                    "yM": 2050.9
+                },
+                {
+                    "xM": 618.4,
+                    "yM": 2055.9
+                },
+                {
+                    "xM": 627.9,
+                    "yM": 2065.5
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "slip_lynnwood_duxbury_eastbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 756.7,
+                    "yM": 2828.6
+                },
+                {
+                    "xM": 767,
+                    "yM": 2834.6
+                },
+                {
+                    "xM": 773.1,
+                    "yM": 2824.3
+                },
+                {
+                    "xM": 778.1,
+                    "yM": 2815.7
+                },
+                {
+                    "xM": 787.7,
+                    "yM": 2806.2
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "slip_burnett_janshoba_northbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 724.5,
+                    "yM": 1208
+                },
+                {
+                    "xM": 724.5,
+                    "yM": 1196
+                },
+                {
+                    "xM": 712.5,
+                    "yM": 1196
+                },
+                {
+                    "xM": 702.5,
+                    "yM": 1196
+                },
+                {
+                    "xM": 689.4,
+                    "yM": 1192.5
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "conn_dyer",
+            "mode": "fixed",
+            "name": "Dyer Road",
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "stubStartM": 0,
+            "stubEndM": 0,
+            "turnChance": 0.1,
+            "crossChance": 0.1,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "lynnwood_dyer",
+                "dyer_roundabout",
+                "lunnon_dyer"
+            ]
         }
     ],
     "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (a side street: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, 2 + 2 divided to Grosvenor, then 2 + 2 to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - Festival and Hilda narrow to 1 + 1 two-way south of Burnett, Grosvenor south of Arcadia - and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data."
