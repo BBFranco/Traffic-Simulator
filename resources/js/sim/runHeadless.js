@@ -14,6 +14,7 @@
  */
 import { buildLayout } from './corridor.js';
 import { SimulationEngine, WAIT_ACCOUNTING } from './engine.js';
+import { controllerConfigFor } from './controllers/phasePlan.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
 const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
@@ -40,6 +41,7 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  * @param sampleEverySeconds   how often (sim time) to emit a CSV row - spec explicitly says not literally every tick
  * @param routingMode          'random' | 'destination' - overrides the corridor's own `routing.mode` for this run;
  *                             null keeps the corridor's (random when it has no `routing` section)
+ * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
  * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
  *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
@@ -55,6 +57,7 @@ export function runHeadless({
     dt = 0.1,
     sampleEverySeconds = 1,
     routingMode = null,
+    websterTurnWeight = false,
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -77,6 +80,7 @@ export function runHeadless({
         batteryBackedSensors: true,
         power: { loadShedding: false, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
         routingMode,
+        websterTurnWeight,
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
@@ -396,8 +400,23 @@ function buildSummary({
             dt,
             routingMode: engine.routingMode,
             waitAccounting: WAIT_ACCOUNTING,
+            controllerConfig: controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+            /** Which destination tiers the corridor carried (routing.blocks) - null without a routing section. */
+            routingTiersHash: tiersHash(layout.routing),
         },
     };
+}
+
+/** Short FNV-1a hash of every block's id and tier, so two batches with edited tiers read as different. */
+function tiersHash(routing) {
+    if (!routing) return null;
+    const text = routing.blocks.map((block) => `${block.id}:${block.tier}:${block.weightShare}`).join('|');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+        h ^= text.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 function routingSummary(stats) {

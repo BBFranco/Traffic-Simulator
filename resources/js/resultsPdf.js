@@ -78,6 +78,20 @@ const fmtRecovery = (row, metric) => {
     const recovered = `${row[`${metric}_recovered`]}/${row.runs}`;
     return row[metric] == null ? `did not recover (${recovered})` : `${Number(row[metric]).toFixed(1)} s (${recovered})`;
 };
+/**
+ * Mean recovery time with every run that never recovered counted at the full window after
+ * power returns - a floor on the true mean (it understates the gap), but one figure built on
+ * every run rather than on the few that made it.
+ */
+const cappedRecoveryS = (meanS, recovered, runs, windowS) =>
+    windowS == null || !runs ? null : ((meanS ?? 0) * recovered + windowS * (runs - recovered)) / runs;
+/** Wait recovery as the share of runs that recovered within the window, then the capped mean. */
+const fmtWaitRecovery = (row, metric, windowS) => {
+    const recovered = row[`${metric}_recovered`];
+    const capped = cappedRecoveryS(row[metric], recovered, row.runs, windowS);
+    return `${Math.round((recovered / row.runs) * 100)}% recovered (${recovered}/${row.runs})${capped == null ? '' : `
+capped mean ${Math.round(capped)} s`}`;
+};
 
 /**
  * Every controller variant the report compares, in a fixed order - baseline first. `row(power)`
@@ -482,10 +496,7 @@ function drawCover(report, data, variants, corridorLayout) {
     doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(203, 213, 225);
     doc.text('Does ITS beat the fixed-time baseline? Every scope, every controller variant.', PAGE.margin, 50);
     doc.text(`Generated ${meta.generatedAt}`, PAGE.margin, 56);
-    if (data.batchStamp?.label) {
-        doc.setFontSize(8).setTextColor(148, 163, 184);
-        doc.text(doc.splitTextToSize(`Batch: ${data.batchStamp.label}`, CONTENT_WIDTH), PAGE.margin, 60.5);
-    }
+
 
     const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
     const conditions = data.aggregatesBySensor.length;
@@ -497,6 +508,11 @@ function drawCover(report, data, variants, corridorLayout) {
         ['Outage window', timeline?.sheddingStart != null ? `${Math.round(timeline.sheddingStart)}-${Math.round(timeline.sheddingEnd)} s` : 'n/a'],
         ['Warm-up', data.batchWarmupLabel ?? 'n/a'],
     ];
+
+    if (data.batchStamp?.label) {
+        doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...COLOURS.muted);
+        doc.text(doc.splitTextToSize(`Batch: ${data.batchStamp.label}`, CONTENT_WIDTH).slice(0, 2), PAGE.margin, 67.5);
+    }
 
     const boxWidth = (CONTENT_WIDTH - (stats.length - 1) * 4) / stats.length;
     stats.forEach(([label, value], i) => {
@@ -570,8 +586,18 @@ function comparisonRows(data, variants, scope) {
  * minimum recovered runs per side the controller leaves the delta null - say why instead.
  * A reliable-but-null delta means fixed-time recovered in 0.0s, so there's no ratio: n/a.
  */
-function fmtRecoveryDelta(c, metric) {
+function fmtRecoveryDelta(c, metric, windowS = null) {
     if (c.power_state !== 'load_shedding') return '-';
+    if (metric === 'wait') {
+        // Mostly censored by the window, so the share that recovered - not a mean over the few that did.
+        const share = (recovered, runs) => `${Math.round((recovered / runs) * 100)}%`;
+        const capped = (meanS, recovered, runs) => cappedRecoveryS(meanS, recovered, runs, windowS);
+        const subjectCapped = capped(c.recovery_wait_seconds, c.recovery_wait_recovered, c.runs);
+        const baselineCapped = capped(c.baseline_recovery_wait_seconds, c.baseline_recovery_wait_recovered, c.baseline_runs);
+        const cappedText = subjectCapped == null ? '' : `
+capped ${Math.round(subjectCapped)} vs ${Math.round(baselineCapped)} s`;
+        return `${share(c.recovery_wait_recovered, c.runs)} vs ${share(c.baseline_recovery_wait_recovered, c.baseline_runs)} recovered${cappedText}`;
+    }
     const [delta, reliable, recovered, baselineRecovered] = metric === 'wait'
         ? [c.recovery_wait_delta_pct, c.recovery_wait_reliable, c.recovery_wait_recovered, c.baseline_recovery_wait_recovered]
         : [c.recovery_delta_pct, c.recovery_reliable, c.recovery_recovered, c.baseline_recovery_recovered];
@@ -627,7 +653,11 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
             : [
                   // Throughput-recovery first: wait-recovery is mostly censored by the measured window.
                   { header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' },
-                  { header: 'Recovery (wait)', value: (c) => fmtRecoveryDelta(c, 'wait'), improves: 'recovery_wait_improves' },
+                  {
+                      header: 'Recovery (wait)',
+                      value: (c) => fmtRecoveryDelta(c, 'wait', data.batchStamp?.postRestoreWindowS),
+                      improves: (c) => (c.power_state === 'load_shedding' ? c.recovery_wait_recovered / c.runs > c.baseline_recovery_wait_recovered / c.baseline_runs : null),
+                  },
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
@@ -659,7 +689,7 @@ function perConditionTable(report, data, variants, scope) {
                 fmtCi(row[m('throughput_per_min')], row[`${m('throughput_per_min')}_ci95`]),
                 fmtCi(row[m('pct_cleared_without_stop')], row[`${m('pct_cleared_without_stop')}_ci95`]),
                 power === 'load_shedding' ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-',
-                power === 'load_shedding' ? fmtRecovery(row, m('time_to_recovery_wait_seconds')) : '-',
+                power === 'load_shedding' ? fmtWaitRecovery(row, m('time_to_recovery_wait_seconds'), data.batchStamp?.postRestoreWindowS) : '-',
             ]);
         });
     });
@@ -739,7 +769,7 @@ function drawScope(report, data, variants, scope, index) {
 
     report.heading(
         'Load shedding, segmented',
-        'Pre-outage / during-outage / post-recovery averages from cumulative counters. During the outage every controller falls back to the same all-way-stop control, so near-identical numbers there are expected.'
+        'Pre-outage / during-outage / post-recovery averages from cumulative counters. During the outage every controller runs the same all-way-stop control, but each carries in the queue it had when the power went - so the during-outage figures still differ by controller.'
     );
     segmentedTable(report, variants, scope);
 
@@ -803,6 +833,8 @@ function drawMethodNotes(report, data) {
         '± figures are 95% confidence half-widths (1.96 x sample stddev / sqrt(n)) on each condition\'s own mean, not on the delta between two conditions.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
+        `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
+        `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         'The wait-time distribution (median / P95 / max) is recorded for the total scope only.',
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
@@ -814,6 +846,34 @@ function drawMethodNotes(report, data) {
  * @param {{corridorId: string, corridorName: string, corridorUrl: ?string}} corridor
  *   `corridorUrl` is null for "All corridors" - no single layout to draw then.
  */
+/**
+ * Appendix: the latest sensitivity batch (different signal-timing rules) against the main batch
+ * on the same seeds. The headline above always stays on the main batch.
+ */
+function drawSensitivityAppendix(report, appendix) {
+    report.newPage();
+    report.sectionTitle('Appendix - Webster sensitivity', `Protected-turn q scaled by the stage's weight before Webster · ${appendix.label}`);
+    report.paragraph(
+        "The main batch times protected turns on real q and uses a turn stage's weight only for its minimum green. This batch also multiplies the turn q by its weight before Webster, which lengthens the cycle at the weighted junctions. Same seeds as the main batch; ± is the 95% CI on the per-seed differences."
+    );
+    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive - Inductive loop' };
+    report.table({
+        head: [['Controller', 'Power', 'Runs', 'Avg wait, sensitivity (s)', 'Avg wait, main, same seeds (s)', 'Sensitivity vs main']],
+        body: appendix.rows.map((row) => [
+            controllerLabel[row.controller_mode] ?? row.controller_mode,
+            POWER_LABELS[row.power_state] ?? row.power_state,
+            String(row.runs),
+            fmt(row.sensitivity_avg_wait),
+            fmt(row.main_avg_wait_same_seeds),
+            row.vs_main ? fmtPaired(row.vs_main.delta, row.vs_main.ci95, '%') : 'n/a',
+        ]),
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    });
+    const gw = appendix.greenWaveVsFixed;
+    const fmtGw = (d) => (d ? `${fmtDelta(d.delta, '%')} ±${d.ci95.toFixed(1)} (${d.pairs} seeds)` : 'n/a');
+    report.paragraph(`Green wave vs fixed-time, average wait: ${fmtGw(gw.sensitivity)} under the sensitivity rules, ${fmtGw(gw.main)} in the main batch.`);
+}
+
 /**
  * e.g. results-hatfield-realistic-2026-10-03-2130-794f8bf-dirty.pdf - named for the batch it
  * reports (its start time and code), so two PDFs can't be mistaken for the same dataset.
@@ -849,6 +909,7 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         report.sectionTitle(`${SCOPES.length + 1}. Wait-time distribution`, 'Total scope - a mean alone can\'t tell "everyone waits a bit longer" apart from "a few are stranded"');
         distributionTable(report, data, variants);
         drawMethodNotes(report, data);
+        if (data.sensitivityAppendix) drawSensitivityAppendix(report, data.sensitivityAppendix);
 
         report.stampPages();
         report.doc.save(reportFileName(corridorId, data.batchStamp, now));

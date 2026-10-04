@@ -18,6 +18,10 @@
  *     [--reps=30] [--duration=36000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
  *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
+ *     [--controllers=fixed,green_wave] [--power=normal] [--webster-turn-weight]
+ *
+ * --webster-turn-weight runs the Webster sensitivity: a protected turn's q scaled by its weight.
+ * It is stored as a 'sensitivity' batch, so it never replaces the baseline on /results.
  *
  * --duration is in MEASURED ticks at dt=0.1s (36000 ticks = 60 simulated minutes
  * per run by default). --warmup-ticks run BEFORE that and are discarded from
@@ -63,6 +67,9 @@ function parseArgs(argv) {
         dt: 0.1,
         post: null,
         routing: null,
+        controllers: null,
+        power: null,
+        websterTurnWeight: false,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -77,6 +84,9 @@ function parseArgs(argv) {
         else if (key === 'dt') args.dt = Number(value);
         else if (key === 'post') args.post = value;
         else if (key === 'routing') args.routing = value;
+        else if (key === 'controllers') args.controllers = value.split(',');
+        else if (key === 'power') args.power = value.split(',');
+        else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
     }
     // Default outage schedule: starts a quarter of the way in, power restored at the
     // halfway mark - only filled in once `duration` is known, so a custom --duration
@@ -161,7 +171,10 @@ async function main() {
     const warmup = args.warmupTicks === 'auto' ? probeWarmup(corridorConfig, args) : { warmupTicks: args.warmupTicks, stationary: null };
     if (args.probeOnly) return;
 
-    const matrix = buildExperimentalMatrix();
+    const matrix = buildExperimentalMatrix()
+        .filter((c) => !args.controllers || args.controllers.includes(c.controllerMode))
+        .filter((c) => !args.power || args.power.includes(c.powerState));
+    const batchKind = args.websterTurnWeight ? 'sensitivity' : 'main';
     const batchId = randomUUID();
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
@@ -190,6 +203,7 @@ async function main() {
                 durationTicks: args.duration,
                 dt: args.dt,
                 routingMode: args.routing,
+                websterTurnWeight: args.websterTurnWeight,
             });
 
             fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
@@ -201,7 +215,7 @@ async function main() {
             }
 
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt, build }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt, build, batchKind }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to
@@ -222,7 +236,8 @@ async function main() {
             }
         }
 
-        if (args.post && recoveryAcc) {
+        // A sensitivity batch's recovery curves would replace the main batch's - keep them out.
+        if (args.post && recoveryAcc && batchKind === 'main') {
             await postRecoveryTicks(
                 args.post.replace(/\/[^/]+$/, '/recovery-ticks'),
                 finalizeRecoveryTickPayload(recoveryAcc, {

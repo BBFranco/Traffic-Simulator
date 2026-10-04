@@ -8,8 +8,9 @@
  * `warmupStationary`: the batch's warm-up probe verdict (sim/warmupProbe.js), null when the warm-up was hand-picked.
  * `batchStartedAt`: when the batch was launched (ISO-8601), so /results can show how long it took.
  * `build`: `{ commit, dirty, source }` of the code that ran the batch.
+ * `batchKind`: 'main' (the dataset Results shows) or 'sensitivity' (an appendix batch).
  */
-export function toApiPayload(summary, batchId, { warmupStationary = null, batchStartedAt = null, build = null } = {}) {
+export function toApiPayload(summary, batchId, { warmupStationary = null, batchStartedAt = null, build = null, batchKind = 'main' } = {}) {
     return {
         batch_id: batchId,
         batch_started_at: batchStartedAt,
@@ -18,6 +19,8 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, batchS
         seed: summary.seed,
         controller_mode: summary.controllerMode,
         routing_mode: summary.routingMode ?? 'random',
+        // 'sensitivity' batches never become the batch Results shows - they feed the report's appendix.
+        batch_kind: batchKind,
         power_state: summary.powerState,
         sensor_mode: summary.sensorMode,
         corridor_config: summary.corridorConfig,

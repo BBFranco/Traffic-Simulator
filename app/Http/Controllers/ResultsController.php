@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BatchKind;
 use App\Enums\RoutingMode;
 use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
 use App\Models\TrafficCount;
 use App\Support\CorridorRepository;
 use App\Support\SeedPairedDeltas;
+use App\Support\SensitivityAppendix;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -78,6 +80,7 @@ class ResultsController extends Controller
     public function __construct(
         private readonly CorridorRepository $corridors,
         private readonly SeedPairedDeltas $seedPairedDeltas,
+        private readonly SensitivityAppendix $sensitivityAppendix,
     ) {}
 
     public function index(): View
@@ -106,6 +109,7 @@ class ResultsController extends Controller
                 'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
                 'batchWarmupLabel' => $payload['batchWarmupLabel'],
                 'batchStamp' => $payload['batchStamp'],
+                'sensitivityAppendix' => $payload['sensitivityAppendix'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
@@ -148,6 +152,7 @@ class ResultsController extends Controller
             'pairedComparisons' => $payload['pairedComparisons'],
             'batchWarmupLabel' => $payload['batchWarmupLabel'],
             'batchStamp' => $payload['batchStamp'],
+            'sensitivityAppendix' => $payload['sensitivityAppendix'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
@@ -609,6 +614,7 @@ class ResultsController extends Controller
             'batchTimingLabel' => $this->batchTimingLabel((clone $query)),
             'batchWarmupLabel' => $this->warmupLabel((clone $query)->whereNotNull('warmup_ticks')->distinct()->pluck('warmup_ticks')),
             'batchStamp' => $this->batchStamp((clone $query)),
+            'sensitivityAppendix' => $this->sensitivityAppendix->forCorridor($corridorFilter, $routingMode, $batchIds),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
         ];
     }
@@ -682,7 +688,16 @@ class ResultsController extends Controller
             ->first();
         $minutes = fn (?int $ticks): ?int => $ticks === null ? null : (int) round($ticks * ($config['dt'] ?? 0.1) / 60);
 
-        $commit = isset($build['commit']) ? $build['commit'].(($build['dirty'] ?? false) ? ' (uncommitted changes)' : '') : 'commit not recorded';
+        $commit = match (true) {
+            ! isset($build['commit']) => 'commit not recorded',
+            (bool) ($build['dirty'] ?? true) => "{$build['commit']} (uncommitted changes)",
+            default => "{$build['commit']} (clean tree)",
+        };
+        $controllers = $config['controllerConfig'] ?? null;
+        $controllerLabel = $controllers === null
+            ? 'signal rules not recorded'
+            : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s";
+        $outageEndTicks = $config['powerOutageEndTick'] ?? null;
         $waitAccounting = $config['waitAccounting'] ?? 'turn-reset (pre-2026-10-04)';
         $timing = $minutes($config['warmupTicks'] ?? null) !== null
             ? "{$minutes($config['warmupTicks'])} min warm-up + {$minutes($config['durationTicks'] ?? null)} min measured"
@@ -692,7 +707,9 @@ class ResultsController extends Controller
             'label' => collect([
                 "code {$commit}",
                 "wait accounting {$waitAccounting}",
+                $controllerLabel,
                 RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
+                isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,
                 $timing,
                 $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,
             ])->filter()->implode(' · '),
@@ -706,6 +723,12 @@ class ResultsController extends Controller
             'firstSeed' => $seeds?->first_seed,
             'lastSeed' => $seeds?->last_seed,
             'startedAt' => $latest->batch_started_at?->toIso8601String(),
+            // Seconds from power back on to the end of the measured window - a wait recovery that never happened is capped at this.
+            'postRestoreWindowS' => $outageEndTicks === null || ! isset($config['durationTicks'])
+                ? null
+                : round(($config['durationTicks'] - $outageEndTicks) * ($config['dt'] ?? 0.1)),
+            'controllerConfig' => $controllers,
+            'routingTiersHash' => $config['routingTiersHash'] ?? null,
         ];
     }
 
@@ -727,6 +750,7 @@ class ResultsController extends Controller
     {
         $latestRunIds = SimulationRun::query()
             ->where('routing_mode', $routingMode->value)
+            ->where('batch_kind', BatchKind::Main->value)
             ->when($corridorFilter, fn (Builder $query) => $query->where('corridor_config', $corridorFilter))
             ->selectRaw('max(id)')
             ->groupBy('corridor_config');

@@ -23,6 +23,23 @@ export const FALLBACK_CYCLE_S = 120;
 /** A turn stage's green in that fallback cycle, before its weight. */
 export const FALLBACK_TURN_GREEN_S = 12;
 
+/**
+ * The signal-timing rules a run used - stamped on every run (runHeadless.js's rawConfig) so a
+ * sensitivity batch with different rules can never be read as the baseline. The baseline is real
+ * q, the turn `weight` only on the minimum green; `websterTurnWeight` (a sensitivity run only)
+ * also scales a protected turn's q by its weight before Webster (engine.js's _turnStagesAt()).
+ */
+export function controllerConfigFor({ websterTurnWeight = false } = {}) {
+    return {
+        websterTurnInput: websterTurnWeight ? 'q-x-weight' : 'real-q',
+        turnWeightActsOn: websterTurnWeight ? 'min-green+webster-q' : 'min-green',
+        minGreenS: MIN_GREEN_S,
+        minTurnGreenS: MIN_TURN_GREEN_S,
+        lostTimePerPhaseS: LOST_TIME_PER_PHASE_S,
+        fallbackCycleS: FALLBACK_CYCLE_S,
+    };
+}
+
 export function flowRatio(demand) {
     if (!demand) return 0;
     const qPerHour = demand.spawnRatePerLanePerMin * 60;

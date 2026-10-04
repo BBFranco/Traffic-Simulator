@@ -976,7 +976,9 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false }) {
+        /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
+        this.websterTurnWeight = websterTurnWeight;
         this.rng.reseed(seed);
         this.eventRng.reseed(seed ^ EVENT_SEED_SALT);
         this._resetRouting(seed, routingMode);
@@ -1650,7 +1652,7 @@ export class SimulationEngine {
             stage
                 ? {
                       demand: {
-                          spawnRatePerLanePerMin: flow.turnPerLanePerMin[phase],
+                          spawnRatePerLanePerMin: flow.turnPerLanePerMin[phase] * (this.websterTurnWeight ? stage.weight : 1),
                           saturationFlowPerLanePerHour: stage.gates[0].connector?.demand.saturationFlowPerLanePerHour ?? this.arterialState.get(info.arterial.id).saturationFlowPerLanePerHour,
                       },
                       weight: stage.weight,

@@ -263,9 +263,9 @@
             Pre-outage / during-outage / post-recovery averages, computed from cumulative
             counters rather than a rolling window - this is what shows the real Adaptive-vs-
             Fixed-time gap on either side of the outage, instead of a snapshot near the end of
-            the run. During the outage every controller mode falls back to the same all-way-stop
-            control, so near-identical numbers there are expected, not a sign adaptive handles
-            outages well. The wait distribution columns (median/p95/max) are always Total scope
+            the run. During the outage every controller mode runs the same all-way-stop control,
+            but each carries in the queue it had when the power went, so the during-outage figures
+            still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
             regardless of the selector above - a single mean can't tell "everyone waits a bit
             longer" apart from "most people are fine, a few are stranded", but that distribution
             isn't split by arterial/side-street.
