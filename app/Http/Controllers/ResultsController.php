@@ -7,6 +7,7 @@ use App\Enums\RoutingMode;
 use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
 use App\Models\TrafficCount;
+use App\Support\ConfidenceInterval;
 use App\Support\CorridorRepository;
 use App\Support\SeedPairedDeltas;
 use App\Support\SensitivityAppendix;
@@ -897,7 +898,7 @@ class ResultsController extends Controller
                 // delta - needs >= 2 reps to have a defined stddev at all.
                 $result[$column.'_ci95'] = ($stddev === null || $runs < 2)
                     ? null
-                    : round(1.96 * $stddev / sqrt($runs), 1);
+                    : round(ConfidenceInterval::halfWidth95($stddev, $runs), 1);
             }
         }
         foreach (self::TOTAL_ONLY_METRICS as $column) {
@@ -1064,11 +1065,12 @@ class ResultsController extends Controller
             'power_state' => $power,
             'scope' => $scope,
             // Wait time: lower is better, so a negative delta is an improvement.
-            'wait_delta_pct' => $waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null,
-            'throughput_delta_pct' => $throughputKnown
+            // The exact paired delta where there is one - the condition means are rounded to 0.1 for display.
+            'wait_delta_pct' => $paired[$waitKey]['delta'] ?? ($waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null),
+            'throughput_delta_pct' => $paired[$throughputKey]['delta'] ?? ($throughputKnown
                 ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey])
-                : null,
-            'cleared_delta_pp' => $clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null,
+                : null),
+            'cleared_delta_pp' => $paired[$clearedKey]['delta'] ?? ($clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null),
             // Recovery time: only meaningful under load shedding (null otherwise); lower is better.
             'recovery_delta_pct' => $recoveryDelta,
             'recovery_wait_delta_pct' => $recoveryWaitDelta,

@@ -85,6 +85,24 @@ export function fallbackGreens(stages, turn, cycleLengthS = FALLBACK_CYCLE_S) {
     return stages.map((s, i) => (s.turn ? turnGreens[i] : throughGreen));
 }
 
+/**
+ * A junction's own fixed-time plan: Webster's cycle and split on real q, every stage then lifted to
+ * its minimum green - the lift adds to the cycle. Oversaturated (Webster undefined): the fallback
+ * greens, lifted the same way. Fixed-time runs exactly this; green wave takes its arterial's longest
+ * such cycle as the common one, so no junction is squeezed below what it would run on its own.
+ */
+export function fixedTimeGreens(stages, arterialDemand, crossDemand, turn) {
+    let greens;
+    try {
+        const ratios = stageRatios(stages, arterialDemand, crossDemand, turn);
+        greens = websterGreens(stages, ratios, websterCycleFor(stages, ratios));
+    } catch {
+        greens = fallbackGreens(stages, turn);
+    }
+    const lifted = greens.map((g, i) => Math.max(minGreenOf(stages[i]), g));
+    return { greens: lifted, cycleLengthS: lifted.reduce((sum, g) => sum + g, 0) + lostTimeS(stages) };
+}
+
 /** Webster's green split of a cycle of `cycleLengthS` over `stages`, no floors applied. */
 export function websterGreens(stages, ratios, cycleLengthS) {
     const L = lostTimeS(stages);

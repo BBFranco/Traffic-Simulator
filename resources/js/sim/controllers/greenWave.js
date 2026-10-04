@@ -21,7 +21,7 @@
  * to lose.
  */
 import { greenWaveOffset, IDM_DEFAULTS } from '../equations.js';
-import { ALL_RED_S, FALLBACK_CYCLE_S, YELLOW_S, buildStages, floorWithinCycle, lostTimeS, minGreenOf, stageRatios, websterCycleFor, websterGreens } from './phasePlan.js';
+import { ALL_RED_S, YELLOW_S, buildStages, fixedTimeGreens, floorWithinCycle, stageRatios, websterGreens } from './phasePlan.js';
 
 /**
  * Extra link travel time for a platoon that leaves the upstream stop line from rest rather
@@ -105,19 +105,21 @@ export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDem
     const plans = nodeInfos.map((info) => {
         const turn = turnFor(info.node);
         const stages = buildStages(turn);
-        return { stages, ratios: stageRatios(stages, arterialDemandFor(info.node), crossDemandFor(info.node), turn) };
+        const arterialDemand = arterialDemandFor(info.node);
+        const crossDemand = crossDemandFor(info.node);
+        return {
+            stages,
+            ratios: stageRatios(stages, arterialDemand, crossDemand, turn),
+            // The cycle this junction runs on its own (fixed-time's - Webster plus the minimum-green lift).
+            ownCycleS: fixedTimeGreens(stages, arterialDemand, crossDemand, turn).cycleLengthS,
+        };
     });
 
-    // Oversaturated anywhere (Y >= 1) -> Webster is undefined for the critical node, so the
-    // whole arterial falls back to the same fixed cycle FixedTimeController uses.
-    let cycleLengthS;
-    try {
-        cycleLengthS = Math.max(...plans.map((p) => websterCycleFor(p.stages, p.ratios)));
-    } catch {
-        cycleLengthS = FALLBACK_CYCLE_S;
-    }
-    // Every node's minimum greens still have to fit inside the common cycle.
-    cycleLengthS = Math.max(cycleLengthS, ...plans.map((p) => p.stages.reduce((sum, s) => sum + minGreenOf(s), 0) + lostTimeS(p.stages)));
+    // The common cycle is the critical junction's: the longest of the arterial's own fixed-time
+    // cycles, so no junction is squeezed below what it would run alone. (Taking the longest bare
+    // Webster cycle instead left a junction whose minimum greens lengthen its own cycle - Lynnwood /
+    // Duxbury - squeezing those minimums out of its through greens.)
+    const cycleLengthS = Math.max(...plans.map((p) => p.ownCycleS));
 
     const controllers = new Map();
     let offsetS = 0;

@@ -830,7 +830,7 @@ function drawMethodNotes(report, data) {
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         'Load-shedding conditions cut power a quarter of the way into the measured window and restore it at the halfway mark. While the lights are dark every controller falls back to all-way-stop behaviour.',
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
-        '± figures are 95% confidence half-widths (1.96 x sample stddev / sqrt(n)) on each condition\'s own mean, not on the delta between two conditions.',
+        '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
@@ -852,26 +852,30 @@ function drawMethodNotes(report, data) {
  */
 function drawSensitivityAppendix(report, appendix) {
     report.newPage();
-    report.sectionTitle('Appendix - Webster sensitivity', `Protected-turn q scaled by the stage's weight before Webster · ${appendix.label}`);
+    report.sectionTitle('Appendix - Webster turn-weight sensitivity', appendix.label);
     report.paragraph(
-        "The main batch times protected turns on real q and uses a turn stage's weight only for its minimum green. This batch also multiplies the turn q by its weight before Webster, which lengthens the cycle at the weighted junctions. Same seeds as the main batch; ± is the 95% CI on the per-seed differences."
+        "The main batch times protected turns on real q; a turn stage's weight only raises its minimum green. This batch also scales the turn q by its weight before Webster, for fixed-time and green wave alike. Fixed-time runs each junction on its own cycle, so only the two weighted junctions lengthen theirs (by about 5 s). Green wave runs a whole arterial on one common cycle and squeezes each junction's minimum greens inside it, where fixed-time adds them on top - on Lynnwood the pure-q common cycle (81 s) is shorter than fixed-time's own cycle at Lynnwood / Duxbury (92 s), and the weight lifts it to 92 s. Read this as a green-wave cycle-length effect, not as green wave against a weaker baseline: weighted fixed-time is no faster than the main batch's."
     );
     const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive - Inductive loop' };
     report.table({
-        head: [['Controller', 'Power', 'Runs', 'Avg wait, sensitivity (s)', 'Avg wait, main, same seeds (s)', 'Sensitivity vs main']],
+        head: [['Controller', 'Wait', 'Runs', 'Sensitivity (s)', 'Main, same seeds (s)', 'Sensitivity vs main']],
         body: appendix.rows.map((row) => [
-            controllerLabel[row.controller_mode] ?? row.controller_mode,
-            POWER_LABELS[row.power_state] ?? row.power_state,
+            `${controllerLabel[row.controller_mode] ?? row.controller_mode} · ${POWER_LABELS[row.power_state] ?? row.power_state}`,
+            row.metric,
             String(row.runs),
-            fmt(row.sensitivity_avg_wait),
-            fmt(row.main_avg_wait_same_seeds),
+            fmt(row.sensitivity),
+            fmt(row.main_same_seeds),
             row.vs_main ? fmtPaired(row.vs_main.delta, row.vs_main.ci95, '%') : 'n/a',
         ]),
         columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
     });
-    const gw = appendix.greenWaveVsFixed;
     const fmtGw = (d) => (d ? `${fmtDelta(d.delta, '%')} ±${d.ci95.toFixed(1)} (${d.pairs} seeds)` : 'n/a');
-    report.paragraph(`Green wave vs fixed-time, average wait: ${fmtGw(gw.sensitivity)} under the sensitivity rules, ${fmtGw(gw.main)} in the main batch.`);
+    report.table({
+        head: [['Green wave vs fixed-time', 'Main batch (pure q)', 'Sensitivity (q x weight)']],
+        body: appendix.greenWaveVsFixed.map((row) => [row.metric, fmtGw(row.main), fmtGw(row.sensitivity)]),
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+    });
+    report.paragraph('± is the 95% CI on the per-seed differences. An interval that spans zero means no measurable difference at this many seeds.');
 }
 
 /**

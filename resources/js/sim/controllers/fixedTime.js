@@ -13,7 +13,7 @@
  * change) - it never adapts mid-cycle. That is the adaptive controller's job
  * (controllers/adaptive.js, build step 5).
  */
-import { ALL_RED_S, YELLOW_S, buildStages, fallbackGreens, flowRatio, lostTimeS, minGreenOf, stageRatios, websterCycleFor, websterGreens } from './phasePlan.js';
+import { ALL_RED_S, YELLOW_S, buildStages, fixedTimeGreens, flowRatio } from './phasePlan.js';
 
 export { flowRatio };
 
@@ -41,22 +41,15 @@ export class FixedTimeController {
         this.stages = buildStages(turn);
         this.stepIndex = Math.min(this.stepIndex, this.stages.length - 1);
 
-        let greens;
-        try {
-            const ratios = stageRatios(this.stages, arterialDemand, crossDemand, turn);
-            greens = websterGreens(this.stages, ratios, websterCycleFor(this.stages, ratios));
-        } catch {
-            greens = fallbackGreens(this.stages, turn);
-        }
-
-        this.stageGreens = greens.map((g, i) => Math.max(minGreenOf(this.stages[i]), g));
+        const plan = fixedTimeGreens(this.stages, arterialDemand, crossDemand, turn);
+        this.stageGreens = plan.greens;
         /** The through green of each road, and the turn green in front of it (null where it has none). */
         this.greenDurations = [0, 1].map((p) => this.stageGreens[this.stages.findIndex((s) => s.phase === p && !s.turn)]);
         this.turnDurations = [0, 1].map((p) => {
             const i = this.stages.findIndex((s) => s.phase === p && s.turn);
             return i < 0 ? null : this.stageGreens[i];
         });
-        this.cycleLengthS = this.stageGreens.reduce((sum, g) => sum + g, 0) + lostTimeS(this.stages);
+        this.cycleLengthS = plan.cycleLengthS;
     }
 
     isArterialGreen() {

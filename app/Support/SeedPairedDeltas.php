@@ -83,7 +83,7 @@ class SeedPairedDeltas
         $differences = $pairs->map(fn (array $pair): float => $pair['subject'] - $pair['baseline']);
         $meanDifference = $differences->avg();
         $variance = $differences->sum(fn (float $d): float => ($d - $meanDifference) ** 2) / ($differences->count() - 1);
-        $halfWidth = 1.96 * sqrt($variance) / sqrt($differences->count());
+        $halfWidth = ConfidenceInterval::halfWidth95(sqrt($variance), $differences->count());
 
         if (in_array($this->baseColumn($column), self::POINT_COLUMNS, true)) {
             return ['delta' => $this->round($meanDifference), 'ci95' => $this->round($halfWidth), 'pairs' => $pairs->count()];
