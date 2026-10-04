@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\RoutingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Accepts a batch of run summaries in one request - `{ "runs": [ {...}, ... ] }`
@@ -26,6 +28,7 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.batch_started_at' => ['nullable', 'date'],
             'runs.*.seed' => ['required', 'integer'],
             'runs.*.controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
+            'runs.*.routing_mode' => ['sometimes', Rule::enum(RoutingMode::class)],
             'runs.*.power_state' => ['required', 'in:normal,load_shedding'],
             // Null (fixed-time never reads sensors) or one of the four real modes -
             // 'none' is a UI-only option and never a valid stored run.

@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\RoutingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * One (already averaged-across-reps) per-tick recovery series for a single
@@ -23,6 +25,7 @@ class StoreRecoveryTicksRequest extends FormRequest
             // Null (fixed and green-wave never vary by sensor) or one of the four real modes.
             'sensor_mode' => ['nullable', 'in:inductive_loop,radar,camera,magnetometer'],
             'corridor_config' => ['required', 'string', 'max:255'],
+            'routing_mode' => ['sometimes', Rule::enum(RoutingMode::class)],
             'power_event_seconds' => ['required', 'numeric', 'min:0'],
             'power_outage_end_seconds' => ['required', 'numeric', 'gt:power_event_seconds'],
             'ticks' => ['required', 'array', 'min:1'],

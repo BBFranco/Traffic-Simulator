@@ -71,6 +71,17 @@
 
             <div id="batch-modal-streets" class="space-y-3"></div>
 
+            <label class="mt-4 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
+                <input type="checkbox" id="batch-modal-destination" class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
+                <span>
+                    <span class="font-semibold">Destination routing</span>
+                    <span class="block text-slate-500 dark:text-slate-400">
+                        Each car drives a route to a destination - out of the map, or into a block - instead of turning at random.
+                        Needs a corridor with a <code>routing</code> section; stored as its own dataset (pick it under Routing below).
+                    </span>
+                </span>
+            </label>
+
             <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
                 <button type="button" id="batch-modal-cancel" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
                     Cancel
@@ -124,6 +135,14 @@
                 <option value="" {{ request('corridor') ? '' : 'selected' }}>All corridors</option>
                 @foreach ($corridors as $corridor)
                     <option value="{{ $corridor['id'] }}" {{ request('corridor') === $corridor['id'] ? 'selected' : '' }}>{{ $corridor['name'] }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label for="filter-routing" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Routing</label>
+            <select id="filter-routing" class="{{ $select }}">
+                @foreach ($routingModes as $mode)
+                    <option value="{{ $mode->value }}" {{ $routingMode === $mode ? 'selected' : '' }}>{{ $mode->label() }}</option>
                 @endforeach
             </select>
         </div>

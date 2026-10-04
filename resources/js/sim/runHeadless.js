@@ -13,7 +13,7 @@
  * with the returned rows/summary.
  */
 import { buildLayout } from './corridor.js';
-import { SimulationEngine } from './engine.js';
+import { SimulationEngine, WAIT_ACCOUNTING } from './engine.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
 const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
@@ -38,7 +38,10 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  *                             and every summary stat are scoped to this window only
  * @param dt                   physics timestep in seconds (must match the live sim's FIXED_DT_S for the sanity-check comparison in build step 13 to be meaningful)
  * @param sampleEverySeconds   how often (sim time) to emit a CSV row - spec explicitly says not literally every tick
- * @returns { rows: object[], sideStreetRows: object[], summary: object }
+ * @param routingMode          'random' | 'destination' - overrides the corridor's own `routing.mode` for this run;
+ *                             null keeps the corridor's (random when it has no `routing` section)
+ * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
+ *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
 export function runHeadless({
     seed,
@@ -51,6 +54,7 @@ export function runHeadless({
     durationTicks,
     dt = 0.1,
     sampleEverySeconds = 1,
+    routingMode = null,
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -72,11 +76,14 @@ export function runHeadless({
         sensorMode,
         batteryBackedSensors: true,
         power: { loadShedding: false, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
+        routingMode,
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
     const rows = [];
     const sideStreetRows = [];
+    const totalRows = [];
+    const arterialScopeRows = [];
     let outageStarted = false;
     let outageEnded = false;
     let statsReset = warmupTicks <= 0;
@@ -146,6 +153,26 @@ export function runHeadless({
                     snap.sideStreet.clearedWithoutStopPct == null ? '' : round(snap.sideStreet.clearedWithoutStopPct, 1),
                 powerState: snap.powerState,
             });
+
+            arterialScopeRows.push({
+                tick: measuredTick,
+                avgWaitTime: round(snap.arterialScope.avgWaitRolling, 3),
+                throughputPerMin: snap.arterialScope.throughputPerMin,
+                clearedTotal: snap.arterialScope.clearedTotal,
+                waitSumTotal: snap.arterialScope.waitSumTotal,
+                clearedWithoutStopping: snap.arterialScope.clearedWithoutStopPct == null ? '' : round(snap.arterialScope.clearedWithoutStopPct, 1),
+                powerState: snap.powerState,
+            });
+
+            totalRows.push({
+                tick: measuredTick,
+                avgWaitTime: round(snap.total.avgWaitRolling, 3),
+                throughputPerMin: snap.total.throughputPerMin,
+                clearedTotal: snap.total.clearedTotal,
+                waitSumTotal: snap.total.waitSumTotal,
+                clearedWithoutStopping: snap.total.clearedWithoutStopPct == null ? '' : round(snap.total.clearedWithoutStopPct, 1),
+                powerState: snap.powerState,
+            });
         }
     }
 
@@ -164,10 +191,12 @@ export function runHeadless({
         dt,
         rows,
         sideStreetRows,
+        totalRows,
+        arterialScopeRows,
         accounting,
     });
 
-    return { rows, sideStreetRows, summary };
+    return { rows, sideStreetRows, totalRows, arterialScopeRows, summary };
 }
 
 function buildSummary({
@@ -184,6 +213,8 @@ function buildSummary({
     dt,
     rows,
     sideStreetRows,
+    totalRows,
+    arterialScopeRows,
     accounting,
 }) {
     const finalSnap = engine.snapshot();
@@ -216,10 +247,12 @@ function buildSummary({
     // weighted by each arterial's own cleared count so a busier arterial
     // counts for more, not an unweighted average of two possibly very
     // different sample sizes.
-    const clearedTotalArterial = perArterial.reduce((sum, a) => sum + a.clearedTotal, 0);
-    const waitSumTotalArterial = perArterial.reduce((sum, a) => sum + a.waitSumTotal, 0);
-    const clearedWithoutStopTotalArterial = perArterial.reduce((sum, a) => sum + a.clearedWithoutStopTotal, 0);
-    const throughputPerMinArterial = perArterial.reduce((sum, a) => sum + a.throughputPerMin, 0);
+    // The engine's arterial-scope bucket: a trip along two arterials is one vehicle, not two.
+    const arterialScope = finalSnap.arterialScope;
+    const clearedTotalArterial = arterialScope.clearedTotal;
+    const waitSumTotalArterial = arterialScope.waitSumTotal;
+    const clearedWithoutStopTotalArterial = arterialScope.clearedWithoutStopTotal;
+    const throughputPerMinArterial = clearedTotalArterial / (durationSeconds / 60);
     const avgWaitTimeArterial = clearedTotalArterial ? waitSumTotalArterial / clearedTotalArterial : 0;
     const pctClearedWithoutStopArterial = clearedTotalArterial
         ? (clearedWithoutStopTotalArterial / clearedTotalArterial) * 100
@@ -232,29 +265,26 @@ function buildSummary({
     const avgWaitTimeSideStreet = sideStreet.clearedTotal ? sideStreet.waitSumTotal / sideStreet.clearedTotal : 0;
     const throughputPerMinSideStreet = sideStreet.clearedTotal / (durationSeconds / 60);
 
-    // Total scope: arterial + side-street blended, weighted by each scope's
-    // own cleared count - same weighting principle as the arterial-only
-    // aggregation above, just one level up.
-    const clearedTotal = clearedTotalArterial + sideStreet.clearedTotal;
-    const waitSumTotal = waitSumTotalArterial + sideStreet.waitSumTotal;
-    const clearedWithoutStopTotal = clearedWithoutStopTotalArterial + sideStreet.clearedWithoutStopTotal;
-    const throughputPerMin = throughputPerMinArterial + throughputPerMinSideStreet;
+    // Total scope: the engine's own every-vehicle-once bucket - not arterial + side street, since
+    // a trip can use both and is counted in each it used (engine.js's WAIT_ACCOUNTING).
+    const total = finalSnap.total;
+    const clearedTotal = total.clearedTotal;
+    const waitSumTotal = total.waitSumTotal;
+    const clearedWithoutStopTotal = total.clearedWithoutStopTotal;
+    const throughputPerMin = clearedTotal / (durationSeconds / 60);
     const avgWaitTime = clearedTotal ? waitSumTotal / clearedTotal : 0;
     const pctClearedWithoutStop = clearedTotal ? (clearedWithoutStopTotal / clearedTotal) * 100 : null;
 
-    const totalCumulativeByTick = buildTotalCumulativeByTick(rows, sideStreetRows);
-    const arterialCumulativeByTick = buildCumulativeByTick(rows);
+    const totalCumulativeByTick = buildCumulativeByTick(totalRows);
+    const arterialCumulativeByTick = buildCumulativeByTick(arterialScopeRows);
     const sideStreetCumulativeByTick = buildCumulativeByTick(sideStreetRows);
-    const arterialByTick = buildByTickThroughput(rows);
+    const arterialByTick = buildByTickThroughput(arterialScopeRows);
     const sideStreetByTick = buildByTickThroughput(sideStreetRows);
-    const totalByTick = new Map(arterialByTick);
-    for (const [tick, value] of sideStreetByTick) {
-        totalByTick.set(tick, (totalByTick.get(tick) ?? 0) + value);
-    }
+    const totalByTick = buildByTickThroughput(totalRows);
 
-    const arterialWaitByTick = buildByTickWeightedAvgWait([rows]);
+    const arterialWaitByTick = buildByTickWeightedAvgWait([arterialScopeRows]);
     const sideStreetWaitByTick = buildByTickWeightedAvgWait([sideStreetRows]);
-    const totalWaitByTick = buildByTickWeightedAvgWait([rows, sideStreetRows]);
+    const totalWaitByTick = buildByTickWeightedAvgWait([totalRows]);
 
     // Pre-outage / during-outage / post-recovery segmented total-scope averages - only
     // meaningful (non-null) for a bounded-outage run. Computed from cumulative counters at
@@ -303,6 +333,9 @@ function buildSummary({
     return {
         seed,
         controllerMode,
+        routingMode: engine.routingMode,
+        /** Destination routing's trip counters over the measured window - null for a random-turning run. */
+        routing: engine.routingActive ? routingSummary(engine.routingStats) : null,
         powerState: powerOutageStartTick != null ? 'load_shedding' : 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         corridorConfig: corridorConfig.id,
@@ -361,7 +394,23 @@ function buildSummary({
             corridorConfig: corridorConfig.id,
             durationTicks,
             dt,
+            routingMode: engine.routingMode,
+            waitAccounting: WAIT_ACCOUNTING,
         },
+    };
+}
+
+function routingSummary(stats) {
+    return {
+        trips: stats.trips,
+        meanTripS: stats.trips ? stats.tripTimeSumS / stats.trips : null,
+        toExit: stats.toExit,
+        pulledOff: stats.pulledOff,
+        divertedPct: stats.trips ? (stats.diverted / stats.trips) * 100 : null,
+        missedTurns: stats.missedTurns,
+        missedBy: stats.missedBy,
+        rerouted: stats.rerouted,
+        pulledOffByBlock: stats.pulledOffByBlock,
     };
 }
 
@@ -408,19 +457,6 @@ function buildCumulativeByTick(rows) {
         entry.clearedTotal += row.clearedTotal;
         entry.waitSumTotal += row.waitSumTotal;
         byTick.set(row.tick, entry);
-    }
-    return byTick;
-}
-
-/** Total-scope (arterial + side-street) cumulative {clearedTotal, waitSumTotal} at every sampled tick. */
-function buildTotalCumulativeByTick(rows, sideStreetRows) {
-    const byTick = buildCumulativeByTick(rows);
-    for (const [tick, entry] of buildCumulativeByTick(sideStreetRows)) {
-        const existing = byTick.get(tick) ?? { clearedTotal: 0, waitSumTotal: 0 };
-        byTick.set(tick, {
-            clearedTotal: existing.clearedTotal + entry.clearedTotal,
-            waitSumTotal: existing.waitSumTotal + entry.waitSumTotal,
-        });
     }
     return byTick;
 }

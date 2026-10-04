@@ -7,8 +7,9 @@
 /**
  * `warmupStationary`: the batch's warm-up probe verdict (sim/warmupProbe.js), null when the warm-up was hand-picked.
  * `batchStartedAt`: when the batch was launched (ISO-8601), so /results can show how long it took.
+ * `build`: `{ commit, dirty, source }` of the code that ran the batch.
  */
-export function toApiPayload(summary, batchId, { warmupStationary = null, batchStartedAt = null } = {}) {
+export function toApiPayload(summary, batchId, { warmupStationary = null, batchStartedAt = null, build = null } = {}) {
     return {
         batch_id: batchId,
         batch_started_at: batchStartedAt,
@@ -16,6 +17,7 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, batchS
         warmup_stationary: warmupStationary,
         seed: summary.seed,
         controller_mode: summary.controllerMode,
+        routing_mode: summary.routingMode ?? 'random',
         power_state: summary.powerState,
         sensor_mode: summary.sensorMode,
         corridor_config: summary.corridorConfig,
@@ -61,6 +63,7 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, batchS
         median_wait_time: summary.medianWait,
         p95_wait_time: summary.p95Wait,
         max_wait_time: summary.maxWait,
-        raw_config_json: summary.rawConfig,
+        // `build`: the code the batch ran (git commit, dirty tree) - see batch/buildStamp.mjs and vite.config.js.
+        raw_config_json: { ...summary.rawConfig, build },
     };
 }

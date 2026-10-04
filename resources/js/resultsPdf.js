@@ -482,6 +482,10 @@ function drawCover(report, data, variants, corridorLayout) {
     doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(203, 213, 225);
     doc.text('Does ITS beat the fixed-time baseline? Every scope, every controller variant.', PAGE.margin, 50);
     doc.text(`Generated ${meta.generatedAt}`, PAGE.margin, 56);
+    if (data.batchStamp?.label) {
+        doc.setFontSize(8).setTextColor(148, 163, 184);
+        doc.text(doc.splitTextToSize(`Batch: ${data.batchStamp.label}`, CONTENT_WIDTH), PAGE.margin, 60.5);
+    }
 
     const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
     const conditions = data.aggregatesBySensor.length;
@@ -546,7 +550,7 @@ function drawCover(report, data, variants, corridorLayout) {
 
     report.heading(
         'Headline - ITS vs fixed-time (Total scope)',
-        'Paired against Webster-timed fixed-time control on the same seeds. Wait: negative is better. Throughput and cleared-without-stopping: positive is better. Every sensor on its own follows in section 1.'
+        'Paired against Webster-timed fixed-time control on the same seeds; ± is the 95% CI on the per-seed differences. Wait (mean, median, P95): negative is better. Throughput and cleared-without-stopping: positive is better. Every sensor on its own follows in section 1.'
     );
     comparisonTable(report, data, variants, SCOPES[0], { compact: true });
 }
@@ -584,6 +588,19 @@ function toneCell(cell, improves) {
     cell.styles.fontStyle = 'bold';
 }
 
+/** A paired delta with its 95% CI on the per-seed differences, e.g. "-23.6% ±1.2". */
+function fmtPaired(delta, ci95, unit) {
+    const text = fmtDelta(delta, unit);
+    return delta == null || ci95 == null ? text : `${text}
+±${ci95.toFixed(1)}`;
+}
+
+/** Tint only when the interval excludes zero - lower is better. */
+function lowerIsBetter(delta, ci95) {
+    if (delta == null || ci95 == null || Math.abs(delta) <= ci95) return null;
+    return delta < 0;
+}
+
 function comparisonTable(report, data, variants, scope, { compact = false } = {}) {
     // The cover's compact headline keeps to the blended adaptive average and green wave.
     const rows = comparisonRows(data, variants, scope).filter((c) => !compact || c.variant.sensor === null || c.variant.sensor === 'average');
@@ -595,14 +612,22 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
     const columns = [
         { header: 'ITS variant', value: (c) => c.variant.label },
         { header: 'Power', value: (c) => POWER_LABELS[c.power_state] ?? c.power_state },
-        { header: 'Avg wait', value: (c) => fmtDelta(c.wait_delta_pct, '%'), improves: 'wait_improves' },
-        { header: 'Throughput', value: (c) => fmtDelta(c.throughput_delta_pct, '%'), improves: 'throughput_improves' },
-        { header: 'Cleared w/o stop', value: (c) => fmtDelta(c.cleared_delta_pp, ' pp'), improves: 'cleared_improves' },
+        { header: 'Avg wait', value: (c) => fmtPaired(c.wait_delta_pct, c.wait_delta_ci95_pct, '%'), improves: 'wait_improves' },
+        // The tail next to the mean (total scope only): a mean alone can't tell "everyone a bit slower" from "a few stranded".
+        ...(compact
+            ? [
+                  { header: 'Median wait', value: (c) => fmtPaired(c.median_wait_delta_pct, c.median_wait_delta_ci95_pct, '%'), improves: (c) => lowerIsBetter(c.median_wait_delta_pct, c.median_wait_delta_ci95_pct) },
+                  { header: 'P95 wait', value: (c) => fmtPaired(c.p95_wait_delta_pct, c.p95_wait_delta_ci95_pct, '%'), improves: (c) => lowerIsBetter(c.p95_wait_delta_pct, c.p95_wait_delta_ci95_pct) },
+              ]
+            : []),
+        { header: 'Throughput', value: (c) => fmtPaired(c.throughput_delta_pct, c.throughput_delta_ci95_pct, '%'), improves: 'throughput_improves' },
+        { header: 'Cleared w/o stop', value: (c) => fmtPaired(c.cleared_delta_pp, c.cleared_delta_ci95_pp, ' pp'), improves: 'cleared_improves' },
         ...(compact
             ? []
             : [
-                  { header: 'Recovery (wait)', value: (c) => fmtRecoveryDelta(c, 'wait'), improves: 'recovery_wait_improves' },
+                  // Throughput-recovery first: wait-recovery is mostly censored by the measured window.
                   { header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' },
+                  { header: 'Recovery (wait)', value: (c) => fmtRecoveryDelta(c, 'wait'), improves: 'recovery_wait_improves' },
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
@@ -614,7 +639,7 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
         didParseCell: (hook) => {
             if (hook.section !== 'body') return;
             const key = columns[hook.column.index].improves;
-            if (key) toneCell(hook.cell, rows[hook.row.index][key]);
+            if (key) toneCell(hook.cell, typeof key === 'function' ? key(rows[hook.row.index]) : rows[hook.row.index][key]);
         },
     });
 }
@@ -633,14 +658,14 @@ function perConditionTable(report, data, variants, scope) {
                 fmtCi(row[m('avg_wait_time')], row[`${m('avg_wait_time')}_ci95`]),
                 fmtCi(row[m('throughput_per_min')], row[`${m('throughput_per_min')}_ci95`]),
                 fmtCi(row[m('pct_cleared_without_stop')], row[`${m('pct_cleared_without_stop')}_ci95`]),
-                power === 'load_shedding' ? fmtRecovery(row, m('time_to_recovery_wait_seconds')) : '-',
                 power === 'load_shedding' ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-',
+                power === 'load_shedding' ? fmtRecovery(row, m('time_to_recovery_wait_seconds')) : '-',
             ]);
         });
     });
 
     report.table({
-        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - wait', 'Recovery - thru']],
+        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - thru', 'Recovery - wait']],
         body,
         columnStyles: { 0: { cellWidth: 38 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
     });
@@ -701,7 +726,7 @@ function drawScope(report, data, variants, scope, index) {
     report.newPage();
     report.sectionTitle(`${index + 1}. ${scope.label}`, scope.description);
 
-    report.heading('Every ITS variant vs fixed-time', 'Percentage change against fixed-time on the same seeds and power state. Green = improvement, red = regression.');
+    report.heading('Every ITS variant vs fixed-time', 'Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression. Recovery: throughput first - wait-recovery is often cut off by the end of the measured window.');
     comparisonTable(report, data, variants, scope);
 
     const barAspect = 270 / 760;
@@ -771,13 +796,14 @@ function drawMethodNotes(report, data) {
         : 'a warm-up (not recorded for this batch)';
     report.sectionTitle('Method notes');
     [
-        `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring 40 simulated minutes at dt = 0.1 s.`,
+        `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring ${data.batchStamp?.measuredMinutes ?? 40} simulated minutes at dt = 0.1 s.`,
+        `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         'Load-shedding conditions cut power a quarter of the way into the measured window and restore it at the halfway mark. While the lights are dark every controller falls back to all-way-stop behaviour.',
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths (1.96 x sample stddev / sqrt(n)) on each condition\'s own mean, not on the delta between two conditions.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
-        'Scopes: Total counts every vehicle; Main arterial and Side streets split the same runs by the road a vehicle travelled on. The wait-time distribution (median / P95 / max) is recorded for Total only.',
+        'The wait-time distribution (median / P95 / max) is recorded for the total scope only.',
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
 
@@ -788,6 +814,19 @@ function drawMethodNotes(report, data) {
  * @param {{corridorId: string, corridorName: string, corridorUrl: ?string}} corridor
  *   `corridorUrl` is null for "All corridors" - no single layout to draw then.
  */
+/**
+ * e.g. results-hatfield-realistic-2026-10-03-2130-794f8bf-dirty.pdf - named for the batch it
+ * reports (its start time and code), so two PDFs can't be mistaken for the same dataset.
+ */
+function reportFileName(corridorId, stamp, now) {
+    const at = stamp?.startedAt ? new Date(stamp.startedAt) : now;
+    const pad = (n) => String(n).padStart(2, '0');
+    const when = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}`;
+    const code = stamp?.commit ? `-${stamp.commit}${stamp.dirty ? '-dirty' : ''}` : '-unstamped';
+    const routing = stamp?.routingMode === 'destination' ? '-destination' : '';
+    return `results-${corridorId || 'all-corridors'}-${when}${code}${routing}.pdf`;
+}
+
 export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl }) {
     // A layout that fails to load or draw just leaves the cover without it.
     const corridorLayout = corridorUrl ? await corridorLayoutImage(corridorUrl).catch(() => null) : null;
@@ -812,7 +851,7 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         drawMethodNotes(report, data);
 
         report.stampPages();
-        report.doc.save(`results-${corridorId || 'all-corridors'}-${now.toISOString().slice(0, 10)}.pdf`);
+        report.doc.save(reportFileName(corridorId, data.batchStamp, now));
     } finally {
         applyChartTheme(pageTheme);
     }

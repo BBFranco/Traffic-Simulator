@@ -67,8 +67,8 @@ function averageSeries(seriesList) {
  * `Map(tick -> value)`. A task of its own so a worker pool can run a probe's
  * seeds side by side (results.js); probeVerdict() combines them.
  */
-export function probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks = PROBE_DURATION_TICKS }) {
-    const { rows, sideStreetRows } = runHeadless({
+export function probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks = PROBE_DURATION_TICKS, routingMode = null }) {
+    const { sideStreetRows, totalRows, arterialScopeRows } = runHeadless({
         seed,
         controllerMode,
         sensorMode,
@@ -78,10 +78,11 @@ export function probeSeries({ corridorConfig, controllerMode, sensorMode, seed, 
         corridorConfig,
         durationTicks,
         dt,
+        routingMode,
     });
     return {
-        total: buildByTickWeightedAvgWait([rows, sideStreetRows]),
-        arterial: buildByTickWeightedAvgWait([rows]),
+        total: buildByTickWeightedAvgWait([totalRows]),
+        arterial: buildByTickWeightedAvgWait([arterialScopeRows]),
         sideStreet: buildByTickWeightedAvgWait([sideStreetRows]),
     };
 }
@@ -104,8 +105,8 @@ export function probeVerdict({ controllerMode, sensorMode, runs, dt, measuredTic
 }
 
 /** One controller's whole probe, one seed after another (the CLI batch). */
-export function probeCondition({ corridorConfig, controllerMode, sensorMode, seeds, dt, measuredTicks, durationTicks = PROBE_DURATION_TICKS }) {
-    const runs = seeds.map((seed) => probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks }));
+export function probeCondition({ corridorConfig, controllerMode, sensorMode, seeds, dt, measuredTicks, durationTicks = PROBE_DURATION_TICKS, routingMode = null }) {
+    const runs = seeds.map((seed) => probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks, routingMode }));
     return probeVerdict({ controllerMode, sensorMode, runs, dt, measuredTicks });
 }
 

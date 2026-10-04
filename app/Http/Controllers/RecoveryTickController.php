@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\RoutingMode;
 use App\Http\Requests\StoreRecoveryTicksRequest;
 use App\Models\SimulationRunRecoveryTick;
 use Illuminate\Http\JsonResponse;
@@ -20,11 +21,13 @@ class RecoveryTickController extends Controller
         $controllerMode = $request->validated('controller_mode');
         $sensorMode = $request->validated('sensor_mode');
         $corridorConfig = $request->validated('corridor_config');
+        $routingMode = $request->validated('routing_mode', RoutingMode::Random->value);
 
         SimulationRunRecoveryTick::query()
             ->where('controller_mode', $controllerMode)
             ->where('sensor_mode', $sensorMode)
             ->where('corridor_config', $corridorConfig)
+            ->where('routing_mode', $routingMode)
             ->delete();
 
         $now = now();
@@ -32,6 +35,7 @@ class RecoveryTickController extends Controller
             'controller_mode' => $controllerMode,
             'sensor_mode' => $sensorMode,
             'corridor_config' => $corridorConfig,
+            'routing_mode' => $routingMode,
             'tick' => $tick['tick'],
             'seconds' => $tick['seconds'],
             'throughput_per_min' => $tick['throughput_per_min'],

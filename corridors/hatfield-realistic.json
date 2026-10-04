@@ -2078,7 +2078,7 @@
                     ]
                 }
             },
-            "stubEndM": 6.25,
+            "stubEndM": 0,
             "stubStartM": 0,
             "turnChance": 0.15,
             "crossChance": 0.15,
@@ -2099,7 +2099,7 @@
             "curve": [
                 {
                     "xM": 245,
-                    "yM": 1195.3
+                    "yM": 1189
                 },
                 {
                     "xM": 245,
@@ -2127,6 +2127,11 @@
             },
             "twoWay": true,
             "laneUse": {
+                "burnett_hilda": {
+                    "northbound": [
+                        "left"
+                    ]
+                },
                 "south_hilda": {
                     "northbound": [
                         "all"
@@ -2148,6 +2153,7 @@
             "crossChance": 0.15,
             "targetSpeedKph": 60,
             "linksArterialNodes": [
+                "burnett_hilda",
                 "prospect_hilda",
                 "south_hilda"
             ]
@@ -3076,5 +3082,446 @@
             }
         }
     ],
-    "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (a side street: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, 2 + 2 divided to Grosvenor, then 2 + 2 to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - Festival and Hilda narrow to 1 + 1 two-way south of Burnett, Grosvenor south of Arcadia - and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data."
+    "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (a side street: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, 2 + 2 divided to Grosvenor, then 2 + 2 to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - Festival and Hilda narrow to 1 + 1 two-way south of Burnett, Grosvenor south of Arcadia - and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data.",
+    "routing": {
+        "mode": "random",
+        "throughShare": {
+            "arterial": 0.6,
+            "side": 0.3
+        },
+        "decayPerSecond": 0.01,
+        "routeVariants": 5,
+        "routeCostNoise": 0.1,
+        "detourLimit": 2.5,
+        "nodePenaltyS": {
+            "signal": 20,
+            "roundabout": 5,
+            "allWayStop": 8,
+            "stop": 8
+        },
+        "turnPenaltyS": {
+            "left": 10,
+            "right": 20
+        },
+        "crossableMedianRoads": [
+            "conn_grosvenor_south"
+        ],
+        "blocks": [
+            {
+                "id": "STZ-1",
+                "from": "stanza_festival",
+                "to": "stanza_hilda",
+                "tier": 1.5
+            },
+            {
+                "id": "STZ-2",
+                "from": "stanza_hilda",
+                "to": "stanza_grosvenor",
+                "tier": 2
+            },
+            {
+                "id": "STZ-3",
+                "from": "stanza_grosvenor",
+                "to": "stanza_janshoba_nb",
+                "tier": 3
+            },
+            {
+                "id": "STZ-4",
+                "from": "stanza_janshoba_nb",
+                "to": "stanza_janshoba_sb",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "PRE-1",
+                "from": "pt_janshoba_sb",
+                "to": "pt_janshoba_nb",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "PRE-2",
+                "from": "pt_janshoba_nb",
+                "to": "pt_grosvenor",
+                "tier": 4
+            },
+            {
+                "id": "PRE-3",
+                "from": "pt_grosvenor",
+                "to": "pt_hilda",
+                "tier": 5
+            },
+            {
+                "id": "PRE-4",
+                "from": "pt_hilda",
+                "to": "pt_festival",
+                "tier": 3
+            },
+            {
+                "id": "FRB-1",
+                "from": "fb_festival",
+                "to": "fb_hilda",
+                "tier": 3
+            },
+            {
+                "id": "FRB-2",
+                "from": "fb_hilda",
+                "to": "fb_grosvenor",
+                "tier": 4
+            },
+            {
+                "id": "FRB-3",
+                "from": "fb_grosvenor",
+                "to": "fb_janshoba_nb",
+                "tier": 4
+            },
+            {
+                "id": "FRB-4",
+                "from": "fb_janshoba_nb",
+                "to": "fb_janshoba_sb",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "ARC-1",
+                "from": "arcadia_festival",
+                "to": "arcadia_hilda",
+                "tier": 2
+            },
+            {
+                "id": "ARC-2",
+                "from": "arcadia_hilda",
+                "to": "arcadia_grosvenor",
+                "tier": 4
+            },
+            {
+                "id": "ARC-3",
+                "from": "arcadia_grosvenor",
+                "to": "conn_arcadia_east:end",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "PRK-1",
+                "from": "park_hilda",
+                "to": "park_grosvenor",
+                "tier": 3
+            },
+            {
+                "id": "PRK-2",
+                "from": "park_grosvenor",
+                "to": "park_janshoba",
+                "tier": 3
+            },
+            {
+                "id": "BRN-1",
+                "from": "burnett_janshoba",
+                "to": "burnett_grosvenor",
+                "tier": 5
+            },
+            {
+                "id": "BRN-2",
+                "from": "burnett_grosvenor",
+                "to": "burnett_hilda",
+                "tier": 5
+            },
+            {
+                "id": "BRN-3",
+                "from": "burnett_hilda",
+                "to": "burnett_festival",
+                "tier": 5
+            },
+            {
+                "id": "PRO-1",
+                "from": "prospect_festival",
+                "to": "prospect_hilda",
+                "tier": 3
+            },
+            {
+                "id": "PRO-2",
+                "from": "prospect_hilda",
+                "to": "prospect_grosvenor",
+                "tier": 3
+            },
+            {
+                "id": "PRO-3",
+                "from": "prospect_grosvenor",
+                "to": "prospect:end",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "SOU-1",
+                "from": "south_hilda",
+                "to": "south_grosvenor",
+                "tier": 2
+            },
+            {
+                "id": "SOU-2",
+                "from": "south_grosvenor",
+                "to": "south_janshoba",
+                "tier": 2
+            },
+            {
+                "id": "DUX-1",
+                "from": "conn_duxbury_west:start",
+                "to": "duxbury_janshoba",
+                "tier": 2
+            },
+            {
+                "id": "DUX-2",
+                "from": "duxbury_janshoba",
+                "to": "lunnon_duxbury",
+                "tier": 1.5
+            },
+            {
+                "id": "DUX-3",
+                "from": "lunnon_duxbury",
+                "to": "lynnwood_duxbury",
+                "tier": 2
+            },
+            {
+                "id": "LUN-1",
+                "from": "lunnon:start",
+                "to": "lunnon_dyer",
+                "tier": 2
+            },
+            {
+                "id": "LUN-2",
+                "from": "lunnon_dyer",
+                "to": "lunnon_duxbury",
+                "tier": 2
+            },
+            {
+                "id": "LUN-3",
+                "from": "lunnon_duxbury",
+                "to": "lunnon:end",
+                "tier": 2
+            },
+            {
+                "id": "LYN-1",
+                "from": "lynnwood_janshoba",
+                "to": "lynnwood_dyer",
+                "tier": 4
+            },
+            {
+                "id": "LYN-2",
+                "from": "lynnwood_dyer",
+                "to": "lynnwood_duxbury",
+                "tier": 4
+            },
+            {
+                "id": "DYR-1",
+                "from": "lynnwood_dyer",
+                "to": "dyer_roundabout",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "DYR-2",
+                "from": "dyer_roundabout",
+                "to": "lunnon_dyer",
+                "tier": 2,
+                "provisional": true
+            },
+            {
+                "id": "MAL-1",
+                "from": "dyer_mall:start",
+                "to": "dyer_roundabout",
+                "tier": 4
+            },
+            {
+                "id": "MAL-2",
+                "from": "dyer_roundabout",
+                "to": "dyer_mall:end",
+                "tier": 4
+            },
+            {
+                "id": "FES-1",
+                "from": "prospect_festival",
+                "to": "burnett_festival",
+                "tier": 5
+            },
+            {
+                "id": "FES-2",
+                "from": "burnett_festival",
+                "to": "arcadia_festival",
+                "tier": 4
+            },
+            {
+                "id": "FES-3",
+                "from": "arcadia_festival",
+                "to": "fb_festival",
+                "tier": 4
+            },
+            {
+                "id": "FES-4",
+                "from": "fb_festival",
+                "to": "pt_festival",
+                "tier": 3
+            },
+            {
+                "id": "FES-5",
+                "from": "pt_festival",
+                "to": "stanza_festival",
+                "tier": 2
+            },
+            {
+                "id": "HIL-1",
+                "from": "stanza_hilda",
+                "to": "pt_hilda",
+                "tier": 2
+            },
+            {
+                "id": "HIL-2",
+                "from": "pt_hilda",
+                "to": "fb_hilda",
+                "tier": 4
+            },
+            {
+                "id": "HIL-3",
+                "from": "fb_hilda",
+                "to": "arcadia_hilda",
+                "tier": 4
+            },
+            {
+                "id": "HIL-4",
+                "from": "arcadia_hilda",
+                "to": "park_hilda",
+                "tier": 4
+            },
+            {
+                "id": "HIL-5",
+                "from": "park_hilda",
+                "to": "burnett_hilda",
+                "tier": 5
+            },
+            {
+                "id": "HIL-6",
+                "from": "burnett_hilda",
+                "to": "prospect_hilda",
+                "tier": 5
+            },
+            {
+                "id": "HIL-7",
+                "from": "prospect_hilda",
+                "to": "south_hilda",
+                "tier": 3
+            },
+            {
+                "id": "HIL-8",
+                "from": "south_hilda",
+                "to": "conn_hilda_south:end",
+                "tier": 2
+            },
+            {
+                "id": "GRO-1",
+                "from": "stanza_grosvenor",
+                "to": "pt_grosvenor",
+                "tier": 2
+            },
+            {
+                "id": "GRO-2",
+                "from": "pt_grosvenor",
+                "to": "fb_grosvenor",
+                "tier": 4
+            },
+            {
+                "id": "GRO-3",
+                "from": "fb_grosvenor",
+                "to": "arcadia_grosvenor",
+                "tier": 5
+            },
+            {
+                "id": "GRO-4",
+                "from": "arcadia_grosvenor",
+                "to": "park_grosvenor",
+                "tier": 5
+            },
+            {
+                "id": "GRO-5",
+                "from": "park_grosvenor",
+                "to": "burnett_grosvenor",
+                "tier": 5
+            },
+            {
+                "id": "GRO-6",
+                "from": "burnett_grosvenor",
+                "to": "prospect_grosvenor",
+                "tier": 4
+            },
+            {
+                "id": "GRO-7",
+                "from": "prospect_grosvenor",
+                "to": "south_grosvenor",
+                "tier": 3
+            },
+            {
+                "id": "JSH-1N",
+                "from": "pt_janshoba_nb",
+                "to": "stanza_janshoba_nb",
+                "tier": 3,
+                "weightShare": 0.5
+            },
+            {
+                "id": "JSH-1S",
+                "from": "stanza_janshoba_sb",
+                "to": "pt_janshoba_sb",
+                "tier": 3,
+                "weightShare": 0.5
+            },
+            {
+                "id": "JSH-2N",
+                "from": "fb_janshoba_nb",
+                "to": "pt_janshoba_nb",
+                "tier": 4,
+                "weightShare": 0.5
+            },
+            {
+                "id": "JSH-2S",
+                "from": "pt_janshoba_sb",
+                "to": "fb_janshoba_sb",
+                "tier": 4,
+                "weightShare": 0.5
+            },
+            {
+                "id": "JSH-3N",
+                "from": "park_janshoba",
+                "to": "fb_janshoba_nb",
+                "tier": 4,
+                "weightShare": 0.5
+            },
+            {
+                "id": "JSH-3S",
+                "from": "fb_janshoba_sb",
+                "to": "park_janshoba",
+                "tier": 4,
+                "weightShare": 0.5
+            },
+            {
+                "id": "JSH-4",
+                "from": "park_janshoba",
+                "to": "burnett_janshoba",
+                "tier": 5
+            },
+            {
+                "id": "JSH-5",
+                "from": "burnett_janshoba",
+                "to": "south_janshoba",
+                "tier": 3
+            },
+            {
+                "id": "JSH-6",
+                "from": "south_janshoba",
+                "to": "duxbury_janshoba",
+                "tier": 2
+            },
+            {
+                "id": "JSH-7",
+                "from": "duxbury_janshoba",
+                "to": "lynnwood_janshoba",
+                "tier": 4
+            }
+        ]
+    }
 }

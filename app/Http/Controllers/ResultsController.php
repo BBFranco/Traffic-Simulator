@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\RoutingMode;
 use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
 use App\Models\TrafficCount;
 use App\Support\CorridorRepository;
+use App\Support\SeedPairedDeltas;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -73,11 +75,15 @@ class ResultsController extends Controller
     /** Fewest recovered runs a side needs before its mean recovery time is compared as a delta. */
     private const MIN_RECOVERED_RUNS = 10;
 
-    public function __construct(private readonly CorridorRepository $corridors) {}
+    public function __construct(
+        private readonly CorridorRepository $corridors,
+        private readonly SeedPairedDeltas $seedPairedDeltas,
+    ) {}
 
     public function index(): View
     {
-        $payload = $this->buildPayload(request()->query('corridor'));
+        $routingMode = $this->routingModeFilter();
+        $payload = $this->buildPayload(request()->query('corridor'), $routingMode);
 
         $corridors = $this->corridors->index();
         $trafficCounts = $this->trafficCountsForImport();
@@ -88,6 +94,8 @@ class ResultsController extends Controller
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
             'trafficCounts' => $trafficCounts,
+            'routingModes' => RoutingMode::cases(),
+            'routingMode' => $routingMode,
             'chartPayload' => [
                 'aggregates' => $payload['aggregates'],
                 'aggregatesBySensor' => $payload['aggregatesBySensor'],
@@ -97,6 +105,7 @@ class ResultsController extends Controller
                 'pairedComparisons' => $payload['pairedComparisons'],
                 'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
                 'batchWarmupLabel' => $payload['batchWarmupLabel'],
+                'batchStamp' => $payload['batchStamp'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
@@ -122,7 +131,7 @@ class ResultsController extends Controller
      */
     public function data(): JsonResponse
     {
-        $payload = $this->buildPayload(request()->query('corridor'));
+        $payload = $this->buildPayload(request()->query('corridor'), $this->routingModeFilter());
         $viewData = [
             ...$payload,
             ...$this->viewModel($payload),
@@ -138,6 +147,7 @@ class ResultsController extends Controller
             'recoveryTimeline' => $payload['recoveryTimeline'],
             'pairedComparisons' => $payload['pairedComparisons'],
             'batchWarmupLabel' => $payload['batchWarmupLabel'],
+            'batchStamp' => $payload['batchStamp'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
@@ -551,9 +561,16 @@ class ResultsController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function buildPayload(?string $corridorFilter): array
+    /** Random turning and destination routing are separate datasets - the page shows one at a time. */
+    private function routingModeFilter(): RoutingMode
     {
-        $query = SimulationRun::query()->whereIn('batch_id', $this->latestBatchIds($corridorFilter));
+        return RoutingMode::tryFrom((string) request()->query('routing')) ?? RoutingMode::Random;
+    }
+
+    private function buildPayload(?string $corridorFilter, RoutingMode $routingMode): array
+    {
+        $batchIds = $this->latestBatchIds($corridorFilter, $routingMode);
+        $query = SimulationRun::query()->whereIn('batch_id', $batchIds);
 
         $aggregates = $this->aggregates((clone $query));
         $aggregatesBySensor = $this->aggregatesBySensor((clone $query));
@@ -585,12 +602,13 @@ class ResultsController extends Controller
         return [
             'aggregates' => $aggregates,
             'aggregatesBySensor' => $aggregatesBySensor,
-            'pairedComparisons' => $this->pairedComparisons($aggregates, $aggregatesBySensor),
-            'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter),
+            'pairedComparisons' => $this->pairedComparisons($aggregates, $aggregatesBySensor, $this->seedPairedDeltas->forBatches($batchIds)),
+            'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter, $routingMode),
             'recentRuns' => $recentRuns,
             'totalRuns' => (clone $query)->count(),
             'batchTimingLabel' => $this->batchTimingLabel((clone $query)),
             'batchWarmupLabel' => $this->warmupLabel((clone $query)->whereNotNull('warmup_ticks')->distinct()->pluck('warmup_ticks')),
+            'batchStamp' => $this->batchStamp((clone $query)),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
         ];
     }
@@ -642,6 +660,55 @@ class ResultsController extends Controller
         return "last batch ({$latest->corridor_config}) {$this->displayTime($latest->started_at)} → {$finishedLocal} ({$minutes} min)";
     }
 
+    /**
+     * What the newest batch shown ran: code (commit, dirty tree), wait accounting, routing, timing
+     * and seeds - from the run config every run stores. Null fields for batches from before stamping.
+     *
+     * @param  Builder<SimulationRun>  $query
+     * @return array<string, mixed>|null
+     */
+    private function batchStamp(Builder $query): ?array
+    {
+        $latest = (clone $query)->latest('id')->first();
+        if ($latest === null) {
+            return null;
+        }
+
+        $config = $latest->raw_config_json ?? [];
+        $build = $config['build'] ?? [];
+        $seeds = SimulationRun::query()
+            ->where('batch_id', $latest->batch_id)
+            ->selectRaw('min(seed) as first_seed, max(seed) as last_seed')
+            ->first();
+        $minutes = fn (?int $ticks): ?int => $ticks === null ? null : (int) round($ticks * ($config['dt'] ?? 0.1) / 60);
+
+        $commit = isset($build['commit']) ? $build['commit'].(($build['dirty'] ?? false) ? ' (uncommitted changes)' : '') : 'commit not recorded';
+        $waitAccounting = $config['waitAccounting'] ?? 'turn-reset (pre-2026-10-04)';
+        $timing = $minutes($config['warmupTicks'] ?? null) !== null
+            ? "{$minutes($config['warmupTicks'])} min warm-up + {$minutes($config['durationTicks'] ?? null)} min measured"
+            : null;
+
+        return [
+            'label' => collect([
+                "code {$commit}",
+                "wait accounting {$waitAccounting}",
+                RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
+                $timing,
+                $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,
+            ])->filter()->implode(' · '),
+            'commit' => $build['commit'] ?? null,
+            'dirty' => $build['dirty'] ?? null,
+            'source' => $build['source'] ?? null,
+            'waitAccounting' => $waitAccounting,
+            'routingMode' => $latest->routing_mode,
+            'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
+            'measuredMinutes' => $minutes($config['durationTicks'] ?? null),
+            'firstSeed' => $seeds?->first_seed,
+            'lastSeed' => $seeds?->last_seed,
+            'startedAt' => $latest->batch_started_at?->toIso8601String(),
+        ];
+    }
+
     /** A stored (UTC) timestamp in the zone people read it in, e.g. "25 Sep 2026, 11:42". */
     private function displayTime(?string $utcTimestamp): ?string
     {
@@ -656,9 +723,10 @@ class ResultsController extends Controller
      *
      * @return Collection<int, string>
      */
-    private function latestBatchIds(?string $corridorFilter): Collection
+    private function latestBatchIds(?string $corridorFilter, RoutingMode $routingMode): Collection
     {
         $latestRunIds = SimulationRun::query()
+            ->where('routing_mode', $routingMode->value)
             ->when($corridorFilter, fn (Builder $query) => $query->where('corridor_config', $corridorFilter))
             ->selectRaw('max(id)')
             ->groupBy('corridor_config');
@@ -868,7 +936,7 @@ class ResultsController extends Controller
      * @param  array<int, array<string, mixed>>  $aggregatesBySensor
      * @return array<int, array<string, mixed>>
      */
-    private function pairedComparisons(array $aggregates, array $aggregatesBySensor): array
+    private function pairedComparisons(array $aggregates, array $aggregatesBySensor, array $seedDeltas): array
     {
         $lookup = [];
         foreach ($aggregates as $row) {
@@ -893,7 +961,8 @@ class ResultsController extends Controller
                         $scope,
                         $suffix,
                         $subject,
-                        $baseline
+                        $baseline,
+                        $seedDeltas[$mode === 'adaptive' ? "adaptive|average|{$power}" : "{$mode}||{$power}"] ?? []
                     );
                 }
             }
@@ -913,7 +982,7 @@ class ResultsController extends Controller
                     continue;
                 }
 
-                $comparisons[] = $this->buildComparison('adaptive', $sensor, $power, $scope, $suffix, $subject, $baseline);
+                $comparisons[] = $this->buildComparison('adaptive', $sensor, $power, $scope, $suffix, $subject, $baseline, $seedDeltas["adaptive|{$sensor}|{$power}"] ?? []);
             }
         }
 
@@ -923,6 +992,7 @@ class ResultsController extends Controller
     /**
      * @param  array<string, mixed>  $subject
      * @param  array<string, mixed>  $baseline
+     * @param  array<string, array{delta: float, ci95: float, pairs: int}>  $paired  SeedPairedDeltas for this condition
      * @return array<string, mixed>
      */
     private function buildComparison(
@@ -932,7 +1002,8 @@ class ResultsController extends Controller
         string $scope,
         string $suffix,
         array $subject,
-        array $baseline
+        array $baseline,
+        array $paired
     ): array {
         $waitKey = 'avg_wait_time'.$suffix;
         $throughputKey = 'throughput_per_min'.$suffix;
@@ -1026,6 +1097,18 @@ class ResultsController extends Controller
             'baseline_throughput_ci95' => $baseline[$throughputKey.'_ci95'] ?? null,
             'cleared_ci95' => $subject[$clearedKey.'_ci95'] ?? null,
             'baseline_cleared_ci95' => $baseline[$clearedKey.'_ci95'] ?? null,
+            // 95% CI half-width on the delta itself, from the per-seed differences (SeedPairedDeltas).
+            'paired_seeds' => $paired[$waitKey]['pairs'] ?? null,
+            'wait_delta_ci95_pct' => $paired[$waitKey]['ci95'] ?? null,
+            'throughput_delta_ci95_pct' => $paired[$throughputKey]['ci95'] ?? null,
+            'cleared_delta_ci95_pp' => $paired[$clearedKey]['ci95'] ?? null,
+            'recovery_delta_ci95_pct' => $paired[$recoveryKey]['ci95'] ?? null,
+            'recovery_wait_delta_ci95_pct' => $paired[$recoveryWaitKey]['ci95'] ?? null,
+            // The tail next to the mean - stored for the total scope only.
+            'median_wait_delta_pct' => $suffix === '' ? ($paired['median_wait_time']['delta'] ?? null) : null,
+            'median_wait_delta_ci95_pct' => $suffix === '' ? ($paired['median_wait_time']['ci95'] ?? null) : null,
+            'p95_wait_delta_pct' => $suffix === '' ? ($paired['p95_wait_time']['delta'] ?? null) : null,
+            'p95_wait_delta_ci95_pct' => $suffix === '' ? ($paired['p95_wait_time']['ci95'] ?? null) : null,
         ];
     }
 
@@ -1055,9 +1138,10 @@ class ResultsController extends Controller
      *
      * @return array{seconds: array<int, float>, series: array<string, array<string, array<int, ?float>>>, sheddingStart: ?float, sheddingEnd: ?float}|null
      */
-    private function dbRecoveryTimeline(?string $corridorFilter): ?array
+    private function dbRecoveryTimeline(?string $corridorFilter, RoutingMode $routingMode): ?array
     {
         $rows = SimulationRunRecoveryTick::query()
+            ->where('routing_mode', $routingMode->value)
             ->when($corridorFilter, fn (Builder $q) => $q->where('corridor_config', $corridorFilter))
             ->orderBy('tick')
             ->get();

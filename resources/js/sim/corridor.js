@@ -17,6 +17,7 @@
  * wave offsets yet - see `offsetChainPlaceholder()` at the bottom for where
  * that lands in build step 14.
  */
+import { parseRouting } from './routing/config.js';
 
 const DIRECTION_VECTORS = {
     eastbound: { x: 1, y: 0 },
@@ -509,6 +510,8 @@ export function buildLayout(config) {
             return taper.points.map((p) => ({ x: p.xM, y: p.yM }));
         }),
         nodesById,
+        /** Destination routing's inputs (routing/config.js) - null when the corridor has none, which means random turning. */
+        routing: parseRouting(config.routing, nodesById, new Set([...arterials, ...connectors, ...decorations].map((road) => road.id))),
     };
 
     layout.bounds = computeBounds(layout);

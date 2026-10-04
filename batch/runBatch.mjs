@@ -15,11 +15,11 @@
  *
  * Usage:
  *   node batch/runBatch.mjs [--corridor=hatfield-pretorius-francisbaard]
- *     [--reps=30] [--duration=24000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
+ *     [--reps=30] [--duration=36000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
  *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
- *     [--post=http://traffic-simulator.test/api/simulation-runs]
+ *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *
- * --duration is in MEASURED ticks at dt=0.1s (24000 ticks = 40 simulated minutes
+ * --duration is in MEASURED ticks at dt=0.1s (36000 ticks = 60 simulated minutes
  * per run by default). --warmup-ticks run BEFORE that and are discarded from
  * every stat (engine.js's resetStats(), runHeadless.js's warmupTicks doc).
  * By default ('auto') they're measured for this corridor first by
@@ -42,6 +42,7 @@ import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experim
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
+import { buildStamp } from './buildStamp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -53,7 +54,7 @@ function parseArgs(argv) {
     const args = {
         corridor: 'hatfield-pretorius-francisbaard',
         reps: 30,
-        duration: 24000,
+        duration: 36000,
         warmupTicks: 'auto',
         probeOnly: false,
         baseSeed: 20260101,
@@ -61,6 +62,7 @@ function parseArgs(argv) {
         powerOutageEndTick: null,
         dt: 0.1,
         post: null,
+        routing: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -74,6 +76,7 @@ function parseArgs(argv) {
         else if (key === 'power-outage-end-tick') args.powerOutageEndTick = Number(value);
         else if (key === 'dt') args.dt = Number(value);
         else if (key === 'post') args.post = value;
+        else if (key === 'routing') args.routing = value;
     }
     // Default outage schedule: starts a quarter of the way in, power restored at the
     // halfway mark - only filled in once `duration` is known, so a custom --duration
@@ -129,7 +132,7 @@ function probeWarmup(corridorConfig, args) {
     const probes = [];
     for (const condition of probeConditions()) {
         console.log(`Warm-up probe: ${condition.controllerMode}, normal power, from empty, ${PROBE_REPLICATIONS} seeds averaged...`);
-        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration });
+        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration, routingMode: args.routing });
         for (const [scope, v] of Object.entries(probe.scopes)) {
             if (v.truncationTick == null) continue;
             const at = `${((v.truncationTick * args.dt) / 60).toFixed(0)} min`;
@@ -152,6 +155,8 @@ async function main() {
 
     // Taken before the probe, so a batch's duration includes finding its warm-up.
     const batchStartedAt = new Date().toISOString();
+    const build = buildStamp(ROOT, 'cli');
+    console.log(`Code: ${build.commit ?? 'not a git checkout'}${build.dirty ? ' (uncommitted changes - not a baseline batch)' : ''}`);
     // A fixed --warmup-ticks is the caller's own choice - nothing measured says whether it's stationary.
     const warmup = args.warmupTicks === 'auto' ? probeWarmup(corridorConfig, args) : { warmupTicks: args.warmupTicks, stationary: null };
     if (args.probeOnly) return;
@@ -174,7 +179,7 @@ async function main() {
 
         for (let rep = 0; rep < args.reps; rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
-            const { rows, sideStreetRows, summary } = runHeadless({
+            const { rows, sideStreetRows, totalRows, arterialScopeRows, summary } = runHeadless({
                 seed,
                 controllerMode: condition.controllerMode,
                 sensorMode: condition.sensorMode,
@@ -184,6 +189,7 @@ async function main() {
                 corridorConfig,
                 durationTicks: args.duration,
                 dt: args.dt,
+                routingMode: args.routing,
             });
 
             fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
@@ -195,14 +201,14 @@ async function main() {
             }
 
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt, build }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to
                 // recovery" stat card does - posted once after the last rep, not batched like
                 // the rest.
                 if (condition.powerState === 'load_shedding') {
-                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { rows, sideStreetRows });
+                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { totalRows, arterialScopeRows, sideStreetRows });
                 }
             }
 
@@ -226,6 +232,7 @@ async function main() {
                     dt: args.dt,
                     powerOutageStartTick: args.powerOutageStartTick,
                     powerOutageEndTick: args.powerOutageEndTick,
+                    routingMode: args.routing ?? 'random',
                 })
             );
         }
