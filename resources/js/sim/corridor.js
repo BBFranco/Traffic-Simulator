@@ -1586,3 +1586,27 @@ export function offsetChainPlaceholder() {
 }
 
 export { DIRECTION_VECTORS, rightNormal, leftNormal, add as addVector };
+
+/**
+ * Roads counted by measurement scope (an arterial object with scope "side" is a side street, a
+ * connector with scope "arterial" is an arterial), by distinct name - a road split into pieces at
+ * its junctions (Jan Shoba, Arcadia, South) is still one road. Junctions are counted by control.
+ * Shared by the Simulator sidebar and the Results PDF cover.
+ */
+export function corridorCounts(layout) {
+    const arterialNames = new Set();
+    const sideNames = new Set();
+    for (const arterial of layout.arterials) (arterial.scope === 'side' ? sideNames : arterialNames).add(arterial.shortName ?? arterial.name);
+    for (const connector of layout.connectors) (connector.scope === 'arterial' ? arterialNames : sideNames).add(connector.name);
+    for (const name of arterialNames) sideNames.delete(name);
+    const nodes = layout.arterials.flatMap((arterial) => arterial.intersections);
+    const countControl = (control) => nodes.filter((node) => (node.control ?? 'signal') === control).length;
+    return {
+        arterialRoads: arterialNames.size,
+        sideRoads: sideNames.size,
+        signals: countControl('signal'),
+        roundabouts: countControl('roundabout'),
+        allWayStops: countControl('allWayStop'),
+        stopStreets: countControl('stop'),
+    };
+}

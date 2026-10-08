@@ -88,4 +88,41 @@ class SimulationRunStoreTest extends TestCase
             ->assertOk()
             ->assertDontSee('Destination routing - trips');
     }
+
+    public function test_a_run_stores_its_diagnostics_and_names_the_drifting_controller(): void
+    {
+        $drifting = [['controllerMode' => 'green_wave', 'scopes' => ['total' => 63, 'sideStreet' => 82]]];
+
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$this->runPayload([
+            'warmup_stationary' => false,
+            'warmup_drifting' => $drifting,
+            'diagnostics' => ['arrivalsLost' => 12, 'roundaboutOverruns' => 0],
+        ])]])->assertCreated();
+
+        $run = SimulationRun::query()->sole();
+        $this->assertSame($drifting, $run->warmup_drifting);
+        $this->assertSame(12, $run->diagnostics['arrivalsLost']);
+
+        $this->actingAs(User::factory()->create())->get('/results')
+            ->assertOk()
+            ->assertSee('Green wave (total +63%, side streets +82%)');
+    }
+
+    public function test_the_replay_picker_offers_the_latest_batch_of_the_requested_routing_mode(): void
+    {
+        $random = $this->runPayload(['routing_mode' => 'random']);
+        $destination = $this->runPayload(['routing_mode' => 'destination', 'seed' => 7]);
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$random]])->assertCreated();
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$destination]])->assertCreated();
+
+        $user = User::factory()->create();
+        $this->actingAs($user)->getJson(route('simulator.sample-runs', ['corridor' => 'hatfield-realistic', 'routing' => 'destination']))
+            ->assertOk()
+            ->assertJsonCount(1, 'runs')
+            ->assertJsonPath('runs.0.routing_mode', 'destination')
+            ->assertJsonPath('runs.0.seed', 7);
+        $this->actingAs($user)->getJson(route('simulator.sample-runs', ['corridor' => 'hatfield-realistic']))
+            ->assertOk()
+            ->assertJsonPath('runs.0.routing_mode', 'random');
+    }
 }

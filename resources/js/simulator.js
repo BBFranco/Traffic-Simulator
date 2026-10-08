@@ -17,7 +17,7 @@
  * it rather than rewrite it.
  */
 
-import { buildLayout } from './sim/corridor.js';
+import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { ARTERIAL_ACCENTS } from './sim/renderer.js';
 import { Renderer2D } from './renderers/Renderer2D.js';
 import { VIEW_2D, VIEW_3D } from './renderers/RendererInterface.js';
@@ -320,6 +320,7 @@ async function loadCorridor(id, { config = null } = {}) {
     // (which precomputes stop-line distances per node at construction time)
     // has to be rebuilt from scratch, not just reset.
     engine = new SimulationEngine(layout);
+    engine.setNodeStatsTracking(true); // the hover tooltip's per-junction wait and throughput
     engine.reset(engineResetOptions());
     syncDriveways();
     accumulatorS = 0;
@@ -372,15 +373,16 @@ async function fetchCorridor(id) {
 
 /**
  * Loads the "replay a batch run" picker's options for the given corridor - one representative
- * run per (controller_mode, power_state, sensor_mode) condition. Called every time a corridor
- * finishes loading (see loadCorridor()) so the picker never offers a run for a corridor that
- * isn't the one currently on screen.
+ * run per (controller_mode, power_state, sensor_mode) condition, from that corridor's latest batch
+ * in the current routing mode. Called every time a corridor finishes loading (see loadCorridor())
+ * or Destination routing is toggled, so the picker never offers a run for a corridor or routing
+ * mode that isn't the one on screen.
  */
 async function fetchSampleRuns(corridorId) {
     if (!el.replayPicker) return; // picker markup not present (should always exist, defensive only)
 
     try {
-        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}`;
+        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}&routing=${state.routingMode}`;
         const response = await fetch(url, { headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const body = await response.json();
@@ -435,11 +437,15 @@ function renderCorridorSummary() {
     el.corridorDescription.setAttribute('aria-label', layout.description || '');
     el.corridorDescription.classList.toggle('hidden', !layout.description);
 
-    const intersections = layout.arterials.reduce((sum, a) => sum + a.intersections.length, 0);
+    // Real roads and junctions by kind (shared with the Results PDF cover) - not the config's road pieces.
+    const counts = corridorCounts(layout);
     const facts = [
-        ['Arterials', layout.arterials.length],
-        ['Signals', intersections],
-        ['Cross-streets', layout.connectors.length],
+        ['Arterials', counts.arterialRoads],
+        ['Side streets', counts.sideRoads],
+        ['Signals', counts.signals],
+        ['Roundabouts', counts.roundabouts],
+        ['All-way stops', counts.allWayStops],
+        ['Stop streets', counts.stopStreets],
     ];
 
     el.corridorFacts.replaceChildren(
@@ -892,6 +898,8 @@ function renderTooltip() {
                         ${row('Arterial queue', `${debug.arterialQueue} car${debug.arterialQueue === 1 ? '' : 's'}`)}
                         ${row('Cross queue', `${debug.crossQueue} car${debug.crossQueue === 1 ? '' : 's'}`)}
                         ${row('Next change', escapeHtml(debug.etaLabel))}
+                        ${row('Avg wait (last min)', debug.lastMinute?.avgWaitS != null ? `${debug.lastMinute.avgWaitS.toFixed(1)}s` : '—')}
+                        ${row('Throughput (last min)', debug.lastMinute ? `${debug.lastMinute.throughput} veh` : '—')}
                     </div>
                     ${signalTimingHtml(debug.timing, arterial.shortName, node.crossStreetName)}`
                     : ''
@@ -1117,6 +1125,7 @@ el.destinationRoutingInput.addEventListener('change', () => {
     state.routingMode = el.destinationRoutingInput.checked ? 'destination' : 'random';
     restartEngine();
     logChange('routingMode', state.routingMode);
+    fetchSampleRuns(state.corridorId); // the replay picker offers that routing mode's latest batch
 });
 
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {

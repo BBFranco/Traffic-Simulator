@@ -118,9 +118,23 @@ export function probeCondition({ corridorConfig, controllerMode, sensorMode, see
 export function chooseWarmup(probes) {
     const verdicts = probes.flatMap((probe) => Object.values(probe.scopes)).filter((scope) => scope.truncationTick != null);
     const stationary = verdicts.length > 0 && verdicts.every((scope) => scope.stationary);
-    if (!stationary) return { warmupTicks: MAX_WARMUP_TICKS, stationary: false, probes };
+    if (!stationary) return { warmupTicks: MAX_WARMUP_TICKS, stationary: false, drifting: driftingControllers(probes), probes };
 
     const slowest = Math.max(...verdicts.map((scope) => scope.convergedAtTick));
     const padded = Math.ceil((slowest * WARMUP_SAFETY_MARGIN) / WARMUP_ROUNDING_TICKS) * WARMUP_ROUNDING_TICKS;
-    return { warmupTicks: Math.min(MAX_WARMUP_TICKS, Math.max(MIN_WARMUP_TICKS, padded)), stationary: true, probes };
+    return { warmupTicks: Math.min(MAX_WARMUP_TICKS, Math.max(MIN_WARMUP_TICKS, padded)), stationary: true, drifting: [], probes };
+}
+
+/** The controllers whose waits never levelled off, with how far (%) each such scope was still drifting - what the "not stationary" flag is about. */
+function driftingControllers(probes) {
+    return probes
+        .map((probe) => ({
+            controllerMode: probe.controllerMode,
+            scopes: Object.fromEntries(
+                Object.entries(probe.scopes)
+                    .filter(([, scope]) => scope.truncationTick != null && !scope.stationary)
+                    .map(([name, scope]) => [name, Math.round(scope.driftRatio * 100)])
+            ),
+        }))
+        .filter((probe) => Object.keys(probe.scopes).length);
 }

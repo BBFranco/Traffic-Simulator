@@ -6,10 +6,12 @@
             Every car drives a trip to a destination: a driveway on a block, or a way out of the map. Trip delay is a trip's
             time beyond free-flow driving along its route, over the trips that reached the destination they set out for.
             Missed driveways are pull-offs that didn't make their driveway first time (wrong lane, or no gap in oncoming
-            traffic); diverted trips ended somewhere else altogether.
+            traffic); diverted trips ended somewhere else altogether. Driveway wait is how long a car leaving a block waited to
+            pull out - it is in neither its trip nor any wait figure above, so read it alongside them. Still in driveways counts
+            the cars that hadn't got out when the run ended, and lost arrivals the map-edge demand turned away by a full entry.
         </p>
         <div class="overflow-x-auto {{ $card }}">
-            <table class="w-full min-w-[820px] text-left text-xs">
+            <table class="w-full min-w-[1080px] text-left text-xs">
                 <thead class="{{ $tableHead }}">
                     <tr>
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
@@ -20,6 +22,9 @@
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Missed driveways (%)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Missed turns / run</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Diverted (%)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Driveway wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Still in driveways</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Lost arrivals / run</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
@@ -36,6 +41,9 @@
                             <td class="px-4 py-2 text-right">{{ $row['missed_driveways_pct'] === null ? '—' : number_format($row['missed_driveways_pct'], 1) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['missed_turns_per_run'] === null ? '—' : number_format($row['missed_turns_per_run'], 0) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['diversion_pct'] === null ? '—' : number_format($row['diversion_pct'], 1) }}</td>
+                            <td class="px-4 py-2 text-right">{{ $row['mean_driveway_wait'] === null ? '—' : number_format($row['mean_driveway_wait'], 1) }}</td>
+                            <td class="px-4 py-2 text-right">{{ $row['still_in_driveways'] === null ? '—' : number_format($row['still_in_driveways'], 0) }}</td>
+                            <td class="px-4 py-2 text-right">{{ $row['arrivals_lost_per_run'] === null ? '—' : number_format($row['arrivals_lost_per_run'], 0) }}</td>
                         </tr>
                     @endforeach
                 </tbody>

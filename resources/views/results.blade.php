@@ -106,6 +106,7 @@
         <strong class="font-semibold">Baseline not stationary.</strong>
         The warm-up probe found at least one controller whose waits were still growing after its longest warm-up,
         so these runs measure a network that is still loading up - read them as trends, not a steady-state comparison.
+        <span id="non-stationary-culprit" class="{{ $warmupDriftingLabel ? '' : 'hidden' }}">Still drifting: <span id="non-stationary-culprit-label">{{ $warmupDriftingLabel }}</span>.</span>
     </div>
 
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">

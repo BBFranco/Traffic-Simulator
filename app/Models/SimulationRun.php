@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
     'corridor_config',
     'warmup_ticks',
     'warmup_stationary',
+    'warmup_drifting',
     'avg_wait_time',
     'avg_wait_time_arterial',
     'avg_wait_time_side_street',
@@ -65,6 +66,7 @@ use Illuminate\Database\Eloquent\Model;
     'missed_driveways',
     'diversion_pct',
     'routing_stats',
+    'diagnostics',
     'raw_config_json',
 ])]
 class SimulationRun extends Model
@@ -77,6 +79,8 @@ class SimulationRun extends Model
         return [
             'raw_config_json' => 'array',
             'routing_stats' => 'array',
+            'diagnostics' => 'array',
+            'warmup_drifting' => 'array',
             'warmup_ticks' => 'integer',
             'warmup_stationary' => 'boolean',
             'created_at' => 'datetime',

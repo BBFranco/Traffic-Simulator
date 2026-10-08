@@ -114,6 +114,7 @@ class ResultsController extends Controller
                 'batchStamp' => $payload['batchStamp'],
                 'sensitivityAppendix' => $payload['sensitivityAppendix'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
+                'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
                 'routingMetrics' => $payload['routingMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
@@ -158,6 +159,7 @@ class ResultsController extends Controller
             'batchStamp' => $payload['batchStamp'],
             'sensitivityAppendix' => $payload['sensitivityAppendix'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
+            'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
             'routingMetrics' => $payload['routingMetrics'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
@@ -622,6 +624,7 @@ class ResultsController extends Controller
             'batchStamp' => $this->batchStamp((clone $query)),
             'sensitivityAppendix' => $this->sensitivityAppendix->forCorridor($corridorFilter, $routingMode, $batchIds),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
+            'warmupDriftingLabel' => $this->warmupDriftingLabel((clone $query)),
             'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
         ];
     }
@@ -680,6 +683,29 @@ class ResultsController extends Controller
      * @param  Builder<SimulationRun>  $query
      * @return array<string, mixed>|null
      */
+    /**
+     * Which controller kept a batch from settling, from its warm-up probe, e.g. "Green wave (total +63%, side streets +82%)".
+     * Null when every controller levelled off, or the batch predates the probe recording it.
+     */
+    private function warmupDriftingLabel(Builder $query): ?string
+    {
+        $drifting = $query->whereNotNull('warmup_drifting')->latest('id')->value('warmup_drifting');
+        if (empty($drifting)) {
+            return null;
+        }
+
+        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $scopeLabels = ['total' => 'total', 'arterial' => 'main arterial', 'sideStreet' => 'side streets'];
+
+        return collect($drifting)
+            ->map(fn (array $probe) => sprintf(
+                '%s (%s)',
+                $modeLabels[$probe['controllerMode']] ?? $probe['controllerMode'],
+                collect($probe['scopes'])->map(fn (int $driftPct, string $scope) => sprintf('%s +%d%%', $scopeLabels[$scope] ?? $scope, $driftPct))->join(', '),
+            ))
+            ->join('; ');
+    }
+
     private function batchStamp(Builder $query): ?array
     {
         $latest = (clone $query)->latest('id')->first();

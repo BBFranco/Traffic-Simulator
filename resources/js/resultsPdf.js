@@ -30,7 +30,7 @@ import {
     xRangeBand,
 } from './charts/theme.js';
 import { currentTheme } from './theme.js';
-import { buildLayout } from './sim/corridor.js';
+import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { LayoutRenderer, setRendererTheme } from './sim/renderer.js';
 
 const SCOPES = [
@@ -198,28 +198,6 @@ async function corridorLayoutImage(corridorUrl) {
         setRendererTheme(currentTheme());
         host.remove();
     }
-}
-
-/**
- * Roads counted by measurement scope (an arterial object with scope "side" is a side street, a
- * connector with scope "arterial" is an arterial), by distinct name - a road split into pieces at
- * its junctions (Jan Shoba, Arcadia, South) is still one road. Junctions are counted by control.
- */
-function corridorCounts(layout) {
-    const arterialNames = new Set();
-    const sideNames = new Set();
-    for (const arterial of layout.arterials) (arterial.scope === 'side' ? sideNames : arterialNames).add(arterial.shortName ?? arterial.name);
-    for (const connector of layout.connectors) (connector.scope === 'arterial' ? arterialNames : sideNames).add(connector.name);
-    for (const name of arterialNames) sideNames.delete(name);
-    const nodes = layout.arterials.flatMap((arterial) => arterial.intersections);
-    const countControl = (control) => nodes.filter((node) => node.control === control).length;
-    return {
-        arterialRoads: arterialNames.size,
-        sideRoads: sideNames.size,
-        signals: countControl('signal'),
-        roundabouts: countControl('roundabout'),
-        allWayStops: countControl('allWayStop'),
-    };
 }
 
 const printLegend = {
@@ -553,7 +531,8 @@ function drawCover(report, data, variants, corridorLayout) {
     if (data.hasNonStationaryBatch) {
         doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
         const warning = doc.splitTextToSize(
-            'Baseline not stationary: the warm-up probe found a controller whose waits were still growing after the longest warm-up, so this batch was capped at that maximum. Its steady-state figures describe a system that is still drifting.',
+            'Baseline not stationary: the warm-up probe found a controller whose waits were still growing after the longest warm-up, so this batch was capped at that maximum. Its steady-state figures describe a system that is still drifting.' +
+                (data.warmupDriftingLabel ? ` Still drifting: ${data.warmupDriftingLabel}.` : ''),
             CONTENT_WIDTH
         );
         doc.text(warning, PAGE.margin, report.y);
@@ -569,6 +548,7 @@ function drawCover(report, data, variants, corridorLayout) {
                 plural(corridorLayout.signals, 'signalised junction'),
                 corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
                 corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
+                corridorLayout.stopStreets && plural(corridorLayout.stopStreets, 'stop street'),
             ].filter(Boolean).join(' · '),
             corridorLayout.image,
             corridorLayout.aspect
@@ -847,10 +827,10 @@ function drawRoutingTrips(report, rows) {
     const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive' };
     report.heading(
         'Destination routing - trips',
-        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside.'
+        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure. Still in driveways: cars that had not got out when the run ended. Lost arrivals: map-edge demand turned away by a full entry.'
     );
     report.table({
-        head: [['Controller', 'Power', 'Runs', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)']],
+        head: [['Controller', 'Power', 'Runs', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Driveway wait (s)', 'Still in driveways', 'Lost arrivals / run']],
         body: rows.map((row) => [
             controllerLabel[row.controller_mode] ?? row.controller_mode,
             POWER_LABELS[row.power_state] ?? row.power_state,
@@ -860,8 +840,11 @@ function drawRoutingTrips(report, rows) {
             fmt(row.missed_driveways_pct),
             row.missed_turns_per_run == null ? 'n/a' : Number(row.missed_turns_per_run).toFixed(0),
             fmt(row.diversion_pct),
+            fmt(row.mean_driveway_wait),
+            row.still_in_driveways == null ? 'n/a' : Number(row.still_in_driveways).toFixed(0),
+            row.arrivals_lost_per_run == null ? 'n/a' : Number(row.arrivals_lost_per_run).toFixed(0),
         ]),
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+        columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10].map((column) => [column, { halign: 'right' }])),
     });
 }
 
@@ -883,6 +866,8 @@ function drawMethodNotes(report, data) {
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         'The wait-time distribution (median / P95 / max) is recorded for the total scope only.',
+        'Model assumption - letting cars in: a car that has waited 10 s to join a queued lane (turning at a junction, or pulling out of a driveway) is let in - the cars behind where it joins stop short until it is in. A crawling queue never leaves the gap a merge needs, so without this such a car would wait indefinitely. It is a behavioural choice and applies identically to every controller.',
+        'Inductive loop and magnetometer are modelled identically for now: both only see whether a stopped car is at the stop line, and the first stopped car is always inside both zones, so their rows match to the digit. They are two labels for one detector, not independent evidence - the adaptive average counts that detector twice.',
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
 

@@ -127,8 +127,12 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
 
     // Per origin: candidates, detour filter, shares.
     let maxRoute = { timeS: 0 };
-    /** An origin's split over the destinations it can reach - `skip(dest)` leaves some out (its own road's exit, its own block). */
-    const split = (origin, throughShare, skip) => {
+    /**
+     * An origin's split over the destinations it can reach - `skip(dest)` leaves some out (a block's own block). With
+     * `endToEnd` set, that share of all its trips goes to the far end of its own road (`ownExitId`), taken out of the
+     * exit group; the rest of the group is spread over the other exits by attraction as usual.
+     */
+    const split = (origin, throughShare, skip, { ownExitId = null, endToEnd = null } = {}) => {
         const candidates = [];
         const dropped = [];
         for (const dest of destinations) {
@@ -149,11 +153,18 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
             candidates.push({ dest, timeS, runS, routeM, attraction: dest.weight * Math.exp(-routing.decayPerSecond * timeS) });
         }
 
-        const exits = candidates.filter((c) => c.dest.kind === 'exit');
+        const allExits = candidates.filter((c) => c.dest.kind === 'exit');
         const blockDests = candidates.filter((c) => c.dest.kind === 'block');
-        const groupShare = { exit: exits.length ? (blockDests.length ? throughShare : 1) : 0 };
+        const groupShare = { exit: allExits.length ? (blockDests.length ? throughShare : 1) : 0 };
         groupShare.block = 1 - groupShare.exit;
         const shares = [];
+        const own = endToEnd == null ? null : allExits.find((c) => c.dest.id === ownExitId);
+        const exits = own ? allExits.filter((c) => c !== own) : allExits;
+        if (own) {
+            const ownShare = exits.length ? Math.min(endToEnd, groupShare.exit) : groupShare.exit;
+            shares.push({ destId: own.dest.id, kind: 'exit', share: ownShare, timeS: own.timeS, runS: own.runS, routeM: own.routeM });
+            groupShare.exit -= ownShare;
+        }
         for (const [group, list] of [['exit', exits], ['block', blockDests]]) {
             const total = list.reduce((s, c) => s + c.attraction, 0);
             for (const c of list) shares.push({ destId: c.dest.id, kind: group, share: total ? (groupShare[group] * c.attraction) / total : 0, timeS: c.timeS, runS: c.runS, routeM: c.routeM });
@@ -165,7 +176,11 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
     for (const origin of graph.origins) {
         const road = graph.roads.get(origin.roadKey);
         const throughShare = road.scope === 'arterial' ? routing.throughShare.arterial : routing.throughShare.side;
-        const { shares, dropped } = split(origin, throughShare, (dest) => dest.kind === 'exit' && dest.roadKey === origin.roadKey);
+        // Its own road's far end is an exit like any other - straight through is a trip too.
+        const { shares, dropped } = split(origin, throughShare, () => false, {
+            ownExitId: destinations.find((dest) => dest.kind === 'exit' && dest.roadKey === origin.roadKey)?.id ?? null,
+            endToEnd: road.scope === 'arterial' ? routing.endToEndShare : null,
+        });
         const demand = road.demand ?? { spawnRatePerLanePerMin: 0, fluctuation: null };
         origins.push({
             key: origin.roadKey,

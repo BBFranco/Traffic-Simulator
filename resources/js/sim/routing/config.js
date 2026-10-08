@@ -37,6 +37,12 @@ const DEFAULTS = {
     mode: 'random',
     /** Share of each origin's trips to the exits (through traffic), by where it starts: an arterial, a side street, or a block's driveways. */
     throughShare: { arterial: 0.6, side: 0.3, block: 0.6 },
+    /**
+     * Share of an arterial entry's trips that drive its whole length to its own far end - null leaves that exit to
+     * compete by attraction like any other. A sensitivity knob (e.g. 0.05 / 0.2 / 0.5): random turning sends ~50% end
+     * to end, so it brackets how much a green wave's platoons can matter.
+     */
+    endToEndShare: null,
     decayPerSecond: 0.002,
     routeVariants: 5,
     routeCostNoise: 0.1,

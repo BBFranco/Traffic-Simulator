@@ -91,6 +91,7 @@ export function runHeadless({
     let outageStarted = false;
     let outageEnded = false;
     let statsReset = warmupTicks <= 0;
+    let accountingAtMeasureStart = { ...engine.accounting };
 
     const totalTicks = warmupTicks + durationTicks;
     for (let tick = 0; tick < totalTicks; tick += 1) {
@@ -99,6 +100,7 @@ export function runHeadless({
         if (!statsReset && measuredTick >= 0) {
             engine.resetStats();
             statsReset = true;
+            accountingAtMeasureStart = { ...engine.accounting };
         }
 
         if (powerOutageStartTick != null && !outageStarted && measuredTick >= powerOutageStartTick) {
@@ -198,6 +200,7 @@ export function runHeadless({
         totalRows,
         arterialScopeRows,
         accounting,
+        accountingAtMeasureStart,
     });
 
     return { rows, sideStreetRows, totalRows, arterialScopeRows, summary };
@@ -220,6 +223,7 @@ function buildSummary({
     totalRows,
     arterialScopeRows,
     accounting,
+    accountingAtMeasureStart,
 }) {
     const finalSnap = engine.snapshot();
     const durationSeconds = durationTicks * dt;
@@ -339,7 +343,8 @@ function buildSummary({
         controllerMode,
         routingMode: engine.routingMode,
         /** Destination routing's trip counters over the measured window - null for a random-turning run. */
-        routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures) : null,
+        routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures, engine.simTimeS) : null,
+        diagnostics: measuredDiagnostics(engine, accountingAtMeasureStart),
         powerState: powerOutageStartTick != null ? 'load_shedding' : 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         corridorConfig: corridorConfig.id,
@@ -403,6 +408,9 @@ function buildSummary({
             controllerConfig: controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
             /** Which destination tiers the corridor carried (routing.blocks) - null without a routing section. */
             routingTiersHash: tiersHash(layout.routing),
+            /** Sensitivity-sweep settings (batch/runBatch.mjs) - 1 and null on an ordinary batch. */
+            demandScale: corridorConfig.demandScale ?? 1,
+            endToEndShare: layout.routing?.endToEndShare ?? null,
         },
     };
 }
@@ -419,7 +427,19 @@ function tiersHash(routing) {
     return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-function routingSummary(stats, departures) {
+/**
+ * Over the measured window: demand lost at map-edge entries with no room for it (expected arrivals - a blocked entry lets
+ * one car in once it clears, the rest never arrive), and cars that left the network while a roundabout still counted them
+ * as on its ring (the overrun _updateRoundaboutReleases() prevents - should stay 0).
+ */
+function measuredDiagnostics(engine, atMeasureStart) {
+    return {
+        arrivalsLost: Math.round(engine.accounting.arrivalsLost - atMeasureStart.arrivalsLost),
+        roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
+    };
+}
+
+function routingSummary(stats, departures, nowS) {
     return {
         trips: stats.trips,
         meanTripS: stats.trips ? stats.tripTimeSumS / stats.trips : null,
@@ -439,6 +459,11 @@ function routingSummary(stats, departures) {
         departedByDriveway: stats.departedByDriveway,
         /** Cars still waiting in a driveway to pull out when the run ended - a road too busy to leave onto shows up here. */
         departuresWaiting: departures.reduce((sum, d) => sum + d.waiting.length, 0),
+        /** Mean time a car that pulled out had waited in its driveway first - in neither its trip nor any wait metric. */
+        meanDrivewayWaitS: stats.departed ? stats.drivewayWaitSumS / stats.departed : null,
+        /** Longest any car still in a driveway at the end had been waiting there. */
+        longestDrivewayWaitS: Math.max(0, ...departures.map((d) => (d.waiting.length ? nowS - d.waiting[0].queuedAtS : 0))),
+        departuresWaitingByDriveway: Object.fromEntries(departures.filter((d) => d.waiting.length).map((d) => [d.origin.dirId, d.waiting.length])),
     };
 }
 

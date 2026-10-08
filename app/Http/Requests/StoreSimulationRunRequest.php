@@ -85,6 +85,8 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.raw_config_json' => ['required', 'array'],
             'runs.*.warmup_ticks' => ['nullable', 'integer', 'min:0'],
             'runs.*.warmup_stationary' => ['nullable', 'boolean'],
+            'runs.*.warmup_drifting' => ['nullable', 'array'],
+            'runs.*.diagnostics' => ['nullable', 'array'],
         ];
     }
 }

@@ -19,8 +19,11 @@
  *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal] [--webster-turn-weight]
+ *     [--demand-scale=0.9] [--end-to-end-share=0.2]
  *
  * --webster-turn-weight runs the Webster sensitivity: a protected turn's q scaled by its weight.
+ * --demand-scale / --end-to-end-share run a volume or through-trip sweep point (see withSweepSettings()).
+ * --probe-only with --demand-scale is the volume acceptance test: does every controller settle inside the cap.
  * It is stored as a 'sensitivity' batch, so it never replaces the baseline on /results.
  *
  * --duration is in MEASURED ticks at dt=0.1s (36000 ticks = 60 simulated minutes
@@ -70,6 +73,8 @@ function parseArgs(argv) {
         controllers: null,
         power: null,
         websterTurnWeight: false,
+        demandScale: 1,
+        endToEndShare: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -87,6 +92,8 @@ function parseArgs(argv) {
         else if (key === 'controllers') args.controllers = value.split(',');
         else if (key === 'power') args.power = value.split(',');
         else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
+        else if (key === 'demand-scale') args.demandScale = Number(value);
+        else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
     }
     // Default outage schedule: starts a quarter of the way in, power restored at the
     // halfway mark - only filled in once `duration` is known, so a custom --duration
@@ -158,10 +165,31 @@ function probeWarmup(corridorConfig, args) {
     return warmup;
 }
 
+/**
+ * Sensitivity sweeps: --demand-scale multiplies every road's spawn rate (driveway departures follow their roads), and
+ * --end-to-end-share sets routing.endToEndShare. Both are recorded on the config, so every run's raw_config_json says
+ * what it ran with.
+ */
+function withSweepSettings(config, args) {
+    if (args.demandScale !== 1) {
+        for (const road of [...(config.arterials ?? []), ...(config.connectors ?? [])]) {
+            for (const key of Object.keys(road.demand ?? {})) {
+                if (key.startsWith('spawnRatePerLanePerMin')) road.demand[key] *= args.demandScale;
+            }
+        }
+        config.demandScale = args.demandScale;
+    }
+    if (args.endToEndShare != null) {
+        if (!config.routing) throw new Error('--end-to-end-share needs a corridor with a routing section.');
+        config.routing.endToEndShare = args.endToEndShare;
+    }
+    return config;
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
-    const corridorConfig = JSON.parse(fs.readFileSync(corridorPath, 'utf8'));
+    const corridorConfig = withSweepSettings(JSON.parse(fs.readFileSync(corridorPath, 'utf8')), args);
 
     // Taken before the probe, so a batch's duration includes finding its warm-up.
     const batchStartedAt = new Date().toISOString();
@@ -174,7 +202,8 @@ async function main() {
     const matrix = buildExperimentalMatrix()
         .filter((c) => !args.controllers || args.controllers.includes(c.controllerMode))
         .filter((c) => !args.power || args.power.includes(c.powerState));
-    const batchKind = args.websterTurnWeight ? 'sensitivity' : 'main';
+    // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
+    const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null ? 'sensitivity' : 'main';
     const batchId = randomUUID();
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
@@ -215,7 +244,7 @@ async function main() {
             }
 
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt, build, batchKind }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, batchStartedAt, build, batchKind }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to
