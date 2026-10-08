@@ -22,6 +22,7 @@ class UserCorridorLayouts
     public function __construct(
         private readonly CorridorRepository $templates,
         private readonly CorridorLaneUseEditor $laneUseEditor,
+        private readonly CorridorRoutingTierEditor $routingTierEditor,
     ) {}
 
     /**
@@ -83,6 +84,21 @@ class UserCorridorLayouts
     {
         $config = $this->copy($layout->config);
         $this->laneUseEditor->apply($config, $approaches);
+
+        $layout->update(['config' => $config]);
+    }
+
+    /**
+     * Applies Destinations edits - tiers, added and removed blocks (CorridorRoutingTierEditor) - checked in full before anything is stored.
+     *
+     * @param  array<int, array{id: string, tier: int|float|string}>  $tiers
+     * @param  array<int, array{id: string, from: string, to: string, tier: int|float|string}>  $added
+     * @param  array<int, string>  $removed
+     */
+    public function updateRoutingTiers(CorridorLayout $layout, array $tiers, array $added = [], array $removed = []): void
+    {
+        $config = $this->copy($layout->config);
+        $this->routingTierEditor->apply($config, $tiers, $added, $removed);
 
         $layout->update(['config' => $config]);
     }

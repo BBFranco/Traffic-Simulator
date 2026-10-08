@@ -13,6 +13,8 @@
  *           Draw one frame. `alpha` is the accumulator's progress towards the next tick
  *           (0-1, `accumulatorS / FIXED_DT_S`) - renderers that interpolate use it, others ignore it.
  * @property {() => void} resize                   Re-sync to the host element's CSS size.
+ * @property {(driveways: object[]|null) => void} setDriveways
+ *           Destination routing's driveways (routing/driveways.js) to draw, or null to draw none.
  * @property {(theme: 'light'|'dark') => void} setTheme
  * @property {() => void} fit                      Frame the whole corridor.
  * @property {() => void} dispose                  Release every resource (GPU contexts, listeners, observers).

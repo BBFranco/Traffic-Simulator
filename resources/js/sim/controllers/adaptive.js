@@ -15,7 +15,7 @@ import { ADAPTIVE_DEFAULTS, shouldExtendGreen } from '../equations.js';
 import { ALL_RED_S, MIN_TURN_GREEN_S, YELLOW_S } from './phasePlan.js';
 
 /** A protected turn stage's longest green before its weight - it also ends as soon as its lane stops actuating the detector. */
-const MAX_TURN_GREEN_S = 25;
+export const MAX_TURN_GREEN_S = 25;
 
 export class AdaptiveController {
     /** turnWeights: per road (0 arterial, 1 cross) null, or the weight of the protected turn stage in front of its through green. */

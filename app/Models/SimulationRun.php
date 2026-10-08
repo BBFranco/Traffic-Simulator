@@ -57,6 +57,14 @@ use Illuminate\Database\Eloquent\Model;
     'median_wait_time',
     'p95_wait_time',
     'max_wait_time',
+    'trips',
+    'mean_trip_time',
+    'mean_trip_delay',
+    'pulled_off',
+    'missed_turns',
+    'missed_driveways',
+    'diversion_pct',
+    'routing_stats',
     'raw_config_json',
 ])]
 class SimulationRun extends Model
@@ -68,6 +76,7 @@ class SimulationRun extends Model
     {
         return [
             'raw_config_json' => 'array',
+            'routing_stats' => 'array',
             'warmup_ticks' => 'integer',
             'warmup_stationary' => 'boolean',
             'created_at' => 'datetime',

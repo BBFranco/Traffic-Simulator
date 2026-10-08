@@ -15,7 +15,9 @@ export function buildRoutingModel(engine) {
     const routing = engine.layout.routing;
     const graph = buildRoutingGraph(engine, routing.nodePenaltyS, routing.turnPenaltyS);
     const { blocks, problems } = resolveBlocks(graph, routing);
-    const { driveways, dirs: drivewayDirs, handOffs } = buildDriveways(engine, graph, blocks, routing);
+    // `drivewaysPerSide` fixes the count whatever the tier - Step 7's sensitivity run that varies attraction alone.
+    const countForTier = routing.drivewaysPerSide ? () => routing.drivewaysPerSide : undefined;
+    const { driveways, dirs: drivewayDirs, handOffs } = buildDriveways(engine, graph, blocks, routing, { countForTier });
     const od = buildOdTable(graph, blocks, drivewayDirs, routing, ROUTE_VARIANT_SEED);
 
     /** The graph state a car is in as each gate becomes its next decision, and as each peel-off/slip point does. */
@@ -30,7 +32,8 @@ export function buildRoutingModel(engine) {
 
     const destinationsById = new Map(od.destinations.map((d) => [d.id, d]));
     const blockDirsById = new Map(blocks.flatMap((b) => b.dirs).map((d) => [d.id, d]));
-    const originsByRoadKey = new Map(od.origins.map((o) => [o.roadKey, o]));
+    /** Every origin by its key: a road direction's key, or `block:<block direction id>` for a block's driveway departures. */
+    const originsByRoadKey = new Map(od.origins.map((o) => [o.key, o]));
     /** Per origin, its destinations' cumulative shares - a uniform draw picks one. */
     for (const origin of od.origins) {
         let sum = 0;
@@ -87,5 +90,38 @@ export function buildRoutingModel(engine) {
     /** Which exit a car clearing off the end of a road (by its road geometry object) has reached. */
     const exitByRoad = new Map(graph.exits.map((exit) => [graph.roads.get(exit.roadKey).road, exit.id]));
 
-    return { routing, graph, blocks, problems, driveways, drivewayDirs, handOffs, od, stateOfGate, stateOfDiverge, destinationsById, blockDirsById, originsByRoadKey, exitFallback, exitByRoad, blockStates, movementFlowByGate };
+    // Each direction's driveways carry what the engine needs on the road: the road object a car is on, and where to draw the turn in.
+    const drivewaysById = new Map(driveways.map((w) => [w.id, w]));
+    for (const dir of drivewayDirs.values()) {
+        for (const reach of dir.reach) {
+            const { x, y, outward } = drivewaysById.get(reach.drivewayId);
+            Object.assign(reach, { road: graph.roads.get(reach.roadKey).road, x, y, outward });
+        }
+        dir.reach.sort((a, b) => a.alongM - b.alongM);
+    }
+
+    /** Per block direction, the next one on along the same road with a driveway - where a car that missed every driveway on its block tries next. */
+    const nextBlockDir = new Map();
+    for (const dir of drivewayDirs.values()) {
+        const last = blockDirsById.get(dir.id).pieces.at(-1);
+        let best = null;
+        for (const other of drivewayDirs.values()) {
+            const first = blockDirsById.get(other.id).pieces[0];
+            if (!other.reach.length || first.roadKey !== last.roadKey || first.fromM < last.toM - 0.5) continue;
+            if (!best || first.fromM < best.fromM) best = { dir: other, fromM: first.fromM };
+        }
+        if (best) nextBlockDir.set(dir.id, best.dir);
+    }
+
+    /** The graph state a car `atM` along road `roadKey` is in - heading for the first stop past it. */
+    const stateAt = (roadKey, atM) => {
+        const road = graph.roads.get(roadKey);
+        const k = road.stops.findIndex((s) => s.atM > atM);
+        return stateId(roadKey, k === -1 ? road.stops.length : k);
+    };
+
+    /** Which graph road (key) a car is on, by its road geometry object. */
+    const roadKeyByRoad = new Map([...graph.roads.values()].map((road) => [road.road, road.key]));
+
+    return { routing, graph, blocks, problems, driveways, drivewayDirs, handOffs, od, stateOfGate, stateOfDiverge, destinationsById, blockDirsById, originsByRoadKey, exitFallback, exitByRoad, blockStates, movementFlowByGate, nextBlockDir, stateAt, roadKeyByRoad };
 }

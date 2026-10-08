@@ -176,6 +176,16 @@
                         </span>
                     </span>
                 </label>
+
+                <label class="flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                    <input type="checkbox" id="destination-routing" class="mt-0.5 {{ $checkbox }}">
+                    <span class="min-w-0 flex-1">
+                        <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                            Destination routing
+                            <x-info-tip text="Every car gets a destination when it spawns - a driveway on a block, or a way out of the map - and follows a route there instead of turning at random. Cars heading for a driveway keep to the lane beside it, slow down and turn in, waiting for a gap when they have to cross oncoming traffic. Only available on a corridor with a routing section; switching it restarts the run." />
+                        </span>
+                    </span>
+                </label>
             </x-control-section>
 
             <div class="space-y-3 px-4 py-4">
@@ -275,6 +285,7 @@
                                 'showLaneMarkings' => 'Lane markings',
                                 'showDistances' => 'Block distances',
                                 'showSignalHeads' => 'Signal heads',
+                                'showRouting' => 'Routes & driveways',
                             ] as $key => $label)
                                 <label class="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200">
                                     <input type="checkbox" data-layer="{{ $key }}" checked
@@ -298,8 +309,8 @@
                 </div>
 
                 <div class="pointer-events-none absolute bottom-3 right-3 rounded-md border border-slate-200 bg-white/85 px-2.5 py-1.5 text-[10px] text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85">
-                    <span data-view-only="2d">Drag to pan · scroll to zoom · double-click an intersection to centre it</span>
-                    <span data-view-only="3d" class="hidden">Drag to orbit · right-drag to pan · scroll to zoom</span>
+                    <span data-view-only="2d">Drag to pan · scroll to zoom · click a car to follow it · double-click an intersection to centre it</span>
+                    <span data-view-only="3d" class="hidden">Drag to orbit · right-drag to pan · scroll to zoom · click a car to follow it</span>
                 </div>
 
                 {{-- 3D view outage indicator (the 2D map shows the same state via the power pill) --}}
@@ -309,9 +320,13 @@
                     All-way stop · power out
                 </div>
 
+                {{-- The car clicked on the map: followed by the camera, its live stats here (simulator.js's selectCar()). --}}
+                <div id="car-card"
+                     class="absolute right-3 top-14 z-10 hidden w-[260px] space-y-0.5 rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
+
                 {{-- Hover readout --}}
                 <div id="node-tooltip"
-                     class="pointer-events-none absolute hidden max-w-[240px] rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
+                     class="pointer-events-none absolute hidden w-[280px] rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
             </div>
 
             {{-- ======================================================= FOOTER --}}

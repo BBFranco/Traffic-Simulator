@@ -98,6 +98,7 @@ export class SnapshotBuffer {
             slot.colourIndex = car.colourIndex;
             slot.lengthM = car.lengthM;
             slot.widthM = car.widthM;
+            slot.opacity = car.opacity ?? 1;
         }
 
         return out;

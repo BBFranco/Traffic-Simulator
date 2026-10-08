@@ -19,20 +19,38 @@
  *               lists these so they don't get forgotten.
  *   weightShare - fraction of the tier x length weight this row carries (0.5
  *               for each carriageway of a road surveyed as one row).
+ *   drivewaysPerSide - optional: every block gets this many driveways a side
+ *               whatever its tier (sensitivity runs); left out, the tier decides.
  */
 export const ROUTING_MODES = ['random', 'destination'];
 export const BLOCK_TIERS = [1.5, 2, 3, 4, 5];
+/** Each tier's map colour (Road Editor) - cool to hot as destination density rises - and the text that reads on it. */
+export const BLOCK_TIER_COLOURS = {
+    1.5: { fill: '#38bdf8', text: '#0c1a2b' },
+    2: { fill: '#22c55e', text: '#052e16' },
+    3: { fill: '#eab308', text: '#2a1d02' },
+    4: { fill: '#f97316', text: '#2b1203' },
+    5: { fill: '#e11d48', text: '#ffffff' },
+};
 
 const DEFAULTS = {
     mode: 'random',
-    throughShare: { arterial: 0.6, side: 0.3 },
+    /** Share of each origin's trips to the exits (through traffic), by where it starts: an arterial, a side street, or a block's driveways. */
+    throughShare: { arterial: 0.6, side: 0.3, block: 0.6 },
     decayPerSecond: 0.002,
     routeVariants: 5,
     routeCostNoise: 0.1,
     detourLimit: 2.5,
     nodePenaltyS: { signal: 20, roundabout: 5, allWayStop: 8, stop: 8 },
-    turnPenaltyS: { left: 0, right: 0 },
+    /** Extra route cost per turn (s) - a U-turn round a roundabout by default a little more than a right turn. */
+    turnPenaltyS: { left: 0, right: 0, uturn: 30 },
     crossableMedianRoads: [],
+    /**
+     * Driveway departures: `share` of each block's balanced rate (what the roads send in) leaves again; with
+     * `holdTotal` every origin, the map's edges included, is scaled down so the network's total demand stays
+     * what the edges alone would send.
+     */
+    departures: { share: 1, holdTotal: false },
 };
 
 /**
@@ -72,6 +90,13 @@ export function parseRouting(raw, nodesById, roadIds) {
         return { id: block.id, from: block.from, to: block.to, tier: block.tier, provisional: Boolean(block.provisional), weightShare };
     });
 
+    const departureShare = raw.departures?.share ?? DEFAULTS.departures.share;
+    if (!(departureShare >= 0 && departureShare <= 1)) throw new Error('routing.departures.share must be from 0 to 1.');
+
+    if (raw.drivewaysPerSide != null && !(Number.isInteger(raw.drivewaysPerSide) && raw.drivewaysPerSide >= 1 && raw.drivewaysPerSide <= 5)) {
+        throw new Error('routing.drivewaysPerSide must be a whole number from 1 to 5.');
+    }
+
     for (const roadId of raw.crossableMedianRoads ?? []) {
         if (!roadIds.has(roadId)) throw new Error(`routing.crossableMedianRoads: no road "${roadId}".`);
     }
@@ -84,6 +109,7 @@ export function parseRouting(raw, nodesById, roadIds) {
         throughShare: { ...DEFAULTS.throughShare, ...(raw.throughShare ?? {}) },
         nodePenaltyS: { ...DEFAULTS.nodePenaltyS, ...(raw.nodePenaltyS ?? {}) },
         turnPenaltyS: { ...DEFAULTS.turnPenaltyS, ...(raw.turnPenaltyS ?? {}) },
+        departures: { ...DEFAULTS.departures, ...(raw.departures ?? {}) },
         crossableMedianRoads: raw.crossableMedianRoads ?? [],
         blocks,
         warnings: provisional.length ? [`Provisional block tiers (tier ${provisional.map((b) => b.tier).join('/')} until surveyed): ${provisional.map((b) => b.id).join(', ')}`] : [],

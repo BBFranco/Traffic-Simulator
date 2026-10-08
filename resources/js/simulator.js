@@ -93,6 +93,8 @@ const state = {
     busRatio: 0,
     /** Just-for-fun traffic characters - see engine.js's setRandomEvents(). Always off in replays and batch runs. */
     randomEvents: false,
+    /** 'random' (turn dice) or 'destination' (routed trips into driveways) - only offered when the corridor has a `routing` section. */
+    routingMode: 'random',
 };
 
 let layout = null;
@@ -137,6 +139,7 @@ const el = {
     canvas: document.getElementById('sim-canvas'),
     tooltip: document.getElementById('node-tooltip'),
     outageOverlay: document.getElementById('outage-overlay'),
+    carCard: document.getElementById('car-card'),
     corridorSelect: document.getElementById('corridor-select'),
     corridorDescription: document.getElementById('corridor-description'),
     corridorFacts: document.getElementById('corridor-facts'),
@@ -151,6 +154,7 @@ const el = {
     busRatioInput: document.getElementById('bus-ratio-input'),
     busRatioValue: document.getElementById('bus-ratio-value'),
     randomEventsInput: document.getElementById('random-events'),
+    destinationRoutingInput: document.getElementById('destination-routing'),
     statsColumns: document.getElementById('stats-columns'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
@@ -201,6 +205,9 @@ async function setView(view) {
         renderer3d = new Renderer3D(el.canvasWrap, el.outageOverlay, FIXED_DT_S);
         renderer3d.setTheme(currentTheme);
         if (layout) renderer3d.init(layout);
+        syncDriveways();
+        renderer3d.setFollowCar(followSelected ? selectedCarId : null);
+        watch3dClicks(renderer3d.canvas);
         el.canvas.classList.add('hidden');
         el.tooltip.classList.add('hidden');
         renderer.hoverNodeId = null;
@@ -302,6 +309,7 @@ async function loadCorridor(id, { config = null } = {}) {
     clearCorridorError();
     renderer2d.init(layout);
     renderer3d?.init(layout);
+    syncRoutingControl();
     renderCorridorSummary();
     buildArterialModeControls();
     buildDemandControls();
@@ -313,6 +321,7 @@ async function loadCorridor(id, { config = null } = {}) {
     // has to be rebuilt from scratch, not just reset.
     engine = new SimulationEngine(layout);
     engine.reset(engineResetOptions());
+    syncDriveways();
     accumulatorS = 0;
 
     resetRunState();
@@ -333,7 +342,23 @@ function engineResetOptions() {
         truckRatio: state.truckRatio,
         busRatio: state.busRatio,
         randomEvents: state.randomEvents,
+        routingMode: state.routingMode,
     };
+}
+
+/** Destination routing is only offered on a corridor that has a `routing` section - anywhere else it falls back to random turning. */
+function syncRoutingControl() {
+    const available = Boolean(layout.routing);
+    if (!available) state.routingMode = 'random';
+    el.destinationRoutingInput.disabled = !available;
+    el.destinationRoutingInput.checked = state.routingMode === 'destination';
+}
+
+/** The driveways cars pull into, drawn only while destination routing is running. */
+function syncDriveways() {
+    const driveways = engine?.routingActive ? engine.routingModel.driveways : null;
+    renderer2d.setDriveways(driveways);
+    renderer3d?.setDriveways(driveways);
 }
 
 async function fetchCorridor(id) {
@@ -607,18 +632,164 @@ function updateStatsModeLabels() {
     });
 }
 
+/* ------------------------------------------------------- the picked car */
+
+/**
+ * The car clicked on the map (2D or 3D): the camera follows it and the car card shows its stats, live; under
+ * destination routing the 2D map also draws its route. Cleared by clicking empty map, Esc, the card's close
+ * button, or the car leaving the network. Everything here only reads the engine.
+ */
+let selectedCarId = null;
+let followSelected = true;
+let carCardRefreshedAtMs = 0;
+/** How often the car card's numbers refresh (ms) - often enough to watch, not every frame. */
+const CAR_CARD_REFRESH_MS = 200;
+/** The car card's name for each vehicle type (car.js's VEHICLE_TYPES). */
+const VEHICLE_LABELS = { car: 'Car', truck_small: 'Small truck', truck_medium: 'Medium truck', truck_large: 'Large truck', bus: 'Bus', bmw: 'BMW', ranger: 'Ranger' };
+
+function selectCar(id) {
+    selectedCarId = id;
+    followSelected = true;
+    renderer3d?.setFollowCar(id);
+    carCardRefreshedAtMs = 0;
+    updateSelectedCar();
+    if (activeView === VIEW_2D) renderer.draw();
+}
+
+const formatSeconds = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s` : `${s.toFixed(1)} s`);
+
+function carCardRow(label, value, valueClass = '') {
+    const row = document.createElement('div');
+    row.className = 'flex justify-between gap-3';
+    const name = document.createElement('span');
+    name.className = 'text-slate-500';
+    name.textContent = label;
+    const text = document.createElement('span');
+    text.className = `text-right font-medium text-slate-800 dark:text-slate-100 ${valueClass}`;
+    text.textContent = value;
+    row.append(name, text);
+    return row;
+}
+
+function renderCarCard(info) {
+    const title = document.createElement('div');
+    title.className = 'mb-1.5 flex items-center justify-between gap-2';
+    const name = document.createElement('span');
+    name.className = 'font-semibold text-slate-900 dark:text-slate-100';
+    name.textContent = `${VEHICLE_LABELS[info.vehicleType] ?? info.vehicleType} #${info.id}`;
+    const buttons = document.createElement('span');
+    buttons.className = 'flex items-center gap-1';
+    const follow = document.createElement('button');
+    follow.type = 'button';
+    follow.dataset.active = followSelected ? 'true' : 'false';
+    follow.className = 'rounded border border-slate-300 px-1.5 text-[10px] text-slate-600 data-[active=true]:border-sky-500 data-[active=true]:bg-sky-50 data-[active=true]:text-sky-700 dark:border-slate-700 dark:text-slate-300 dark:data-[active=true]:bg-sky-500/10 dark:data-[active=true]:text-sky-300';
+    follow.textContent = followSelected ? 'Following' : 'Follow';
+    follow.title = 'Keep the camera on this car';
+    follow.addEventListener('click', () => {
+        followSelected = !followSelected;
+        renderer3d?.setFollowCar(followSelected ? selectedCarId : null);
+        carCardRefreshedAtMs = 0;
+        updateSelectedCar();
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'rounded px-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800';
+    close.textContent = '×';
+    close.title = 'Let go of this car (Esc)';
+    close.addEventListener('click', () => selectCar(null));
+    buttons.append(follow, close);
+    title.append(name, buttons);
+
+    const rows = [
+        carCardRow('Where', info.roadName),
+        carCardRow('Speed', info.stoppedNow ? 'stopped' : `${info.speedKph.toFixed(0)} km/h`, info.stoppedNow ? 'text-rose-600 dark:text-rose-400' : ''),
+        carCardRow('Waited so far', `${formatSeconds(info.totalWaitS)}${info.everStopped ? '' : ' (no stops yet)'}`),
+    ];
+    const { trip } = info;
+    if (trip) {
+        rows.push(
+            carCardRow('From', trip.origin),
+            carCardRow('Heading for', trip.destination + (trip.drivewayId ? ` · ${trip.drivewayId}` : '')),
+            ...(trip.intendedDestination ? [carCardRow('First meant for', trip.intendedDestination, 'text-amber-600 dark:text-amber-400')] : []),
+            carCardRow('Trip time', formatSeconds(trip.tripTimeS)),
+            carCardRow('Free-flow trip', formatSeconds(trip.freeFlowS)),
+            carCardRow('Delay so far', formatSeconds(trip.delaySoFarS)),
+            carCardRow('Share of trip waiting', trip.tripTimeS > 0 ? `${Math.round((info.totalWaitS / trip.tripTimeS) * 100)}%` : '—'),
+            carCardRow('Route variant', String(trip.variant)),
+            ...(trip.waitingForGap ? [carCardRow('Now', 'waiting for a gap to turn in')] : [])
+        );
+    } else {
+        const note = document.createElement('p');
+        note.className = 'mt-1 text-[10px] text-slate-500';
+        note.textContent = 'Random turning: this car decides at each junction as it gets there, so it has no destination. Switch on Destination routing to see trips.';
+        rows.push(note);
+    }
+    el.carCard.replaceChildren(title, ...rows);
+}
+
+/**
+ * Every frame: keep the camera on the picked car, refresh its card now and then, and push its route (and the
+ * driveway counts) to the 2D map. A car that has left the network lets go.
+ */
+function updateSelectedCar() {
+    const info = selectedCarId === null || !engine ? null : engine.carInfo(selectedCarId);
+    if (selectedCarId !== null && !info) {
+        selectedCarId = null;
+        renderer3d?.setFollowCar(null);
+    }
+    el.carCard.classList.toggle('hidden', !info);
+    if (info) {
+        if (followSelected && activeView === VIEW_2D) renderer.camera.centreOn(info.point, renderer.camera.scale);
+        const nowMs = performance.now();
+        if (nowMs - carCardRefreshedAtMs >= CAR_CARD_REFRESH_MS) {
+            carCardRefreshedAtMs = nowMs;
+            renderCarCard(info);
+        }
+    }
+
+    if (!engine?.routingActive) {
+        renderer.setRoutingDebug(info ? { routePreview: null, drivewayCounts: null, selectedPoint: info.point } : {});
+        return;
+    }
+    const routePreview = info ? engine.routePreview(selectedCarId) : null;
+    renderer.setRoutingDebug({ routePreview, selectedPoint: info?.point ?? null, drivewayCounts: { in: engine.routingStats.pulledOffByDriveway, out: engine.routingStats.departedByDriveway } });
+}
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && selectedCarId !== null) selectCar(null);
+});
+
+/** Clicks on the 3D view pick a car too - OrbitControls owns its drags, so only a press and release in one spot counts. */
+function watch3dClicks(canvas) {
+    let downAt = null;
+    canvas.addEventListener('pointerdown', (event) => {
+        downAt = { x: event.clientX, y: event.clientY };
+    });
+    canvas.addEventListener('pointerup', (event) => {
+        if (downAt && Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y) <= 4 && event.button === 0) selectCar(renderer3d?.pickCar(event.clientX, event.clientY) ?? null);
+        downAt = null;
+    });
+}
+
 /* ----------------------------------------------------------- camera control */
 
 let dragging = null;
+let pointerDownAt = null;
 
 el.canvas.addEventListener('pointerdown', (event) => {
     el.canvas.setPointerCapture(event.pointerId);
     dragging = { x: event.clientX, y: event.clientY };
+    pointerDownAt = { x: event.clientX, y: event.clientY };
 });
 
 el.canvas.addEventListener('pointermove', (event) => {
     if (dragging) {
         renderer.camera.panByPixels(event.clientX - dragging.x, event.clientY - dragging.y);
+        // Panning the map yourself stops following the picked car (its card's Follow button picks it up again).
+        if (followSelected && selectedCarId !== null && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) > 4) {
+            followSelected = false;
+            carCardRefreshedAtMs = 0;
+        }
         dragging = { x: event.clientX, y: event.clientY };
         renderer.draw();
         return;
@@ -631,7 +802,15 @@ const endDrag = (event) => {
     dragging = null;
     if (el.canvas.hasPointerCapture(event.pointerId)) el.canvas.releasePointerCapture(event.pointerId);
 };
-el.canvas.addEventListener('pointerup', endDrag);
+el.canvas.addEventListener('pointerup', (event) => {
+    // A click (no drag) on the map picks the car under it - or, on empty map, lets go of the picked one.
+    if (pointerDownAt && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) <= 4) {
+        const rect = el.canvas.getBoundingClientRect();
+        selectCar(renderer.hitTestCar({ x: event.clientX - rect.left, y: event.clientY - rect.top })?.id ?? null);
+    }
+    pointerDownAt = null;
+    endDrag(event);
+});
 el.canvas.addEventListener('pointercancel', endDrag);
 
 el.canvas.addEventListener('pointerleave', () => {
@@ -680,6 +859,16 @@ function updateHover(event) {
         renderer.draw();
     }
 
+    hoveredNode = { node, local, rect };
+    renderTooltip();
+}
+
+/** The junction under the pointer, for renderFrame() to keep its tooltip (and timing bar) live while the sim runs. */
+let hoveredNode = null;
+
+function renderTooltip() {
+    if (!hoveredNode || renderer.hoverNodeId !== hoveredNode.node.id) return;
+    const { node, local, rect } = hoveredNode;
     const arterial = layout.arterials.find((a) => a.id === node.arterialId);
     const debug = engine?.signalDebugInfo(node.id);
     const v = 'text-slate-800 dark:text-slate-200';
@@ -703,7 +892,8 @@ function updateHover(event) {
                         ${row('Arterial queue', `${debug.arterialQueue} car${debug.arterialQueue === 1 ? '' : 's'}`)}
                         ${row('Cross queue', `${debug.crossQueue} car${debug.crossQueue === 1 ? '' : 's'}`)}
                         ${row('Next change', escapeHtml(debug.etaLabel))}
-                    </div>`
+                    </div>
+                    ${signalTimingHtml(debug.timing, arterial.shortName, node.crossStreetName)}`
                     : ''
             }
         </dl>`;
@@ -715,6 +905,73 @@ function updateHover(event) {
     const top = Math.min(local.y + 14, rect.height - box.height - 8);
     el.tooltip.style.left = `${Math.max(8, left)}px`;
     el.tooltip.style.top = `${Math.max(8, top)}px`;
+}
+
+const TIMING_FILL = { green: 'fill-emerald-500', arrow: 'fill-teal-300 dark:fill-teal-400', yellow: 'fill-amber-400', red: 'fill-rose-500' };
+
+/**
+ * The tooltip's timing bar (engine.js's _signalTiming()). Fixed-time / green wave: one bar per
+ * road over the whole cycle, with a cursor at where the junction is in it now. Adaptive: the
+ * current green's window - its minimum, then the extension the detectors can stretch it to.
+ */
+function signalTimingHtml(timing, arterialName, crossName) {
+    if (!timing) return '';
+    const header = (title, right) =>
+        `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 flex justify-between font-medium text-slate-700 dark:text-slate-300"><span>${title}</span><span>${right}</span></div>`;
+
+    if (timing.kind === 'actuated') {
+        const road = escapeHtml(timing.phase === 0 ? arterialName : crossName);
+        const stage = `${road} ${timing.inTurn ? 'turn arrow' : 'green'}`;
+        if (timing.phaseState !== 'green') return header('Actuated stage', `${stage} ending`);
+        const { minS, maxS, elapsedS } = timing;
+        const x = Math.min(elapsedS, maxS);
+        return `${header('Actuated stage', stage)}
+            <svg viewBox="0 0 ${maxS} 6" preserveAspectRatio="none" class="mt-1 block h-2.5 w-full overflow-hidden rounded-sm">
+                <rect x="0" y="0" width="${minS}" height="6" class="${timing.inTurn ? TIMING_FILL.arrow : TIMING_FILL.green}" />
+                <rect x="${minS}" y="0" width="${maxS - minS}" height="6" class="fill-emerald-500/30" />
+                <rect x="0" y="0" width="${x}" height="6" class="fill-slate-900/25 dark:fill-white/25" />
+                <line x1="${x}" x2="${x}" y1="0" y2="6" vector-effect="non-scaling-stroke" stroke-width="2" class="stroke-slate-900 dark:stroke-white" />
+            </svg>
+            <div class="mt-0.5 flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                <span>${elapsedS.toFixed(1)}s · min ${minS.toFixed(0)}s</span>
+                <span>gap-out ${timing.gapOutS}s · max ${maxS.toFixed(0)}s</span>
+            </div>`;
+    }
+
+    const { cycleS, positionS, roads } = timing;
+    const bar = (runs) => {
+        let x = 0;
+        const rects = runs
+            .map((run) => {
+                const rect = `<rect x="${x}" y="0" width="${run.durationS}" height="6" class="${TIMING_FILL[run.state]}" />`;
+                x += run.durationS;
+                return rect;
+            })
+            .join('');
+        return `<svg viewBox="0 0 ${cycleS} 6" preserveAspectRatio="none" class="block h-2.5 w-full overflow-hidden rounded-sm">
+                ${rects}
+                <line x1="${positionS}" x2="${positionS}" y1="0" y2="6" vector-effect="non-scaling-stroke" stroke-width="2" class="stroke-slate-900 dark:stroke-white" />
+            </svg>`;
+    };
+    const totals = (runs) => {
+        const sum = (states) => runs.filter((r) => states.includes(r.state)).reduce((s, r) => s + r.durationS, 0);
+        const arrow = sum(['arrow']);
+        return [
+            `<span class="text-emerald-600 dark:text-emerald-400">${Math.round(sum(['green']))}s green</span>`,
+            ...(arrow ? [`<span class="text-teal-600 dark:text-teal-300">${Math.round(arrow)}s arrow</span>`] : []),
+            `<span class="text-amber-600 dark:text-amber-400">${Math.round(sum(['yellow']))}s amber</span>`,
+            `<span class="text-rose-600 dark:text-rose-400">${Math.round(sum(['red']))}s red</span>`,
+        ].join(' · ');
+    };
+    const roadRow = (label, runs) => `
+        <div class="mt-1">
+            <div class="flex justify-between text-[10px]"><span class="text-slate-600 dark:text-slate-300">${label}</span><span>${totals(runs)}</span></div>
+            <div class="mt-0.5">${bar(runs)}</div>
+        </div>`;
+
+    return `${header('Cycle timing', `${positionS.toFixed(0)} / ${Math.round(cycleS)}s`)}
+        ${roadRow(escapeHtml(arterialName), roads[0])}
+        ${roadRow(escapeHtml(crossName), roads[1])}`;
 }
 
 function escapeHtml(value) {
@@ -793,6 +1050,7 @@ function clearCorridorError() {
 /** Full restart at t=0 with the current seed/config - shared by Reset, seed change and seed randomise. */
 function restartEngine() {
     engine.reset(engineResetOptions());
+    syncDriveways();
     accumulatorS = 0;
     lastFrameMs = null;
     // Any in-flight replay's outage-scheduling bookkeeping no longer applies once the engine
@@ -852,6 +1110,13 @@ el.randomEventsInput.addEventListener('change', () => {
     state.randomEvents = el.randomEventsInput.checked;
     engine.setRandomEvents(state.randomEvents);
     logChange('randomEvents', state.randomEvents);
+});
+
+// Trips are assigned as cars spawn, so switching routing restarts the run.
+el.destinationRoutingInput.addEventListener('change', () => {
+    state.routingMode = el.destinationRoutingInput.checked ? 'destination' : 'random';
+    restartEngine();
+    logChange('routingMode', state.routingMode);
 });
 
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {
@@ -927,6 +1192,9 @@ async function startReplay(run) {
 
     state.randomEvents = false;
     el.randomEventsInput.checked = false;
+
+    state.routingMode = layout.routing && run.routing_mode === 'destination' ? 'destination' : 'random';
+    el.destinationRoutingInput.checked = state.routingMode === 'destination';
 
     state.batteryBackedSensors = true;
     document.getElementById('battery-backed-sensors').checked = true;
@@ -1213,6 +1481,7 @@ function updateStatsFooter(snapshot) {
 
 /** One frame: push the engine's latest state into the canvas, footer stats and chart. */
 function renderFrame(snapshot) {
+    updateSelectedCar();
     // alpha = progress towards the next tick; the 2D map ignores it, the 3D view interpolates with it.
     activeRenderer().update(snapshot, accumulatorS / FIXED_DT_S);
     updateStatsFooter(snapshot);
@@ -1220,6 +1489,7 @@ function renderFrame(snapshot) {
     renderPowerPill(snapshot.powerState === 'load_shedding');
     appendChartSampleIfNeeded(snapshot);
     updateDemandReadouts();
+    if (!el.tooltip.classList.contains('hidden')) renderTooltip();
 }
 
 /**

@@ -17,6 +17,7 @@ import { LayoutRenderer } from './sim/renderer.js';
 import { SimulationEngine } from './sim/engine.js';
 import { buildIntersectionConfig } from './sim/intersectionLayout.js';
 import { createLaneEditor } from './laneEditor.js';
+import { createDestinationsEditor } from './destinationsEditor.js';
 import { onThemeChange } from './theme.js';
 
 const FIXED_DT_S = 0.1;
@@ -27,7 +28,7 @@ const FIT_SPAN_M = 110;
 /** A pointer that moves further than this between down and up was a pan, not a click. */
 const CLICK_SLOP_PX = 5;
 const HINTS = {
-    overview: 'Click an intersection to edit it · drag to pan · scroll to zoom',
+    overview: 'Click an intersection to edit it, or a coloured block to change its tier · drag to pan · scroll to zoom',
     intersection: 'Click an arrow to change it · right-click steps back · drag to pan · scroll to zoom',
 };
 /** Turn lane length the editor allows - the test layout's shortest run-in is 150 m. */
@@ -96,15 +97,28 @@ const laneEditor = createLaneEditor({
     reloadCorridor: () => loadCorridor(state.corridorId, { keepNode: true }),
     rebuildLayout: () => rebuildLayout(),
     // The file changed - refresh the in-memory copy without touching the running test.
-    onSaved: async () => {
-        state.corridorConfig = await fetchCorridor(state.corridorId);
-        state.corridorLayout = buildLayout(state.corridorConfig);
-    },
+    onSaved: refreshCorridorConfig,
     onChange: () => {
         renderNodeList();
         renderTurnLanePanel();
     },
 });
+
+const destinationsEditor = createDestinationsEditor({
+    boot,
+    renderer,
+    getCorridorConfig: () => state.corridorConfig,
+    getCorridorLayout: () => state.corridorLayout,
+    getCorridorId: () => state.corridorId,
+    corridorDescriptor: () => boot.corridors.find((corridor) => corridor.id === state.corridorId),
+    isOverview: () => isOverview(),
+    onSaved: refreshCorridorConfig,
+});
+
+async function refreshCorridorConfig() {
+    state.corridorConfig = await fetchCorridor(state.corridorId);
+    state.corridorLayout = buildLayout(state.corridorConfig);
+}
 
 /* ------------------------------------------------------------ loading */
 
@@ -120,6 +134,7 @@ async function loadCorridor(id, { keepNode = false } = {}) {
     state.corridorLayout = buildLayout(config);
     state.corridorId = id;
     el.error.classList.add('hidden');
+    destinationsEditor.corridorLoaded();
 
     if (keepNode && state.corridorLayout.nodesById.has(state.nodeId)) selectNode(state.nodeId, { force: true });
     else showOverview({ force: true });
@@ -143,6 +158,7 @@ function showOverview({ force = false } = {}) {
     laneEditor.close();
     el.nodeTitle.textContent = layout.name;
     renderMode();
+    destinationsEditor.modeChanged();
 }
 
 /**
@@ -203,6 +219,7 @@ function selectNode(nodeId, { force = false } = {}) {
     laneEditor.open();
     el.nodeTitle.textContent = layout.nodesById.get(nodeId).name;
     renderMode();
+    destinationsEditor.modeChanged();
 }
 
 /** The selected intersection's approaches that carry traffic - the ones with lanes to mark. */
@@ -427,21 +444,23 @@ function renderNodeList() {
 function hoverOverview(event) {
     const local = localPoint(event);
     const node = renderer.hitTestIntersection(local);
-    el.canvas.classList.toggle('cursor-pointer', !!node);
+    const blockId = node ? null : destinationsEditor.hitTest(local);
+    el.canvas.classList.toggle('cursor-pointer', Boolean(node || blockId));
     if (renderer.hoverNodeId !== (node?.id ?? null)) {
         renderer.hoverNodeId = node?.id ?? null;
         renderer.draw();
     }
-    if (!node) {
+    if (!node && !blockId) {
         el.tooltip.classList.add('hidden');
         return;
     }
+    const block = blockId ? destinationsEditor.describe(blockId) : null;
     const title = document.createElement('div');
     title.className = 'font-semibold text-slate-900 dark:text-slate-100';
-    title.textContent = node.name;
+    title.textContent = node ? node.name : block.title;
     const action = document.createElement('div');
     action.className = 'mt-0.5 text-sky-700 dark:text-sky-300';
-    action.textContent = 'Click to edit this intersection';
+    action.textContent = node ? 'Click to edit this intersection' : block.action;
     el.tooltip.replaceChildren(title, action);
     el.tooltip.classList.remove('hidden');
     const rect = el.canvas.getBoundingClientRect();
@@ -547,7 +566,7 @@ el.corridorSelect.addEventListener('change', async () => {
 });
 
 window.addEventListener('beforeunload', (event) => {
-    if (laneEditor.dirtyCount) event.preventDefault();
+    if (laneEditor.dirtyCount || destinationsEditor.dirtyCount) event.preventDefault();
 });
 
 /* --------------------------------------------------------- camera + clicks */
@@ -577,8 +596,11 @@ el.canvas.addEventListener('pointerup', (event) => {
     const isClick = pointerDownAt && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) <= CLICK_SLOP_PX;
     pointerDownAt = null;
     if (isOverview()) {
-        const node = isClick ? renderer.hitTestIntersection(localPoint(event)) : null;
+        const local = localPoint(event);
+        const node = isClick ? renderer.hitTestIntersection(local) : null;
         if (node) selectNode(node.id);
+        // A click on a destination block opens its tier picker; a click on empty map closes it.
+        else if (isClick) destinationsEditor.select(destinationsEditor.hitTest(local), local);
     } else {
         laneEditor.pointerUp(event);
     }
@@ -622,6 +644,12 @@ document.getElementById('editor-zoom-fit').addEventListener('click', () => {
     else fitJunction();
 });
 el.overview.addEventListener('click', () => showOverview());
+const destinationsSection = document.getElementById('editor-destinations-section');
+destinationsSection.querySelector('[data-section-toggle]').addEventListener('click', (event) => {
+    const isOpen = event.currentTarget.getAttribute('aria-expanded') === 'true';
+    event.currentTarget.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    destinationsSection.querySelector('[data-section-body]').classList.toggle('hidden', isOpen);
+});
 el.intersectionSection.querySelector('[data-section-toggle]').addEventListener('click', (event) => {
     setIntersectionSectionCollapsed(event.currentTarget.getAttribute('aria-expanded') === 'true');
 });

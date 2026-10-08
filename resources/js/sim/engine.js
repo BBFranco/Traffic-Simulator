@@ -26,7 +26,8 @@ import {
 } from './car.js';
 import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall, mobilShouldChangeLane, mobilIsSafe } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
-import { AdaptiveController } from './controllers/adaptive.js';
+import { AdaptiveController, MAX_TURN_GREEN_S } from './controllers/adaptive.js';
+import { MIN_TURN_GREEN_S } from './controllers/phasePlan.js';
 import {
     AllWayStopController,
     MIN_STOP_DWELL_S,
@@ -46,7 +47,8 @@ import {
 } from './controllers/roundabout.js';
 import { carShapeFor } from './carShapes.js';
 import { readQueueLength, detectQueuePresence, detectPresenceAtStopLine, sensorAvailable } from './sensors.js';
-import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane } from './corridor.js';
+import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection } from './corridor.js';
+import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
 
 /** Upstream window counted as "queued" for the stats-footer chips. */
@@ -145,12 +147,40 @@ const TRIP_SEED_SALT = 0xc2b2ae35;
 /** _routeArc()'s answer for a car already on its destination block. */
 const ON_DESTINATION_BLOCK = { kind: 'onBlock' };
 
+/**
+ * Driveways (routing/driveways.js): a car heading for one keeps to the lane on
+ * its side from the start of the block, brakes comfortably to turn-in speed,
+ * and turns off DRIVEWAY_LEAD_M short of it on a short curve that runs
+ * DRIVEWAY_DEPTH_M into the property, fading out over the last DRIVEWAY_FADE_M.
+ */
+const DRIVEWAY_SPEED_KPH = 15;
+const DRIVEWAY_LEAD_M = 5;
+const DRIVEWAY_FADE_M = 3;
+/** How close a car turning in across the oncoming lane is before it starts looking for its gap (m). */
+const DRIVEWAY_LOOK_M = 15;
+/** A car that has waited this long for an oncoming gap gives up on the driveway - a missed driveway (s). */
+const DRIVEWAY_GAP_GIVE_UP_S = 10;
+/** How far past the crossing point an oncoming vehicle is out of the way (m). */
+const DRIVEWAY_CROSS_DEPTH_M = 6;
+/** Room a fallback driveway needs ahead of a car that missed one - to change lane and brake for it (m). */
+const DRIVEWAY_FALLBACK_MIN_M = 30;
+/**
+ * Leaving a driveway: the car pulls out on a short curve from inside the property and joins the lane beside
+ * it this far on (m), fading in over the first DRIVEWAY_FADE_M - once the lane is clear for DRIVEWAY_EXIT_GAP_S
+ * behind that point, and, crossing to the far side, oncoming traffic is too.
+ */
+const DRIVEWAY_EXIT_RUN_M = 6;
+const DRIVEWAY_EXIT_GAP_S = 3;
+
 /** Destination-routing counters for one run (or since resetStats()). */
 function newRoutingStats() {
     return {
         /** Trips that ended: out of the map, or pulled off into a block. */
         trips: 0,
         tripTimeSumS: 0,
+        /** Trip time beyond free-flow driving (no stops, no slowing), over the trips that reached the destination they set out for. */
+        tripDelaySumS: 0,
+        tripsOnPlan: 0,
         toExit: 0,
         pulledOff: 0,
         /** Trips that ended somewhere other than the destination they set out for. */
@@ -163,6 +193,15 @@ function newRoutingStats() {
         /** A routed car that could no longer reach its destination from where it was, and was sent to the nearest exit instead. */
         rerouted: 0,
         pulledOffByBlock: {},
+        pulledOffByDriveway: {},
+        /** A car that didn't make it into its driveway - wrong lane by the time it got there, or no oncoming gap within DRIVEWAY_GAP_GIVE_UP_S. */
+        missedDriveways: 0,
+        missedDrivewaysBy: { wrongLane: 0, noGap: 0 },
+        /** Where a car that missed its driveway went instead: a later one on the same block, the next block on, or the nearest way out. */
+        drivewayFallbacks: { sameBlock: 0, nextBlock: 0, exit: 0 },
+        /** Cars that pulled out of a driveway onto the road - a trip starting at a block. */
+        departed: 0,
+        departedByDriveway: {},
     };
 }
 
@@ -323,8 +362,16 @@ function criticalLaneShare(laneUse, slots, movementShares) {
     return Math.max(...load.values());
 }
 
-/** Lane indices whose lane use (one entry per lane, kerb first) allows `movement`. */
+/**
+ * Lane indices whose lane use (one entry per lane, kerb first) allows `movement`. A U-turn (roundabouts only,
+ * destination routing only) goes from the lanes marked for a right turn - or, with none, the median-most lane
+ * going straight on, as a driver going all the way round would take.
+ */
 function lanesAllowing(laneUse, movement) {
+    if (movement === 'uturn') {
+        const right = lanesAllowing(laneUse, 'right');
+        return right.length ? right : lanesAllowing(laneUse, 'straight').slice(-1);
+    }
     const lanes = [];
     laneUse.forEach((moves, i) => {
         if (moves.includes(movement)) lanes.push(i);
@@ -706,6 +753,17 @@ export class SimulationEngine {
             }
         }
 
+        // U-turns at roundabouts (decision E1): back out along the same road, the other way. Kept apart from
+        // `turnOptions` - only routed trips take one, so random turning draws exactly as it always has.
+        for (const carriageway of this.carriageways) {
+            for (const gate of carriageway.gates) gate.uturnOption = this._uturnOption(gate);
+        }
+        for (const connector of layout.connectors) {
+            for (const dir of Object.values(this.connectorDirs.get(connector.id))) {
+                for (const gate of dir.gates) gate.uturnOption = this._uturnOption(gate);
+            }
+        }
+
         // The protected turns each junction's signal gives their own arrow (corridor.js's parseTurnPhases()).
         for (const info of this.nodesInfo.values()) {
             /** Per road (0 arterial, 1 cross), the turn stage in front of its through green: `{ gates, weight }` - or null. */
@@ -920,6 +978,24 @@ export class SimulationEngine {
     }
 
     /**
+     * The U-turn at a roundabout approach `gate`, or null: round the ring and back out along the same road the
+     * other way - the other carriageway of a two-way arterial, or the other direction of the cross street - where
+     * that direction carries on past the junction.
+     */
+    _uturnOption(gate) {
+        if (!gate.approach || gate.node.control !== 'roundabout') return null;
+        if (gate.carriageway) {
+            const back = gate.info.arterialExits.find((g) => g.carriageway.arterial === gate.carriageway.arterial && g.carriageway !== gate.carriageway && g.hasDownstream);
+            return back ? { carriagewayId: back.carriageway.id, entryDistanceM: back.centreDistanceM, movement: 'uturn' } : null;
+        }
+        const backKey = gate.dirKey === 'fwd' ? 'rev' : 'fwd';
+        const back = this.connectorDirs.get(gate.connector.id)[backKey];
+        const backGate = back.road.lanes ? back.gates.find((g) => g.node === gate.node) : null;
+        if (!backGate || backGate.centreDistanceM >= gate.connector.routeLengthM - 1) return null;
+        return { connectorId: gate.connector.id, dirKey: backKey, entryDistanceM: backGate.centreDistanceM, movement: 'uturn' };
+    }
+
+    /**
      * _arterialTurnOptions() at a junction where the cross street is two roads
      * (corridor.js's splitCrossStreet()): turning towards the end side lands on
      * the end road's fwd, towards the start side on the start road's rev - each
@@ -1020,7 +1096,7 @@ export class SimulationEngine {
             for (const carriageway of this.carriagewaysByArterial.get(arterial.id)) {
                 this.carriagewayState.set(carriageway.id, {
                     laneLayout: carriageway.laneLayout,
-                    lanes: makeLaneStates(carriageway.laneLayout, () => this._sampleArrival(this._liveSpawnRate(arterial.demand, spawnRatePerLanePerMin), this._arrivalRng(carriageway.id))),
+                    lanes: makeLaneStates(carriageway.laneLayout, () => this._sampleArrival(this._edgeRate(this._liveSpawnRate(arterial.demand, spawnRatePerLanePerMin)), this._arrivalRng(carriageway.id))),
                 });
             }
             this.arterialState.set(arterial.id, {
@@ -1046,7 +1122,7 @@ export class SimulationEngine {
         for (const connector of this.layout.connectors) {
             const dirs = this.connectorDirs.get(connector.id);
             const rate = this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin);
-            const makeDirState = (dir, dirKey) => ({ laneLayout: dir.laneLayout, lanes: makeLaneStates(dir.laneLayout, () => this._sampleArrival(rate, this._arrivalRng(`${connector.id}:${dirKey}`))) });
+            const makeDirState = (dir, dirKey) => ({ laneLayout: dir.laneLayout, lanes: makeLaneStates(dir.laneLayout, () => this._sampleArrival(this._edgeRate(rate), this._arrivalRng(`${connector.id}:${dirKey}`))) });
             this.connectorState.set(connector.id, {
                 fwd: makeDirState(dirs.fwd, 'fwd'),
                 rev: makeDirState(dirs.rev, 'rev'),
@@ -1277,6 +1353,7 @@ export class SimulationEngine {
         for (const connector of this.layout.connectors) {
             this._spawnForConnector(connector, dt);
         }
+        if (this.routingActive) this._spawnDepartures(dt);
 
         for (const connector of this.layout.connectors) {
             this._stepConnectorCars(connector, dt);
@@ -1336,6 +1413,7 @@ export class SimulationEngine {
             }
         }
         for (const car of this.turningCars) {
+            const path = car.turnPath;
             cars.push({
                 id: car.id,
                 point: carRenderPoint(car),
@@ -1345,6 +1423,9 @@ export class SimulationEngine {
                 vehicleType: car.vehicleType,
                 lengthM: car.lengthM,
                 widthM: car.widthM,
+                // Turning into a driveway: fades out over the last few metres of the drive in - and in again, pulling out of one.
+                ...(path.driveway ? { opacity: Math.max(0, Math.min(1, (path.lengthM - car.distanceM) / DRIVEWAY_FADE_M)) } : {}),
+                ...(path.fromDriveway ? { opacity: Math.max(0, Math.min(1, car.distanceM / DRIVEWAY_FADE_M)) } : {}),
             });
         }
 
@@ -1926,7 +2007,7 @@ export class SimulationEngine {
             this.accounting.totalSpawned += 1;
             if (this.routingActive) this._assignTrip(car, carriageway.id);
             lane.timerS = 0;
-            lane.nextArrivalS = this._sampleArrival(this._liveSpawnRate(arterial.demand, state.spawnRatePerLanePerMin), this._arrivalRng(carriageway.id));
+            lane.nextArrivalS = this._sampleArrival(this._edgeRate(this._liveSpawnRate(arterial.demand, state.spawnRatePerLanePerMin)), this._arrivalRng(carriageway.id));
         });
     }
 
@@ -1961,14 +2042,15 @@ export class SimulationEngine {
                 const signalAhead = this._signalAheadFor(gates, car);
                 const pickupAhead = this._taxiPickupObstacle(carriageway, car, dt);
                 const joinAhead = i === 0 ? this._joinObstacle(carriageway.id, car) : null;
-                const ahead = nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead);
-                if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, this._turnApproachSpeedLimit(gates, car));
+                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), this._drivewayHold(car));
+                const speedLimitMps = Math.min(this._turnApproachSpeedLimit(gates, car), this._drivewaySpeedLimit(car));
+                if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                 car.steppedTick = this.tickNo;
                 car.mergeDropBack = false;
                 this._recordNodeClears(arterialState, gates, car);
             }
 
-            if (this.routingActive) this._pullOffArrivals(carriageway.id, lane);
+            if (this.routingActive) this._drivewayArrivals(state, lane);
             this._peelOff(carriageway.id, state, lane);
             while (lane.cars.length && lane.cars[0].distanceM > carriageway.lengthM) {
                 if (this.joinsFrom.has(carriageway.id)) {
@@ -2012,6 +2094,11 @@ export class SimulationEngine {
     _tryChangeLane(state, gates, car) {
         if (car.distanceM < LANE_CHANGE_MIN_DISTANCE_M) return;
         if (car.pickup) return; // a taxi pulling over, or stopped for passengers, stays put
+        const driveway = this._drivewayAhead(car);
+        if (driveway) {
+            this._keepToDrivewayLane(state, car, driveway);
+            return;
+        }
         const nearestNode = this._nearestNodeAhead(gates, car);
         const plan = nearestNode && car.turnPlan?.nodeId === nearestNode.node.id ? car.turnPlan : null;
         const lanes = plan ? planLaneTargets(state.laneLayout, nearestNode.slotLaneUse, plan, car.distanceM) : null;
@@ -2264,7 +2351,7 @@ export class SimulationEngine {
                 this.accounting.totalSpawned += 1;
                 if (this.routingActive) this._assignTrip(car, `${connector.id}:${dirKey}`);
                 lane.timerS = 0;
-                lane.nextArrivalS = this._sampleArrival(this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin), this._arrivalRng(`${connector.id}:${dirKey}`));
+                lane.nextArrivalS = this._sampleArrival(this._edgeRate(this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin)), this._arrivalRng(`${connector.id}:${dirKey}`));
             });
         }
     }
@@ -2295,13 +2382,14 @@ export class SimulationEngine {
                     const car = lane.cars[i];
                     const realAhead = i > 0 ? lane.cars[i - 1] : null;
                     const joinAhead = i === 0 ? this._joinObstacle(`${connector.id}:${dirKey}`, car) : null;
-                    const ahead = nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead);
-                    if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, this._connectorTurnApproachSpeedLimit(dir, car));
+                    const ahead = nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car));
+                    const speedLimitMps = Math.min(this._connectorTurnApproachSpeedLimit(dir, car), this._drivewaySpeedLimit(car));
+                    if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                     car.steppedTick = this.tickNo;
                     car.mergeDropBack = false;
                 }
 
-                if (this.routingActive) this._pullOffArrivals(`${connector.id}:${dirKey}`, lane);
+                if (this.routingActive) this._drivewayArrivals(dirState, lane);
                 this._peelOff(`${connector.id}:${dirKey}`, dirState, lane);
                 const join = this.joinsFrom.get(`${connector.id}:${dirKey}`);
                 while (lane.cars.length && lane.cars[0].distanceM > routeLengthM) {
@@ -2338,6 +2426,11 @@ export class SimulationEngine {
                 const keep = this._lanesContinuing(dir, dirState, car);
                 if (keep) {
                     this._tryMandatoryLaneChange(dirState, car, keep, true);
+                    continue;
+                }
+                const driveway = this._drivewayAhead(car);
+                if (driveway) {
+                    this._keepToDrivewayLane(dirState, car, driveway);
                     continue;
                 }
                 // A car taking a peel-off ahead heads for the kerb lane first.
@@ -2397,7 +2490,7 @@ export class SimulationEngine {
         if (!gate) return Infinity;
         const roundaboutLimit = roundaboutApproachSpeedLimit(car, gate);
         const option = car.turnPlan?.option;
-        if (!option || gate.node.id !== car.turnPlan.nodeId) return roundaboutLimit;
+        if (!option || gate.node.id !== car.turnPlan.nodeId || option.movement === 'uturn') return roundaboutLimit;
         return Math.min(roundaboutLimit, turnApproachSpeedLimit(car, option.movement, gate.stopLineDistanceM - car.distanceM));
     }
 
@@ -2549,14 +2642,27 @@ export class SimulationEngine {
      * the two right turns pass each other.
      */
     _oncomingBlocksTurn(lanes, gate, junctionDepthM, isHeld) {
+        return this._oncomingBlocksAt(lanes, gate.stopLineDistanceM, junctionDepthM, {
+            ignore: (car) => car.turnPlan?.nodeId === gate.node.id && car.turnPlan.movement === 'right',
+            isHeld,
+        });
+    }
+
+    /**
+     * The position-based core of _oncomingBlocksTurn(), shared with driveways:
+     * true if a vehicle in `lanes` is in the `depthM` stretch from `atM` on, or
+     * would reach `atM` within ONCOMING_CRITICAL_GAP_S - skipping any `ignore(car)`,
+     * and any `isHeld(car)` not there yet.
+     */
+    _oncomingBlocksAt(lanes, atM, depthM, { ignore = null, isHeld = null } = {}) {
         for (const lane of lanes) {
             for (const car of lane.cars) {
-                if (car.turnPlan?.nodeId === gate.node.id && car.turnPlan.movement === 'right') continue;
-                const toStopM = gate.stopLineDistanceM - car.distanceM;
-                if (toStopM < -junctionDepthM) continue; // already through the junction
-                if (toStopM <= 0) return true; // in it now
-                if (isHeld(car)) continue; // held at its own red/stop line
-                if (toStopM / Math.max(car.speedMps, 0.5) < ONCOMING_CRITICAL_GAP_S) return true;
+                if (ignore?.(car)) continue;
+                const toM = atM - car.distanceM;
+                if (toM < -depthM) continue; // already through
+                if (toM <= 0) return true; // in it now
+                if (isHeld?.(car)) continue; // held at its own red/stop line
+                if (toM / Math.max(car.speedMps, 0.5) < ONCOMING_CRITICAL_GAP_S) return true;
             }
         }
         return false;
@@ -2863,7 +2969,8 @@ export class SimulationEngine {
         const armAngle = (a) => Math.atan2(-a.heading.y, -a.heading.x); // the side it comes in from
         const entry = armAngle(approach);
         const clockwiseFromEntry = (angle) => (((angle - entry) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-        const exit = clockwiseFromEntry(Math.atan2(exitHeading.y, exitHeading.x));
+        // A U-turn leaves back the way it came, after going right round - past every other entry.
+        const exit = movement === 'uturn' ? 2 * Math.PI : clockwiseFromEntry(Math.atan2(exitHeading.y, exitHeading.x));
         const passes = new Set();
         for (const other of node.approaches) {
             if (other.id === approachId) continue;
@@ -3099,7 +3206,7 @@ export class SimulationEngine {
 
     /** Is a car still sweeping round a turn into `lane` of `road` about to come out within reach of `pointM` - a merge there has to wait for it. */
     _turnComingInto(road, lane, pointM) {
-        return this.turningCars.some((c) => c.road === road && c.turnPath && Math.abs(c.turnPath.exitDistanceM - pointM) < 25 && this._turnTargetLanes(c.turnPath)[c.lane] === lane);
+        return this.turningCars.some((c) => c.road === road && c.turnPath && !c.turnPath.driveway && Math.abs(c.turnPath.exitDistanceM - pointM) < 25 && this._turnTargetLanes(c.turnPath)[c.lane] === lane);
     }
 
     /** The signal (or all-way stop) at a fed gate right after the join, as it applies to `car` still on the road before it. */
@@ -3453,7 +3560,7 @@ export class SimulationEngine {
      */
     _resolvePlanAtStopLine(car, nodeId, laneUse, turnOptions, plan) {
         const laneMoves = laneUse[car.lane];
-        if (laneMoves.includes(plan.movement)) return plan;
+        if (plan.movement === 'uturn' ? lanesAllowing(laneUse, 'uturn').includes(car.lane) : laneMoves.includes(plan.movement)) return plan;
         if (car.trip) this._recordMissedTurn(car, 'wrongLane', nodeId, plan.movement);
         if (laneMoves.includes('straight')) return { nodeId, movement: 'straight', option: null };
         const option = turnOptions.find((o) => laneMoves.includes(o.movement));
@@ -3635,7 +3742,7 @@ export class SimulationEngine {
         if (!nearest) return Infinity;
         const roundaboutLimit = roundaboutApproachSpeedLimit(car, nearest);
         const option = car.turnPlan?.option;
-        if (!option || nearest.node.id !== car.turnPlan.nodeId) return roundaboutLimit;
+        if (!option || nearest.node.id !== car.turnPlan.nodeId || option.movement === 'uturn') return roundaboutLimit;
         return Math.min(roundaboutLimit, turnApproachSpeedLimit(car, option.movement, nearest.stopLineDistanceM - car.distanceM));
     }
 
@@ -3671,6 +3778,13 @@ export class SimulationEngine {
         const onRings = this._carsOnRings();
         for (const car of this.turningCars) {
             const path = car.turnPath;
+            if (path.driveway) {
+                stepCar(car, leaderByKey.get(path.key) ?? null, dt, Infinity, path.speedLimitMps);
+                leaderByKey.set(path.key, car);
+                if (car.distanceM < path.lengthM) stillTurning.push(car);
+                else this._recordPullOff(car);
+                continue;
+            }
             const targetLanes = this._turnTargetLanes(path);
             const exitBlocked = this._turnExitBlocked(targetLanes, car.lane, path.exitDistanceM, car.lengthM);
             const pathEnd = exitBlocked ? { distanceM: path.lengthM, speedMps: 0 } : null;
@@ -3909,7 +4023,61 @@ export class SimulationEngine {
                   ? 'Yellow'
                   : 'All-red';
 
-        return { ...base, phaseLabel, elapsedS: controller.phaseElapsed, etaLabel: this._signalEtaLabel(info, arterialQueue, crossQueue) };
+        return { ...base, phaseLabel, elapsedS: controller.phaseElapsed, etaLabel: this._signalEtaLabel(info, arterialQueue, crossQueue), timing: this._signalTiming(info) };
+    }
+
+    /**
+     * The tooltip's timing bar. Fixed-time and green wave: the whole cycle as each road sees it -
+     * `{ kind: 'cycle', cycleS, positionS, roads: [arterial, cross] }`, each road a run of
+     * `{ state: 'green' | 'arrow' | 'yellow' | 'red', durationS }` from the start of the cycle.
+     * Adaptive has no cycle, only the current stage's window: `{ kind: 'actuated', ... }`.
+     */
+    _signalTiming(info) {
+        const controller = info.controller;
+        if (info.controllerType === 'adaptive') {
+            const { phase, inTurn } = controller;
+            const weight = inTurn ? controller.turnWeights[phase] : 1;
+            return {
+                kind: 'actuated',
+                phase,
+                inTurn,
+                phaseState: controller.phaseState,
+                elapsedS: controller.phaseElapsed,
+                minS: inTurn ? MIN_TURN_GREEN_S * weight : controller.params.minGreen,
+                maxS: inTurn ? MAX_TURN_GREEN_S * weight : controller.params.maxGreen,
+                gapOutS: controller.params.gapOutS,
+                sinceDetectionS: controller.secondsSinceLastDetection,
+            };
+        }
+        if (info.controllerType !== 'fixed' && info.controllerType !== 'greenWave') return null;
+
+        const { stages, stageGreens } = controller;
+        const stageLengthS = (i) => stageGreens[i] + YELLOW_S + ALL_RED_S;
+        const roads = [0, 1].map((road) => {
+            const runs = [];
+            const push = (state, durationS) => {
+                const last = runs[runs.length - 1];
+                if (last?.state === state) last.durationS += durationS;
+                else runs.push({ state, durationS });
+            };
+            stages.forEach((stage, i) => {
+                if (stage.phase !== road) return push('red', stageLengthS(i));
+                push(stage.turn ? 'arrow' : 'green', stageGreens[i]);
+                push('yellow', YELLOW_S);
+                push('red', ALL_RED_S);
+            });
+            return runs;
+        });
+
+        const index = Math.max(0, stages.findIndex((s) => s.phase === controller.phase && s.turn === controller.inTurn));
+        let positionS = 0;
+        for (let i = 0; i < index; i += 1) positionS += stageLengthS(i);
+        if (controller.phaseState !== 'green') positionS += stageGreens[index];
+        if (controller.phaseState === 'allRed') positionS += YELLOW_S;
+        positionS += controller.phaseElapsed;
+
+        const cycleS = stages.reduce((sum, _, i) => sum + stageLengthS(i), 0);
+        return { kind: 'cycle', cycleS, positionS: Math.min(positionS, cycleS), roads };
     }
 
     _signalEtaLabel(info, arterialQueue, crossQueue) {
@@ -3980,6 +4148,112 @@ export class SimulationEngine {
         this.routingSeed = seed;
         this.arrivalRngs = new Map();
         this.tripRngs = new Map();
+        /** Per block direction, its driveway departures: their own arrival clock, and the cars waiting in a driveway to pull out (in order). */
+        this.departures = this.routingModel.od.origins
+            .filter((origin) => origin.kind === 'block')
+            .map((origin) => ({ origin, timerS: 0, nextArrivalS: null, waiting: [] })); // first arrival drawn on the first tick, once the demand state exists
+    }
+
+    /** A block direction's live departure rate (veh/min): its share of what the roads feeding it send in right now. */
+    _departureRatePerMin(origin) {
+        return origin.fromRoads.reduce((sum, { roadKey, share }) => sum + share * this._liveRoadPerMin(roadKey), 0);
+    }
+
+    /** A spawning road direction's live arrival rate over all its lanes (veh/min). */
+    _liveRoadPerMin(roadKey) {
+        const carriageway = this.carriagewaysById.get(roadKey);
+        if (carriageway) return carriageway.road.lanes * this._liveSpawnRate(carriageway.arterial.demand, this.arterialState.get(carriageway.arterial.id).spawnRatePerLanePerMin);
+        const split = roadKey.lastIndexOf(':');
+        const connector = this.connectorsById.get(roadKey.slice(0, split));
+        return this.connectorDirs.get(connector.id)[roadKey.slice(split + 1)].road.lanes * this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin);
+    }
+
+    _tripRng(key) {
+        if (!this.tripRngs.has(key)) this.tripRngs.set(key, new SeededRandom((this.routingSeed ^ TRIP_SEED_SALT ^ hashKey(key)) >>> 0));
+        return this.tripRngs.get(key);
+    }
+
+    /**
+     * Trips that start at a block: each block direction's departures arrive on their own Poisson clock, each
+     * drawing its driveway and its trip right then - so every condition hands out the same trips in the same
+     * order, however long they then wait - and wait there in order until the first can pull out (_pullOutOfDriveway()).
+     */
+    _spawnDepartures(dt) {
+        for (const departure of this.departures) {
+            const { origin } = departure;
+            departure.nextArrivalS ??= this._sampleArrival(this._departureRatePerMin(origin), this._arrivalRng(origin.key));
+            departure.timerS += dt;
+            if (departure.timerS >= departure.nextArrivalS) {
+                const reach = this.routingModel.drivewayDirs.get(origin.dirId).reach;
+                const driveway = reach[Math.floor(this._tripRng(origin.key).next() * reach.length)];
+                const pending = {};
+                this._assignTrip(pending, origin.key);
+                departure.waiting.push({ driveway, trip: pending.trip });
+                departure.timerS = 0;
+                departure.nextArrivalS = this._sampleArrival(this._departureRatePerMin(origin), this._arrivalRng(origin.key));
+            }
+            if (departure.waiting.length && this._pullOutOfDriveway(departure.waiting[0])) departure.waiting.shift();
+        }
+    }
+
+    /**
+     * A car pulls out of `driveway` into the lane beside it, if there's a gap: it drives a short curve from inside the
+     * property onto the road (a turning car, like any junction turn) and joins the lane DRIVEWAY_EXIT_RUN_M on.
+     * False - it keeps waiting - while the lane (or, crossing to the far side, oncoming traffic) is too close.
+     */
+    _pullOutOfDriveway({ driveway, trip }) {
+        const carriageway = this.carriagewaysById.get(driveway.roadKey);
+        const split = driveway.roadKey.lastIndexOf(':');
+        const connectorId = carriageway ? null : driveway.roadKey.slice(0, split);
+        const dirKey = carriageway ? null : driveway.roadKey.slice(split + 1);
+        const state = carriageway ? this.carriagewayState.get(carriageway.id) : this.connectorState.get(connectorId)[dirKey];
+        const road = carriageway ? carriageway.road : this.connectorDirs.get(connectorId)[dirKey].road;
+        const lengthM = carriageway ? carriageway.lengthM : this.connectorsById.get(connectorId).routeLengthM;
+        const laneIndex = this._drivewaySlot(driveway, state.laneLayout);
+        const exitDistanceM = Math.min(driveway.atM + DRIVEWAY_EXIT_RUN_M, lengthM - 1);
+        const key = `drivewayOut:${driveway.drivewayId}`;
+
+        if (this.turningCars.some((c) => c.turnPath.key === key && c.distanceM < VEHICLE_TYPES.car.lengthM + SPAWN_CLEARANCE_M)) return false;
+        if (this._turnExitBlocked(state.lanes, laneIndex, exitDistanceM, VEHICLE_TYPES.car.lengthM)) return false;
+        const approaching = state.lanes[laneIndex].cars.some((c) => c.distanceM < exitDistanceM && (exitDistanceM - c.distanceM) / Math.max(c.speedMps, 0.5) < DRIVEWAY_EXIT_GAP_S);
+        if (approaching || (driveway.crossesOncoming && this._drivewayCrossBlocked(driveway))) return false;
+
+        const vehicleType = this._rollVehicleType();
+        const exit = lanePoint(road, laneIndex, exitDistanceM);
+        const from = { x: driveway.x + driveway.outward.x * DRIVEWAY_DEPTH_M * 0.6, y: driveway.y + driveway.outward.y * DRIVEWAY_DEPTH_M * 0.6 };
+        const desiredSpeedMps = this._desiredSpeedFor(vehicleType, (carriageway ? carriageway.arterial.targetSpeedKph ?? 50 : this.connectorsById.get(connectorId).targetSpeedKph) / 3.6);
+        const car = new Car({
+            road,
+            lane: laneIndex,
+            distanceM: 0, // along the curve out until it joins the lane
+            speedMps: 0,
+            desiredSpeedMps,
+            colourIndex: Math.floor(this.rng.next() * CAR_PALETTE_SIZE),
+            startupDelayS: this.rng.next() * MAX_STARTUP_DELAY_S,
+            vehicleType,
+            turnPath: {
+                ...buildTurnPath(from, negateHeading(driveway.outward), exit.point, exit.heading),
+                key,
+                ...(carriageway ? { carriagewayId: carriageway.id } : { connectorId, dirKey }),
+                fromDriveway: true,
+                movement: driveway.side,
+                exitDistanceM,
+                speedLimitMps: DRIVEWAY_SPEED_KPH / 3.6,
+            },
+        });
+        this.accounting.totalSpawned += 1;
+        // The trip starts once it is on its way - waiting in the driveway isn't part of it.
+        car.trip = trip && { ...trip, spawnS: this.simTimeS };
+        const stats = this.routingStats;
+        stats.departed += 1;
+        stats.departedByDriveway[driveway.drivewayId] = (stats.departedByDriveway[driveway.drivewayId] ?? 0) + 1;
+        this.turningCars.push(car);
+        return true;
+    }
+
+    /** A map-edge arrival rate as spawned: under destination routing scaled by `routing.departures.holdTotal`'s demand scale (1 otherwise). */
+    _edgeRate(rate) {
+        return this.routingActive ? rate * this.routingModel.od.demandScale : rate;
     }
 
     /** The stream a road's arrivals draw from: its own under destination routing, else the main RNG. */
@@ -3989,17 +4263,22 @@ export class SimulationEngine {
         return this.arrivalRngs.get(roadKey);
     }
 
-    /** A newly spawned car's trip: its destination (by the origin's shares) and which route variant it follows there. */
+    /** A newly spawned car's trip from origin `roadKey` (a road direction, or `block:<dir>`): its destination (by the origin's shares) and which route variant it follows there. */
     _assignTrip(car, roadKey) {
         const origin = this.routingModel.originsByRoadKey.get(roadKey);
         if (!origin?.shares.length) return;
-        if (!this.tripRngs.has(roadKey)) this.tripRngs.set(roadKey, new SeededRandom((this.routingSeed ^ TRIP_SEED_SALT ^ hashKey(roadKey)) >>> 0));
-        const rng = this.tripRngs.get(roadKey);
+        const rng = this._tripRng(roadKey);
         const u = rng.next();
         const i = origin.cumulative.findIndex((c) => u < c);
-        const destId = origin.shares[i === -1 ? origin.shares.length - 1 : i].destId;
+        const share = origin.shares[i === -1 ? origin.shares.length - 1 : i];
+        const { destId } = share;
         const variant = Math.floor(rng.next() * this.routingModel.od.variants.length);
-        car.trip = { origin: roadKey, destId, intendedDestId: destId, variant, spawnS: this.simTimeS };
+        // A block destination: which of the driveways this direction can reach it pulls into.
+        const reach = this.routingModel.drivewayDirs.get(destId)?.reach;
+        const driveway = reach?.length ? reach[Math.floor(rng.next() * reach.length)] : null;
+        // Free-flow driving time to the block's start, plus on along it to the driveway.
+        const freeFlowS = share.runS + (driveway ? driveway.alongM / this.routingModel.graph.roads.get(driveway.roadKey).speedMps : 0);
+        car.trip = { origin: roadKey, destId, intendedDestId: destId, variant, spawnS: this.simTimeS, driveway, freeFlowS };
     }
 
     /** Where a car's route goes next from graph state `stateId` - re-aiming it at the nearest exit if its destination is out of reach. */
@@ -4012,6 +4291,7 @@ export class SimulationEngine {
             const fallback = exitFallback.get(stateId);
             if (!fallback || fallback === car.trip.destId) return null;
             car.trip.destId = fallback;
+            car.trip.driveway = null;
             this.routingStats.rerouted += 1;
             arc = od.variants[car.trip.variant].get(fallback)?.get(stateId);
         }
@@ -4065,26 +4345,255 @@ export class SimulationEngine {
         return stateId ? this._routeArc(car, stateId)?.kind === 'peel' : false;
     }
 
+    /** The driveway `car` is heading for, once it is on the block's stretch of the road that driveway is on - else null. */
+    _drivewayAhead(car) {
+        const driveway = car.trip?.driveway;
+        return driveway && car.road === driveway.road && car.distanceM >= driveway.fromM ? driveway : null;
+    }
+
+    /** The through lane beside the driveway's kerb: the leftmost for a driveway on the left, the rightmost for one on the right. */
+    _drivewaySlot(driveway, laneLayout) {
+        return driveway.side === 'left' ? laneLayout.kerbSlots : laneLayout.kerbSlots + laneLayout.mainLanes - 1;
+    }
+
+    /** From the start of its block, a car heading for a driveway works its way into the lane beside it and stays there. */
+    _keepToDrivewayLane(state, car, driveway) {
+        const slot = this._drivewaySlot(driveway, state.laneLayout);
+        if (car.lane !== slot && car.distanceM < driveway.atM - DRIVEWAY_LEAD_M) this._tryMandatoryLaneChange(state, car, [slot], true);
+    }
+
+    /** IDM speed cap for a car nearing its driveway: comfortable braking down to turn-in speed where it turns off. */
+    _drivewaySpeedLimit(car) {
+        const driveway = this._drivewayAhead(car);
+        if (!driveway) return Infinity;
+        const vIn = (DRIVEWAY_SPEED_KPH / 3.6) * VEHICLE_TYPES[car.vehicleType].desiredSpeedFactor;
+        return Math.sqrt(vIn * vIn + 2 * TURN_APPROACH_DECEL_MPS2 * Math.max(0, driveway.atM - DRIVEWAY_LEAD_M - car.distanceM));
+    }
+
+    /** Where a car waiting for an oncoming gap stops: its turn-off point. Null unless it is waiting. */
+    _drivewayHold(car) {
+        const wait = car.trip?.drivewayWait;
+        return wait ? { distanceM: wait.holdM, speedMps: 0 } : null;
+    }
+
+    /** True while oncoming traffic is too close for a car to turn across it into `driveway`. */
+    _drivewayCrossBlocked(driveway) {
+        const { roadKey, atM } = driveway.oncoming;
+        const split = roadKey.lastIndexOf(':');
+        const lanes = this.carriagewayState.get(roadKey)?.lanes ?? this.connectorState.get(roadKey.slice(0, split))[roadKey.slice(split + 1)].lanes;
+        return this._oncomingBlocksAt(lanes, atM, DRIVEWAY_CROSS_DEPTH_M);
+    }
+
     /**
-     * Cars that have reached the middle of the block they're heading for leave
-     * the road there - Step 4's stand-in until cars turn into driveways.
+     * Cars in `lane` that have reached their driveway turn in - one crossing the
+     * oncoming lane first waits at its turn-off point for a gap, up to
+     * DRIVEWAY_GAP_GIVE_UP_S. One that got there in the wrong lane, or gave up
+     * on the gap, has missed it (_missDriveway()).
      */
-    _pullOffArrivals(roadKey, lane) {
-        const { blockDirsById } = this.routingModel;
+    _drivewayArrivals(state, lane) {
         for (let i = lane.cars.length - 1; i >= 0; i -= 1) {
             const car = lane.cars[i];
-            const dir = car.trip && blockDirsById.get(car.trip.destId);
-            if (!dir || dir.midpoint.roadKey !== roadKey || car.distanceM < dir.midpoint.atM) continue;
+            const driveway = this._drivewayAhead(car);
+            if (!driveway) continue;
+            const turnOffM = driveway.atM - DRIVEWAY_LEAD_M;
+            if (car.lane !== this._drivewaySlot(driveway, state.laneLayout)) {
+                if (car.distanceM > turnOffM) this._missDriveway(car, 'wrongLane');
+                continue;
+            }
+            if (car.distanceM < turnOffM - DRIVEWAY_LOOK_M) continue;
+            const { trip } = car;
+            if (driveway.crossesOncoming && this._drivewayCrossBlocked(driveway)) {
+                trip.drivewayWait ??= { holdM: turnOffM + car.lengthM / 2 + car.idmParams.s0, sinceS: null };
+                if (car.distanceM < turnOffM - 1.5) continue;
+                trip.drivewayWait.sinceS ??= this.simTimeS;
+                if (this.simTimeS - trip.drivewayWait.sinceS >= DRIVEWAY_GAP_GIVE_UP_S) this._missDriveway(car, 'noGap');
+                continue;
+            }
+            trip.drivewayWait = null;
+            if (car.distanceM < turnOffM - 1.5) continue;
             lane.cars.splice(i, 1);
-            car.trip.pulledOffAt = dir.id;
-            const carriageway = this.carriagewaysById.get(roadKey);
-            if (carriageway) {
-                this._recordClear(carriageway.arterial, car);
-            } else {
-                this.accounting.totalClearedNetwork += 1;
-                this._recordConnectorClear(this.connectorsById.get(roadKey.slice(0, roadKey.lastIndexOf(':'))), car);
+            this._turnIntoDriveway(car, driveway);
+        }
+    }
+
+    /**
+     * The car leaves its lane on a short curve into the driveway - the same
+     * vehicle, so the renderers keep its shape and colour; it is in
+     * `turningCars` until the end of the curve (_recordPullOff()).
+     */
+    _turnIntoDriveway(car, driveway) {
+        const from = carWorldPoint(car);
+        const fromHeading = roadPointAt(car.road, car.distanceM).heading;
+        const to = { x: driveway.x + driveway.outward.x * DRIVEWAY_DEPTH_M, y: driveway.y + driveway.outward.y * DRIVEWAY_DEPTH_M };
+        car.turnPath = {
+            ...buildTurnPath(from, fromHeading, to, driveway.outward),
+            key: `driveway:${driveway.drivewayId}`,
+            driveway,
+            movement: driveway.side,
+            speedLimitMps: DRIVEWAY_SPEED_KPH / 3.6,
+        };
+        car.distanceM = 0;
+        car.laneChangeAnim = null;
+        this.turningCars.push(car);
+    }
+
+    /**
+     * A car that has missed its driveway tries, in order: a later driveway on
+     * the same block it can still brake for, one on the next block on along
+     * the road (once), and otherwise the nearest way out of the map.
+     */
+    _missDriveway(car, cause) {
+        const stats = this.routingStats;
+        const { trip } = car;
+        const { roadKey } = trip.driveway;
+        stats.missedDriveways += 1;
+        stats.missedDrivewaysBy[cause] += 1;
+        trip.drivewayWait = null;
+        const { drivewayDirs, nextBlockDir, exitFallback, stateAt } = this.routingModel;
+        const later = drivewayDirs.get(trip.destId).reach.find((r) => r.road === car.road && r.atM - DRIVEWAY_LEAD_M > car.distanceM + DRIVEWAY_FALLBACK_MIN_M);
+        if (later) {
+            stats.drivewayFallbacks.sameBlock += 1;
+            trip.driveway = later;
+            return;
+        }
+        car.turnPlan = null; // re-plan the junction ahead for the new destination
+        const next = trip.triedNextBlock ? null : nextBlockDir.get(trip.destId);
+        if (next) {
+            stats.drivewayFallbacks.nextBlock += 1;
+            trip.triedNextBlock = true;
+            trip.destId = next.id;
+            trip.driveway = next.reach[0];
+            return;
+        }
+        stats.drivewayFallbacks.exit += 1;
+        trip.driveway = null;
+        trip.destId = exitFallback.get(stateAt(roadKey, car.distanceM)) ?? trip.destId;
+    }
+
+    /** The end of the drive in: the trip ends here, counted as cleared like a car leaving the map. */
+    _recordPullOff(car) {
+        const { driveway } = car.turnPath;
+        const stats = this.routingStats;
+        car.trip.pulledOffAt = car.trip.destId;
+        stats.pulledOffByDriveway[driveway.drivewayId] = (stats.pulledOffByDriveway[driveway.drivewayId] ?? 0) + 1;
+        const carriageway = this.carriagewaysById.get(driveway.roadKey);
+        if (carriageway) {
+            this._recordClear(carriageway.arterial, car);
+        } else {
+            this.accounting.totalClearedNetwork += 1;
+            this._recordConnectorClear(this.connectorsById.get(driveway.roadKey.slice(0, driveway.roadKey.lastIndexOf(':'))), car);
+        }
+    }
+
+    /** The live car with id `carId` - on a road or mid-turn - or null once it has left the network. */
+    _findCar(carId) {
+        for (const state of this.carriagewayState.values()) for (const lane of state.lanes) for (const car of lane.cars) if (car.id === carId) return car;
+        for (const state of this.connectorState.values()) for (const dirKey of ['fwd', 'rev']) for (const lane of state[dirKey].lanes) for (const car of lane.cars) if (car.id === carId) return car;
+        return this.turningCars.find((car) => car.id === carId) ?? null;
+    }
+
+    /** A road geometry object's name - the arterial's or cross street's own, with its compass direction for a two-way arterial. */
+    _roadName(road) {
+        if (!this._roadNames) {
+            this._roadNames = new Map();
+            for (const carriageway of this.carriageways) {
+                const { arterial } = carriageway;
+                this._roadNames.set(carriageway.road, arterial.oneWay ? arterial.name : `${arterial.name}, ${compassDirection(carriageway.road.heading)}`);
+            }
+            for (const connector of this.layout.connectors) for (const dir of Object.values(this.connectorDirs.get(connector.id))) this._roadNames.set(dir.road, connector.name ?? connector.id);
+        }
+        return this._roadNames.get(road) ?? 'unknown road';
+    }
+
+    /** A readable name for a routing origin or destination key: a road direction, `block:<dir>`, `exit:<road>` or a block direction id. */
+    _routingPlaceLabel(key) {
+        if (!key) return null;
+        const { graph } = this.routingModel;
+        const roadName = (roadKey) => (graph.roads.has(roadKey) ? this._roadName(graph.roads.get(roadKey).road) : roadKey);
+        if (key.startsWith('exit:')) return `Out of the map via ${roadName(key.slice('exit:'.length))}`;
+        if (key.startsWith('block:')) return `Driveway on ${key.slice('block:'.length)}`;
+        if (graph.roads.has(key)) return `Map edge, ${roadName(key)}`;
+        return `Block ${key}`;
+    }
+
+    /**
+     * Read-only: what the simulator's car card shows for car `carId` - where it is, how fast, how long it has waited
+     * and, under destination routing, its trip. Null once the car has left the network. Never touches any random stream.
+     */
+    carInfo(carId) {
+        const car = this._findCar(carId);
+        if (!car) return null;
+        const { trip } = car;
+        const tripTimeS = trip ? this.simTimeS - trip.spawnS : null;
+        return {
+            id: car.id,
+            vehicleType: car.vehicleType,
+            point: carRenderPoint(car),
+            speedKph: car.speedMps * 3.6,
+            stoppedNow: car.stoppedNow,
+            roadName: car.turnPath?.driveway ? 'Turning into a driveway' : car.turnPath?.fromDriveway ? 'Pulling out of a driveway' : car.turnPath ? 'Turning through a junction' : this._roadName(car.road),
+            totalWaitS: car.totalWaitS,
+            everStopped: car.everStopped,
+            trip: trip && {
+                origin: this._routingPlaceLabel(trip.origin),
+                destination: this._routingPlaceLabel(trip.destId),
+                intendedDestination: trip.intendedDestId !== trip.destId ? this._routingPlaceLabel(trip.intendedDestId) : null,
+                drivewayId: trip.driveway?.drivewayId ?? null,
+                tripTimeS,
+                freeFlowS: trip.freeFlowS,
+                delaySoFarS: Math.max(0, tripTimeS - trip.freeFlowS),
+                variant: trip.variant + 1,
+                waitingForGap: Boolean(trip.drivewayWait?.sinceS != null),
+            },
+        };
+    }
+
+    /**
+     * Debug view only (simulator.js's route preview): the way car `carId` will
+     * drive from where it is now to its destination, as polylines of world
+     * points - read off the same next-hop table its decisions use, without
+     * touching the car or any random stream. Null for a car without a trip, or
+     * one mid-turn.
+     */
+    routePreview(carId) {
+        if (!this.routingActive) return null;
+        const car = this._findCar(carId);
+        if (!car?.trip || car.turnPath) return null;
+        const { graph, od, stateAt, roadKeyByRoad, blockStates } = this.routingModel;
+        const { trip } = car;
+        const roadKey = roadKeyByRoad.get(car.road);
+        if (!roadKey) return null;
+
+        const lines = [];
+        const run = (key, fromM, toM) => {
+            const road = graph.roads.get(key);
+            const points = [];
+            for (let atM = fromM; atM < toM; atM += 10) points.push(roadPointAt(road.road, atM).point);
+            points.push(roadPointAt(road.road, Math.max(fromM, Math.min(toM, road.lengthM))).point);
+            lines.push(points);
+        };
+        const stopM = (id) => {
+            const state = graph.states.get(id);
+            return state?.stop?.atM ?? graph.roads.get(state.roadKey).lengthM;
+        };
+
+        let at = stateAt(roadKey, car.distanceM);
+        const dest = blockStates.get(trip.destId);
+        if (trip.driveway && dest?.has(at)) {
+            run(roadKey, car.distanceM, trip.driveway.road === car.road ? trip.driveway.atM : stopM(at));
+        } else {
+            run(roadKey, car.distanceM, stopM(at));
+            const next = od.variants[trip.variant].get(trip.destId);
+            for (let hop = 0; hop < 200 && next?.has(at) && !dest?.has(at); hop += 1) {
+                const arc = next.get(at);
+                if (arc.kind === 'exit') break;
+                const to = graph.states.get(arc.to);
+                const endM = trip.driveway && dest?.has(arc.to) && trip.driveway.roadKey === to.roadKey ? trip.driveway.atM : stopM(arc.to);
+                run(to.roadKey, arc.entryM, endM);
+                at = arc.to;
             }
         }
+        return { lines, end: trip.driveway ? { x: trip.driveway.x, y: trip.driveway.y } : lines.at(-1).at(-1), destId: trip.destId, intendedDestId: trip.intendedDestId };
     }
 
     /** Counts a routed car's missed movement once per car and junction, however many ticks the miss takes to play out. */
@@ -4111,7 +4620,12 @@ export class SimulationEngine {
             stats.toExit += 1;
         }
         const realised = trip.pulledOffAt ?? this.routingModel.exitByRoad.get(car.road) ?? null;
-        if (realised !== trip.intendedDestId) stats.diverted += 1;
+        if (realised !== trip.intendedDestId) {
+            stats.diverted += 1;
+            return;
+        }
+        stats.tripsOnPlan += 1;
+        stats.tripDelaySumS += Math.max(0, this.simTimeS - trip.spawnS - trip.freeFlowS);
     }
 
     _recordClear(arterial, car) {

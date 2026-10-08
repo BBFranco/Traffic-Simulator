@@ -339,7 +339,7 @@ function buildSummary({
         controllerMode,
         routingMode: engine.routingMode,
         /** Destination routing's trip counters over the measured window - null for a random-turning run. */
-        routing: engine.routingActive ? routingSummary(engine.routingStats) : null,
+        routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures) : null,
         powerState: powerOutageStartTick != null ? 'load_shedding' : 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         corridorConfig: corridorConfig.id,
@@ -419,10 +419,11 @@ function tiersHash(routing) {
     return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-function routingSummary(stats) {
+function routingSummary(stats, departures) {
     return {
         trips: stats.trips,
         meanTripS: stats.trips ? stats.tripTimeSumS / stats.trips : null,
+        meanTripDelayS: stats.tripsOnPlan ? stats.tripDelaySumS / stats.tripsOnPlan : null,
         toExit: stats.toExit,
         pulledOff: stats.pulledOff,
         divertedPct: stats.trips ? (stats.diverted / stats.trips) * 100 : null,
@@ -430,6 +431,14 @@ function routingSummary(stats) {
         missedBy: stats.missedBy,
         rerouted: stats.rerouted,
         pulledOffByBlock: stats.pulledOffByBlock,
+        missedDriveways: stats.missedDriveways,
+        missedDrivewaysBy: stats.missedDrivewaysBy,
+        drivewayFallbacks: stats.drivewayFallbacks,
+        pulledOffByDriveway: stats.pulledOffByDriveway,
+        departed: stats.departed,
+        departedByDriveway: stats.departedByDriveway,
+        /** Cars still waiting in a driveway to pull out when the run ended - a road too busy to leave onto shows up here. */
+        departuresWaiting: departures.reduce((sum, d) => sum + d.waiting.length, 0),
     };
 }
 

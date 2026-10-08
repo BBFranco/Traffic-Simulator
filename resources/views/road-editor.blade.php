@@ -45,6 +45,15 @@
                 <p class="text-[10px] text-slate-500">Saving writes this intersection's arrows and turn lanes into your layout. Revert to original puts the whole layout back as it was imported.</p>
             </x-control-section>
 
+            <x-control-section id="editor-destinations-section" collapsible title="Destinations" info="Destination routing's blocks - the stretches of road cars drive to and turn into a driveway on. On the whole-corridor map each block is drawn in its tier's colour (how many destinations it holds, 1.5 lower-medium to 5 very high): it sets how many trips end there and how many driveways each side gets (1 up to tier 2, 2 at tier 3, 3 from tier 4). Click a block to change its tier or remove it; click a dashed stretch - an inlet from the map edge, or any stretch with no block yet - to add it as a destination. Changes preview on the map straight away; Save writes them into your layout, and Revert to original puts them back.">
+                <p id="destinations-status" class="text-[11px] text-slate-600 dark:text-slate-300"></p>
+                <div class="flex flex-wrap gap-1.5">
+                    <button type="button" id="destinations-save" class="rounded-md border border-sky-600 bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40">Save destinations</button>
+                    <button type="button" id="destinations-discard" title="Put back the tiers as last saved" class="{{ $buttonNeutral }}">Discard</button>
+                </div>
+                <div id="editor-destinations" class="max-h-96 space-y-3 overflow-y-auto pr-1"></div>
+            </x-control-section>
+
             <x-control-section title="Test traffic" info="Only for trying the arrows out here - none of these are saved.">
                 <div>
                     <div class="mb-1 flex items-center justify-between text-xs">
@@ -107,11 +116,17 @@
                 </div>
 
                 <div id="editor-hint" class="pointer-events-none absolute bottom-3 right-3 rounded-md border border-slate-200 bg-white/85 px-2.5 py-1.5 text-[10px] text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85">
-                    Click an intersection to edit it · drag to pan · scroll to zoom
+                    Click an intersection to edit it, or a coloured block to change its tier · drag to pan · scroll to zoom
                 </div>
 
                 <div id="editor-tooltip"
                      class="pointer-events-none absolute hidden max-w-[240px] rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
+
+                {{-- Destination routing: the tier colours, and the tier picker that opens on a block clicked on the map (destinationsEditor.js). --}}
+                <div id="editor-tier-legend"
+                     class="pointer-events-none absolute bottom-3 left-3 hidden rounded-md border border-slate-200 bg-white/90 px-2.5 py-2 text-[10px] text-slate-600 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-300"></div>
+                <div id="editor-tier-picker"
+                     class="absolute z-10 hidden w-44 rounded-md border border-slate-300 bg-white/95 p-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
             </div>
         </div>
     </div>

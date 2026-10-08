@@ -192,7 +192,7 @@ if (!layout.routing) {
 // 7. Roundabout U-turns
 heading('Roundabout U-turns');
 const uTurns = graph.arcs.filter((a) => {
-    if (a.kind !== 'move' || a.movement === 'straight') return false;
+    if (a.kind !== 'move' || a.movement !== 'uturn') return false;
     const from = graph.states.get(a.from);
     const fromRoad = graph.roads.get(from.roadKey);
     const toRoad = graph.roads.get(graph.states.get(a.to)?.roadKey);

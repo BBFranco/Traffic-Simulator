@@ -25,6 +25,7 @@
 import { laneArrowShapes, laneArrowTargets } from '../renderers/laneArrows.js';
 import { turnLaneShapes, alignedDashes } from '../renderers/turnLaneShapes.js';
 import { carShapeFor } from './carShapes.js';
+import { DRIVEWAY_DEPTH_M, DRIVEWAY_WIDTH_M } from './routing/driveways.js';
 
 export const ARTERIAL_ACCENTS = ['#0284c7', '#ea580c', '#8b5cf6', '#059669'];
 
@@ -68,6 +69,12 @@ const PALETTES = {
         // override this - the stop/go signal has to stay legible regardless of
         // which body colour a given car happens to be.
         median: '#b3bcc7',
+        // Destination routing's driveways: a paved cut off the kerb, with the apron line where it meets the road.
+        driveway: '#e2e8ef',
+        drivewayApron: '#8492a6',
+        // Routing debug counts per driveway: cars that turned in, cars that pulled out.
+        drivewayIn: '#0369a1',
+        drivewayOut: '#b45309',
         carPalette: ['#1e293b', '#334155', '#3f3527', '#1f3a4d'],
         // One colour per truck size (small/medium/large, see car.js's
         // TRUCK_VEHICLE_TYPES) - warm tones deliberately distinct from the cool
@@ -110,6 +117,10 @@ const PALETTES = {
         hud: 'rgba(226, 232, 240, 0.7)',
         junctionInner: 'rgba(226, 232, 240, 0.10)',
         median: '#4b586f',
+        driveway: '#364257',
+        drivewayApron: '#5d6b84',
+        drivewayIn: '#0284c7',
+        drivewayOut: '#d97706',
         carPalette: ['#e2e8f0', '#cbd5e1', '#e8dcc8', '#c9dcea'],
         truckPalette: ['#fcd34d', '#fb923c', '#f97316'],
         bus: '#4ade80',
@@ -241,11 +252,23 @@ export class LayoutRenderer {
         this.laneEditor = null;
         /** Per-frame simulation state (build step 2+): live cars and signal phases, set by simulator.js each frame. */
         this.dynamic = { cars: [], signals: new Map() };
+        /** Destination routing's driveways (routing/driveways.js), drawn while it runs - else null. */
+        this.driveways = null;
+        /**
+         * The Road Editor's routing blocks by tier - `{ blocks: [{ id, lines: [[point]], colour, textColour, label }],
+         * selectedId, selectedDriveways, candidates: [{ key, lines }], selectedCandidate }` - else null. Candidates are
+         * stretches that could be made destinations, drawn dashed.
+         */
+        this.routingTiers = null;
+        /** Simulator debug view: the picked car's route (engine.js's routePreview()) and, per driveway id, cars in (`in`) and out (`out`). */
+        this.routePreview = null;
+        this.drivewayCounts = null;
         this.options = {
             showLabels: true,
             showLaneMarkings: true,
             showDistances: true,
             showSignalHeads: true,
+            showRouting: true,
         };
     }
 
@@ -257,6 +280,38 @@ export class LayoutRenderer {
         this.laneEditor = null;
         this.resize({ refit });
         return this;
+    }
+
+    setDriveways(driveways) {
+        this.driveways = driveways;
+        this.draw();
+    }
+
+    /** Simulator debug view - set every frame alongside setDynamicState(), drawn on the next draw(). */
+    setRoutingDebug({ routePreview = null, drivewayCounts = null, selectedPoint = null } = {}) {
+        this.routePreview = routePreview;
+        this.drivewayCounts = drivewayCounts;
+        this.selectedCarPoint = selectedPoint;
+    }
+
+    /** The car drawn nearest to `screenPt`, within `radiusPx` - or null. */
+    hitTestCar(screenPt, radiusPx = 10) {
+        let best = null;
+        let bestDist = radiusPx;
+        for (const car of this.dynamic.cars ?? []) {
+            const s = this.camera.toScreen(car.point);
+            const d = Math.hypot(s.x - screenPt.x, s.y - screenPt.y);
+            if (d < bestDist) {
+                bestDist = d;
+                best = car;
+            }
+        }
+        return best;
+    }
+
+    setRoutingTiers(view) {
+        this.routingTiers = view;
+        this.draw();
     }
 
     setOptions(partial) {
@@ -377,15 +432,20 @@ export class LayoutRenderer {
         // marking bleeds through a junction, then furniture and labels.
         this.drawRoadSurfaces();
         this.drawTurnLaneSurfaces();
+        this.drawDriveways();
         if (this.options.showLaneMarkings) this.drawRoadMarkings();
         this.drawJunctions();
         this.drawStopLines();
+        this.drawRoutingTierLines();
         this.drawCars();
         if (this.laneEditor) this.drawLaneEditor();
         if (this.options.showSignalHeads) this.drawSignalHeads();
         if (this.options.showDistances) this.drawDistanceAnnotations();
         if (this.options.showLabels) this.drawLabels();
         this.drawHover();
+        this.drawRoutingTierLabels();
+        if (this.options.showRouting) this.drawRoutingDebug();
+        this.drawSelectedCar();
         this.drawScaleBar(height);
         this.drawCompass(width);
     }
@@ -914,6 +974,36 @@ export class LayoutRenderer {
     }
 
     /**
+     * Driveways: a paved cut DRIVEWAY_WIDTH_M wide running DRIVEWAY_DEPTH_M
+     * out from the kerb, with an apron line across its mouth - only once
+     * zoomed in far enough for a few metres to read.
+     */
+    drawDriveways() {
+        if (!this.driveways?.length || this.camera.scale < 1.2) return;
+        const { ctx } = this;
+        const halfWidthM = DRIVEWAY_WIDTH_M / 2;
+        ctx.save();
+        ctx.fillStyle = PALETTE.driveway;
+        ctx.strokeStyle = PALETTE.drivewayApron;
+        ctx.lineWidth = Math.max(1, this.camera.scale * 0.15);
+        for (const driveway of this.driveways) {
+            const { x, y, outward } = driveway;
+            const along = { x: -outward.y, y: outward.x };
+            const at = (a, o) => this.camera.toScreen({ x: x + along.x * a + outward.x * o, y: y + along.y * a + outward.y * o });
+            const corners = [at(-halfWidthM, 0), at(halfWidthM, 0), at(halfWidthM, DRIVEWAY_DEPTH_M), at(-halfWidthM, DRIVEWAY_DEPTH_M)];
+            ctx.beginPath();
+            corners.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(corners[0].x, corners[0].y);
+            ctx.lineTo(corners[1].x, corners[1].y);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    /**
      * Cars, drawn as small rotated rounded rectangles oriented along their
      * arterial's heading. Drawn after the road/junction surfaces and before the
      * signal heads/labels, so vehicles sit "on" the asphalt but furniture and
@@ -950,6 +1040,7 @@ export class LayoutRenderer {
             const cornerPx = Math.min(2, widthPx / 3);
 
             ctx.save();
+            ctx.globalAlpha = car.opacity ?? 1; // fading out into a driveway
             ctx.translate(p.x, p.y);
             ctx.rotate(Math.atan2(car.heading.y, car.heading.x));
             ctx.fillStyle = car.stopped ? PALETTE.carStopped : vehicleFillColour(car, this.dynamic.randomEvents);
@@ -1300,6 +1391,171 @@ export class LayoutRenderer {
             const p = this.camera.toScreen(target.point);
             ctx.beginPath();
             ctx.arc(p.x, p.y, r + 1, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    /**
+     * Destination routing debug view: the picked car's route ahead (dashed, to a
+     * ring at its destination, labelled - with where it first meant to go if it
+     * has been diverted), and once zoomed in, each driveway's pull-off count.
+     */
+    drawRoutingDebug() {
+        const { ctx } = this;
+        ctx.save();
+        if (this.drivewayCounts && this.driveways && this.camera.scale >= 2.5) {
+            ctx.font = '600 10px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (const driveway of this.driveways) {
+                const p = this.camera.toScreen({ x: driveway.x + driveway.outward.x * (DRIVEWAY_DEPTH_M + 3), y: driveway.y + driveway.outward.y * (DRIVEWAY_DEPTH_M + 3) });
+                // In and out side by side, each in its own colour: cars that turned in, cars that pulled out.
+                for (const [k, count] of [['in', -1], ['out', 1]]) {
+                    const x = p.x + count * 15;
+                    ctx.fillStyle = PALETTE[k === 'in' ? 'drivewayIn' : 'drivewayOut'];
+                    roundRect(ctx, x - 13, p.y - 7, 26, 14, 4);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(`${k === 'in' ? '↓' : '↑'}${this.drivewayCounts[k][driveway.id] ?? 0}`, x, p.y + 0.5);
+                }
+            }
+        }
+        const route = this.routePreview;
+        if (route) {
+            ctx.strokeStyle = PALETTE.highlight;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.setLineDash([6, 5]);
+            for (const line of route.lines) {
+                ctx.beginPath();
+                line.forEach((point, i) => {
+                    const p = this.camera.toScreen(point);
+                    if (i) ctx.lineTo(p.x, p.y);
+                    else ctx.moveTo(p.x, p.y);
+                });
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            const end = this.camera.toScreen(route.end);
+            ctx.beginPath();
+            ctx.arc(end.x, end.y, 7, 0, Math.PI * 2);
+            ctx.stroke();
+            const label = route.destId === route.intendedDestId ? route.destId : `${route.destId} (meant ${route.intendedDestId})`;
+            ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            const width = ctx.measureText(label).width;
+            ctx.fillStyle = PALETTE.labelBg;
+            ctx.fillRect(end.x + 10, end.y - 9, width + 8, 18);
+            ctx.fillStyle = PALETTE.label;
+            ctx.fillText(label, end.x + 14, end.y);
+        }
+        ctx.restore();
+    }
+
+    /** A ring round the car picked on the map (simulator.js's car card). */
+    drawSelectedCar() {
+        if (!this.selectedCarPoint) return;
+        const { ctx } = this;
+        const p = this.camera.toScreen(this.selectedCarPoint);
+        ctx.save();
+        ctx.strokeStyle = PALETTE.highlight;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(9, this.camera.scale * 4), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    /** The Road Editor's routing blocks, each along its road in its tier's colour - the picked one bolder. Drawn under the cars. */
+    drawRoutingTierLines() {
+        const view = this.routingTiers;
+        if (!view) return;
+        const { ctx } = this;
+        ctx.save();
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'round';
+        const width = Math.max(3, Math.min(16, this.camera.scale * 5));
+        ctx.setLineDash([8, 6]);
+        for (const candidate of view.candidates ?? []) {
+            const isSelected = candidate.key === view.selectedCandidate;
+            ctx.strokeStyle = isSelected ? PALETTE.highlight : PALETTE.dimension;
+            ctx.globalAlpha = isSelected ? 0.9 : 0.8;
+            ctx.lineWidth = isSelected ? width : width * 0.6;
+            for (const line of candidate.lines) this.strokeWorldLine(line);
+        }
+        ctx.setLineDash([]);
+        for (const block of view.blocks) {
+            const isSelected = block.id === view.selectedId;
+            ctx.strokeStyle = block.colour;
+            ctx.globalAlpha = view.selectedId && !isSelected ? 0.35 : 0.7;
+            ctx.lineWidth = isSelected ? width * 1.6 : width;
+            for (const line of block.lines) this.strokeWorldLine(line);
+        }
+        ctx.restore();
+    }
+
+    strokeWorldLine(line) {
+        const { ctx } = this;
+        ctx.beginPath();
+        line.forEach((point, i) => {
+            const p = this.camera.toScreen(point);
+            if (i) ctx.lineTo(p.x, p.y);
+            else ctx.moveTo(p.x, p.y);
+        });
+        ctx.stroke();
+    }
+
+    /** Each block's id and tier on a pill in its colour (once zoomed in enough to read), and rings on the picked block's driveways. */
+    drawRoutingTierLabels() {
+        const view = this.routingTiers;
+        if (!view) return;
+        const { ctx } = this;
+        ctx.save();
+        ctx.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (this.camera.scale >= 0.9) {
+            for (const candidate of view.candidates ?? []) {
+                const line = candidate.lines[0];
+                if (!line?.length) continue;
+                const p = this.camera.toScreen(line[Math.floor(line.length / 2)]);
+                ctx.fillStyle = PALETTE.labelBg;
+                ctx.strokeStyle = PALETTE.dimension;
+                ctx.lineWidth = 1;
+                roundRect(ctx, p.x - 21, p.y - 8, 42, 16, 8);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = PALETTE.labelMuted;
+                ctx.fillText('+ add', p.x, p.y + 0.5);
+            }
+        }
+        for (const block of view.blocks) {
+            const isSelected = block.id === view.selectedId;
+            if (!isSelected && this.camera.scale < 0.9) continue;
+            const line = block.lines[0];
+            if (!line?.length) continue;
+            const p = this.camera.toScreen(line[Math.floor(line.length / 2)]);
+            const width = ctx.measureText(block.label).width + 10;
+            ctx.fillStyle = block.colour;
+            roundRect(ctx, p.x - width / 2, p.y - 8, width, 16, 8);
+            ctx.fill();
+            if (isSelected) {
+                ctx.strokeStyle = PALETTE.label;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+            ctx.fillStyle = block.textColour;
+            ctx.fillText(block.label, p.x, p.y + 0.5);
+        }
+        ctx.strokeStyle = PALETTE.highlight;
+        ctx.lineWidth = 1.5;
+        const r = Math.max(5, this.camera.scale * 3);
+        for (const driveway of view.selectedDriveways ?? []) {
+            const p = this.camera.toScreen(driveway);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
             ctx.stroke();
         }
         ctx.restore();

@@ -66,6 +66,15 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, batchS
         median_wait_time: summary.medianWait,
         p95_wait_time: summary.p95Wait,
         max_wait_time: summary.maxWait,
+        // Destination routing only (null under random turning): trips, their delay over free flow, and what didn't go to plan.
+        trips: summary.routing?.trips ?? null,
+        mean_trip_time: summary.routing?.meanTripS ?? null,
+        mean_trip_delay: summary.routing?.meanTripDelayS ?? null,
+        pulled_off: summary.routing?.pulledOff ?? null,
+        missed_turns: summary.routing?.missedTurns ?? null,
+        missed_driveways: summary.routing?.missedDriveways ?? null,
+        diversion_pct: summary.routing?.divertedPct ?? null,
+        routing_stats: summary.routing ?? null,
         // `build`: the code the batch ran (git commit, dirty tree) - see batch/buildStamp.mjs and vite.config.js.
         raw_config_json: { ...summary.rawConfig, build },
     };

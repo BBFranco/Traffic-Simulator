@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CorridorLaneUseController;
 use App\Http\Controllers\CorridorLayoutController;
+use App\Http\Controllers\CorridorRoutingTierController;
 use App\Http\Controllers\CorridorTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
@@ -53,6 +54,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/corridors/{corridor}/lane-use', [CorridorLaneUseController::class, 'destroy'])
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.lane-use.destroy');
+
+    // Destinations section of the Road Editor: block tiers for destination routing ("Revert to original" covers them too).
+    Route::put('/corridors/{corridor}/routing-tiers', [CorridorRoutingTierController::class, 'update'])
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.routing-tiers.update');
 
     // One representative batch-dataset run per condition, for the "replay a batch run" picker.
     Route::get('/simulator/sample-runs', [SimulatorController::class, 'sampleRuns'])->name('simulator.sample-runs');

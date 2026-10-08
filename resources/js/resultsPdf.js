@@ -376,6 +376,23 @@ class Report {
         this.doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
         this.meta = meta;
         this.y = TOP;
+        // Outline numbering: section (3) > heading (3.1) > chart card (3.1.1). Null section = unnumbered (cover, appendix).
+        this.section = null;
+        this.sub = 0;
+        this.card = 0;
+    }
+
+    /** Numbers a heading (3.1) or chart title (3.1.1) under the current section; unchanged outside a numbered section. */
+    numbered(title, level) {
+        if (this.section == null) return title;
+        if (level === 'sub') {
+            this.sub += 1;
+            this.card = 0;
+            return `${this.section}.${this.sub}  ${title}`;
+        }
+        if (!this.sub) return title;
+        this.card += 1;
+        return `${this.section}.${this.sub}.${this.card}  ${title}`;
     }
 
     newPage() {
@@ -387,7 +404,11 @@ class Report {
         if (this.y + height > BOTTOM) this.newPage();
     }
 
-    sectionTitle(title, subtitle) {
+    sectionTitle(title, subtitle, number = null) {
+        this.section = number;
+        this.sub = 0;
+        this.card = 0;
+        if (number != null) title = `${number}. ${title}`;
         this.ensureSpace(22);
         const { doc } = this;
         doc.setFillColor(...COLOURS.accent);
@@ -402,6 +423,7 @@ class Report {
     }
 
     heading(title, caption) {
+        title = this.numbered(title, 'sub');
         const { doc } = this;
         const captionLines = caption ? doc.setFontSize(8).splitTextToSize(caption, CONTENT_WIDTH) : [];
         this.ensureSpace(10 + captionLines.length * 3.6 + 20);
@@ -433,6 +455,7 @@ class Report {
 
     /** A bordered chart card: title + unit line, then the chart image. */
     chartCard(title, caption, dataUrl, aspect) {
+        title = this.numbered(title, 'card');
         const imageHeight = CONTENT_WIDTH * aspect;
         this.ensureSpace(imageHeight + 16);
         const { doc } = this;
@@ -495,7 +518,8 @@ function drawCover(report, data, variants, corridorLayout) {
     doc.text(doc.splitTextToSize(meta.corridorName, CONTENT_WIDTH), PAGE.margin, 33);
     doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(203, 213, 225);
     doc.text('Does ITS beat the fixed-time baseline? Every scope, every controller variant.', PAGE.margin, 50);
-    doc.text(`Generated ${meta.generatedAt}`, PAGE.margin, 56);
+    const routing = data.batchStamp?.routingMode === 'destination' ? 'Destination routing' : 'Random turning';
+    doc.text(`Generated ${meta.generatedAt} · Vehicle routing: ${routing}`, PAGE.margin, 56);
 
 
     const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
@@ -754,15 +778,15 @@ function distributionTable(report, data, variants) {
 function drawScope(report, data, variants, scope, index) {
     const m = (metric) => `${metric}${scope.suffix}`;
     report.newPage();
-    report.sectionTitle(`${index + 1}. ${scope.label}`, scope.description);
+    report.sectionTitle(scope.label, scope.description, index + 1);
 
     report.heading('Every ITS variant vs fixed-time', 'Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression. Recovery: throughput first - wait-recovery is often cut off by the end of the measured window.');
     comparisonTable(report, data, variants, scope);
 
     const barAspect = 270 / 760;
-    report.chartCard('Average wait time', 'seconds per vehicle · lower is better', barChartImage(data, variants, m('avg_wait_time'), { unit: '', tickSuffix: 's' }), barAspect);
-    report.chartCard('Throughput', 'vehicles cleared per minute · higher is better', barChartImage(data, variants, m('throughput_per_min'), { unit: '' }), barAspect);
-    report.chartCard('Cleared without stopping', '% of vehicles · higher is better', barChartImage(data, variants, m('pct_cleared_without_stop'), { unit: '', tickSuffix: '%' }), barAspect);
+    report.chartCard(`${scope.label} - average wait time`, 'seconds per vehicle · lower is better', barChartImage(data, variants, m('avg_wait_time'), { unit: '', tickSuffix: 's' }), barAspect);
+    report.chartCard(`${scope.label} - throughput`, 'vehicles cleared per minute · higher is better', barChartImage(data, variants, m('throughput_per_min'), { unit: '' }), barAspect);
+    report.chartCard(`${scope.label} - cleared without stopping`, '% of vehicles · higher is better', barChartImage(data, variants, m('pct_cleared_without_stop'), { unit: '', tickSuffix: '%' }), barAspect);
 
     report.heading('Per-condition means', 'Mean across reps, ± 95% confidence half-width on that condition\'s own mean. Recovery = seconds after power returns until the metric is back to its pre-cut level.');
     perConditionTable(report, data, variants, scope);
@@ -776,8 +800,8 @@ function drawScope(report, data, variants, scope, index) {
     const lineAspect = 300 / 760;
     const waitLine = recoveryLineImage(data, variants, m('avg_wait_time'));
     const thruLine = recoveryLineImage(data, variants, m('throughput_per_min'));
-    if (waitLine) report.chartCard('Recovery after a power cut - wait time', 'average wait, s per vehicle · shaded band = outage window, power restored at its right edge', waitLine, lineAspect);
-    if (thruLine) report.chartCard('Recovery after a power cut - throughput', 'vehicles cleared per minute · shaded band = outage window, power restored at its right edge', thruLine, lineAspect);
+    if (waitLine) report.chartCard(`${scope.label} - recovery after a power cut, wait time`, 'average wait, s per vehicle · shaded band = outage window, power restored at its right edge', waitLine, lineAspect);
+    if (thruLine) report.chartCard(`${scope.label} - recovery after a power cut, throughput`, 'vehicles cleared per minute · shaded band = outage window, power restored at its right edge', thruLine, lineAspect);
 
     drawRecoveryTimes(report, variants, scope);
 }
@@ -785,9 +809,9 @@ function drawScope(report, data, variants, scope, index) {
 /** The two time-to-recovery bar charts side by side. */
 function drawRecoveryTimes(report, variants, scope) {
     const charts = [
-        { title: 'Time to recovery - wait time', metric: `time_to_recovery_wait_seconds${scope.suffix}` },
-        { title: 'Time to recovery - throughput', metric: `time_to_recovery_seconds${scope.suffix}` },
-    ].map((chart) => {
+        { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}` },
+        { title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` },
+    ].map((chart) => ({ ...chart, title: report.numbered(chart.title, 'card') })).map((chart) => {
         const loadShedding = variants.filter((v) => v.row('load_shedding'));
         const measured = loadShedding.filter((v) => v.row('load_shedding')[chart.metric] != null);
         return { ...chart, image: recoveryTimeImage(variants, chart.metric), bars: measured.length, missing: loadShedding.filter((v) => !measured.includes(v)) };
@@ -806,7 +830,7 @@ function drawRecoveryTimes(report, variants, scope) {
         doc.setDrawColor(...COLOURS.rule).setLineWidth(0.3);
         doc.roundedRect(x, top, width, imageHeight + 18, 2, 2, 'S');
         doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...COLOURS.ink);
-        doc.text(chart.title, x + 3, top + 5.5);
+        doc.text(doc.splitTextToSize(chart.title, width - 6)[0], x + 3, top + 5.5);
         doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.muted);
         doc.text('seconds back to pre-cut level · lower is better · (recovered/runs)', x + 3, top + 9.5);
         if (chart.image) doc.addImage(chart.image, 'PNG', x + 2, top + 11, width - 4, heightFor(chart.bars), undefined, 'FAST');
@@ -818,13 +842,36 @@ function drawRecoveryTimes(report, variants, scope) {
     report.y = top + imageHeight + 22;
 }
 
+/** Destination routing batches only: trips, their delay over free flow, and how often a trip didn't go to plan. */
+function drawRoutingTrips(report, rows) {
+    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive' };
+    report.heading(
+        'Destination routing - trips',
+        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside.'
+    );
+    report.table({
+        head: [['Controller', 'Power', 'Runs', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)']],
+        body: rows.map((row) => [
+            controllerLabel[row.controller_mode] ?? row.controller_mode,
+            POWER_LABELS[row.power_state] ?? row.power_state,
+            String(row.runs),
+            fmt(row.mean_trip_time),
+            fmt(row.mean_trip_delay),
+            fmt(row.missed_driveways_pct),
+            row.missed_turns_per_run == null ? 'n/a' : Number(row.missed_turns_per_run).toFixed(0),
+            fmt(row.diversion_pct),
+        ]),
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+    });
+}
+
 function drawMethodNotes(report, data) {
     const minRecoveredRuns = data.minRecoveredRuns ?? 10;
     // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
     const warmup = data.batchWarmupLabel
         ? `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`
         : 'a warm-up (not recorded for this batch)';
-    report.sectionTitle('Method notes');
+    report.sectionTitle('Method notes', null, SCOPES.length + 2);
     [
         `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring ${data.batchStamp?.measuredMinutes ?? 40} simulated minutes at dt = 0.1 s.`,
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
@@ -910,8 +957,9 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         SCOPES.forEach((scope, index) => drawScope(report, data, variants, scope, index));
 
         report.newPage();
-        report.sectionTitle(`${SCOPES.length + 1}. Wait-time distribution`, 'Total scope - a mean alone can\'t tell "everyone waits a bit longer" apart from "a few are stranded"');
+        report.sectionTitle('Wait-time distribution', 'Total scope - a mean alone can\'t tell "everyone waits a bit longer" apart from "a few are stranded"', SCOPES.length + 1);
         distributionTable(report, data, variants);
+        if (data.routingMetrics?.length) drawRoutingTrips(report, data.routingMetrics);
         drawMethodNotes(report, data);
         if (data.sensitivityAppendix) drawSensitivityAppendix(report, data.sensitivityAppendix);
 

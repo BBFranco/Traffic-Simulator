@@ -9,6 +9,7 @@ use App\Models\SimulationRunRecoveryTick;
 use App\Models\TrafficCount;
 use App\Support\ConfidenceInterval;
 use App\Support\CorridorRepository;
+use App\Support\RoutingMetrics;
 use App\Support\SeedPairedDeltas;
 use App\Support\SensitivityAppendix;
 use Illuminate\Database\Eloquent\Builder;
@@ -82,6 +83,7 @@ class ResultsController extends Controller
         private readonly CorridorRepository $corridors,
         private readonly SeedPairedDeltas $seedPairedDeltas,
         private readonly SensitivityAppendix $sensitivityAppendix,
+        private readonly RoutingMetrics $routingMetrics,
     ) {}
 
     public function index(): View
@@ -112,6 +114,7 @@ class ResultsController extends Controller
                 'batchStamp' => $payload['batchStamp'],
                 'sensitivityAppendix' => $payload['sensitivityAppendix'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
+                'routingMetrics' => $payload['routingMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
@@ -155,6 +158,7 @@ class ResultsController extends Controller
             'batchStamp' => $payload['batchStamp'],
             'sensitivityAppendix' => $payload['sensitivityAppendix'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
+            'routingMetrics' => $payload['routingMetrics'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
                 'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
@@ -163,6 +167,7 @@ class ResultsController extends Controller
                 'segmentedRows' => view('results.partials.segmented-rows', $viewData)->render(),
                 'recentRunsRows' => view('results.partials.recent-runs-rows', $viewData)->render(),
                 'itsTargetOptions' => view('results.partials.its-target-options', $viewData)->render(),
+                'routingMetrics' => view('results.partials.routing-metrics', $viewData)->render(),
             ],
         ]);
     }
@@ -617,6 +622,7 @@ class ResultsController extends Controller
             'batchStamp' => $this->batchStamp((clone $query)),
             'sensitivityAppendix' => $this->sensitivityAppendix->forCorridor($corridorFilter, $routingMode, $batchIds),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
+            'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
         ];
     }
 
@@ -700,9 +706,6 @@ class ResultsController extends Controller
             : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s";
         $outageEndTicks = $config['powerOutageEndTick'] ?? null;
         $waitAccounting = $config['waitAccounting'] ?? 'turn-reset (pre-2026-10-04)';
-        $timing = $minutes($config['warmupTicks'] ?? null) !== null
-            ? "{$minutes($config['warmupTicks'])} min warm-up + {$minutes($config['durationTicks'] ?? null)} min measured"
-            : null;
 
         return [
             'label' => collect([
@@ -711,7 +714,6 @@ class ResultsController extends Controller
                 $controllerLabel,
                 RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
                 isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,
-                $timing,
                 $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,
             ])->filter()->implode(' · '),
             'commit' => $build['commit'] ?? null,

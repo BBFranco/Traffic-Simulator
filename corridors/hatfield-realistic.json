@@ -47,12 +47,12 @@
             "from": "conn_festival_south:fwd"
         },
         {
-            "to": "conn_duxbury_west:fwd",
+            "to": "duxbury_west:fwd",
             "from": "conn_hilda_south:fwd"
         },
         {
             "to": "conn_hilda_south:rev",
-            "from": "conn_duxbury_west:rev"
+            "from": "duxbury_west:rev"
         },
         {
             "to": "conn_duxbury_east:fwd",
@@ -72,7 +72,7 @@
         },
         {
             "to": "conn_lunnon_w_on:fwd",
-            "from": "conn_lunnon_west:fwd"
+            "from": "lunnon_west:fwd"
         },
         {
             "to": "conn_jan_shoba:rev",
@@ -86,7 +86,7 @@
             "fromAtM": 483.1
         },
         {
-            "to": "conn_lunnon_west:rev",
+            "to": "lunnon_west:rev",
             "from": "conn_lunnon_w_off:fwd"
         },
         {
@@ -188,10 +188,10 @@
         },
         {
             "to": "duxbury:fwd",
-            "from": "conn_duxbury_west:fwd"
+            "from": "duxbury_west:fwd"
         },
         {
-            "to": "conn_duxbury_west:rev",
+            "to": "duxbury_west:rev",
             "from": "duxbury:rev"
         },
         {
@@ -208,7 +208,7 @@
         {
             "from": "lynnwood",
             "to": "slip_lynnwood_duxbury_eastbound:fwd",
-            "fromAtM": 788.7,
+            "fromAtM": 888.7,
             "slip": true
         },
         {
@@ -381,7 +381,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 0,
-                "yM": 0
+                "yM": -61
             },
             "direction": "eastbound",
             "shortName": "Stanza Bopape",
@@ -530,7 +530,7 @@
             "oneWay": true,
             "origin": {
                 "xM": 980,
-                "yM": 275
+                "yM": 189
             },
             "direction": "westbound",
             "shortName": "Pretorius",
@@ -1185,7 +1185,7 @@
                 {
                     "id": "lunnon_dyer",
                     "name": "Lunnon & Dyer",
-                    "control": "stop",
+                    "control": "allWayStop",
                     "laneUse": {
                         "eastbound": [
                             "all"
@@ -1230,8 +1230,8 @@
             },
             "oneWay": false,
             "origin": {
-                "xM": 285,
-                "yM": 2568.4
+                "xM": 68.5,
+                "yM": 2443.4
             },
             "direction": "eastbound",
             "shortName": "Lynnwood",
@@ -1239,6 +1239,35 @@
             "exitLengthM": 250,
             "medianWidthM": 3.5,
             "intersections": [
+                {
+                    "id": "lynnwood_herold",
+                    "name": "Lynnwood & Herold",
+                    "laneUse": {
+                        "eastbound": [
+                            "left_straight",
+                            "straight"
+                        ],
+                        "westbound": [
+                            "straight",
+                            "straight"
+                        ]
+                    },
+                    "turnLanes": {
+                        "westbound": {
+                            "right": {
+                                "laneUse": "right",
+                                "lengthM": 40
+                            }
+                        }
+                    },
+                    "turnPhases": [
+                        {
+                            "direction": "westbound",
+                            "movement": "right"
+                        }
+                    ],
+                    "distanceToNextM": 250
+                },
                 {
                     "id": "lynnwood_janshoba",
                     "name": "Lynnwood & Jan Shoba",
@@ -1389,7 +1418,7 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 250
+            "approachLengthM": 100
         },
         {
             "id": "dyer_mall",
@@ -1430,6 +1459,86 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 150
+        },
+        {
+            "id": "duxbury_west",
+            "mode": "fixed",
+            "name": "Duxbury Road",
+            "lanes": 2,
+            "scope": "side",
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "oneWay": false,
+            "origin": {
+                "xM": 368.5,
+                "yM": 1923.8
+            },
+            "direction": "eastbound",
+            "shortName": "Duxbury",
+            "headingDeg": 120,
+            "exitLengthM": 150,
+            "targetSpeedKph": 60,
+            "approachLengthM": 103,
+            "intersections": [
+                {
+                    "id": "herold_duxbury",
+                    "name": "Herold & Duxbury",
+                    "control": "roundabout",
+                    "laneUse": {
+                        "eastbound": [
+                            "all"
+                        ],
+                        "westbound": [
+                            "all"
+                        ]
+                    },
+                    "roundaboutDiameterM": 36
+                }
+            ]
+        },
+        {
+            "id": "lunnon_west",
+            "mode": "fixed",
+            "name": "Lunnon Road",
+            "lanes": 2,
+            "scope": "side",
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "oneWay": false,
+            "origin": {
+                "xM": 228.5,
+                "yM": 2166.3
+            },
+            "direction": "eastbound",
+            "shortName": "Lunnon",
+            "headingDeg": 120,
+            "exitLengthM": 225,
+            "targetSpeedKph": 60,
+            "approachLengthM": 150,
+            "intersections": [
+                {
+                    "id": "herold_lunnon",
+                    "name": "Herold & Lunnon",
+                    "control": "roundabout",
+                    "laneUse": {
+                        "eastbound": [
+                            "all"
+                        ],
+                        "westbound": [
+                            "all"
+                        ]
+                    },
+                    "roundaboutDiameterM": 36
+                }
+            ]
         }
     ],
     "sortOrder": 2,
@@ -2258,36 +2367,6 @@
             ]
         },
         {
-            "id": "conn_duxbury_west",
-            "mode": "fixed",
-            "name": "Duxbury",
-            "curve": [
-                {
-                    "xM": 279.29,
-                    "yM": 1872.3
-                },
-                {
-                    "xM": 388.85,
-                    "yM": 1935.55
-                },
-                {
-                    "xM": 498.4,
-                    "yM": 1998.8
-                }
-            ],
-            "lanes": 2,
-            "demand": {
-                "fluctuationPeriodS": 300,
-                "spawnRatePerLanePerMinMax": 3,
-                "spawnRatePerLanePerMinMin": 1,
-                "saturationFlowPerLanePerHour": 1250
-            },
-            "twoWay": true,
-            "turnChance": 0,
-            "crossChance": 0,
-            "targetSpeedKph": 60
-        },
-        {
             "id": "conn_duxbury_east",
             "mode": "fixed",
             "name": "Duxbury",
@@ -2464,36 +2543,6 @@
             "linksArterialNodes": [
                 "lynnwood_duxbury"
             ]
-        },
-        {
-            "id": "conn_lunnon_west",
-            "mode": "fixed",
-            "name": "Lunnon",
-            "curve": [
-                {
-                    "xM": 228.5,
-                    "yM": 2166.3
-                },
-                {
-                    "xM": 325.9,
-                    "yM": 2222.5
-                },
-                {
-                    "xM": 423.3,
-                    "yM": 2278.8
-                }
-            ],
-            "lanes": 2,
-            "demand": {
-                "fluctuationPeriodS": 300,
-                "spawnRatePerLanePerMinMax": 3,
-                "spawnRatePerLanePerMinMin": 1,
-                "saturationFlowPerLanePerHour": 1250
-            },
-            "twoWay": true,
-            "turnChance": 0,
-            "crossChance": 0,
-            "targetSpeedKph": 60
         },
         {
             "id": "conn_lunnon_w_on",
@@ -3080,6 +3129,46 @@
                     }
                 }
             }
+        },
+        {
+            "id": "conn_herold",
+            "mode": "fixed",
+            "name": "Herold Street",
+            "lanes": 2,
+            "demand": {
+                "fluctuationPeriodS": 300,
+                "spawnRatePerLanePerMinMax": 3,
+                "spawnRatePerLanePerMinMin": 1,
+                "saturationFlowPerLanePerHour": 1250
+            },
+            "twoWay": true,
+            "stubStartM": 0,
+            "stubEndM": 0,
+            "turnChance": 0.1,
+            "crossChance": 0.1,
+            "targetSpeedKph": 60,
+            "linksArterialNodes": [
+                "herold_duxbury",
+                "herold_lunnon",
+                "lynnwood_herold"
+            ],
+            "laneUse": {
+                "lynnwood_herold": {
+                    "southbound": [
+                        "right"
+                    ]
+                }
+            },
+            "turnLanes": {
+                "lynnwood_herold": {
+                    "southbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 40
+                        }
+                    }
+                }
+            }
         }
     ],
     "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (a side street: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, 2 + 2 divided to Grosvenor, then 2 + 2 to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - Festival and Hilda narrow to 1 + 1 two-way south of Burnett, Grosvenor south of Arcadia - and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data.",
@@ -3106,6 +3195,10 @@
         "crossableMedianRoads": [
             "conn_grosvenor_south"
         ],
+        "departures": {
+            "share": 1,
+            "holdTotal": true
+        },
         "blocks": [
             {
                 "id": "STZ-1",
@@ -3264,7 +3357,7 @@
             },
             {
                 "id": "DUX-1",
-                "from": "conn_duxbury_west:start",
+                "from": "herold_duxbury",
                 "to": "duxbury_janshoba",
                 "tier": 2
             },
@@ -3521,6 +3614,42 @@
                 "from": "duxbury_janshoba",
                 "to": "lynnwood_janshoba",
                 "tier": 4
+            },
+            {
+                "id": "DXW-1",
+                "from": "duxbury_west:start",
+                "to": "herold_duxbury",
+                "tier": 2
+            },
+            {
+                "id": "LNW-1",
+                "from": "herold_lunnon",
+                "to": "lunnon_west:end",
+                "tier": 2
+            },
+            {
+                "id": "HER-1",
+                "from": "herold_duxbury",
+                "to": "herold_lunnon",
+                "tier": 2
+            },
+            {
+                "id": "HER-2",
+                "from": "herold_lunnon",
+                "to": "lynnwood_herold",
+                "tier": 2
+            },
+            {
+                "id": "LYN-0",
+                "from": "lynnwood_herold",
+                "to": "lynnwood_janshoba",
+                "tier": 4
+            },
+            {
+                "id": "LNW-0",
+                "from": "lunnon_west:start",
+                "to": "herold_lunnon",
+                "tier": 2
             }
         ]
     }

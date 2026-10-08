@@ -35,6 +35,10 @@ const ROAD_END_CLEAR_M = 10;
 /** Closest two driveways on one side may be (m). */
 const MIN_SPACING_M = 15;
 
+/** A driveway's drawn size: its width along the kerb, and how far it runs back from it - the depth a car's drive in covers too (m). */
+export const DRIVEWAY_WIDTH_M = 4;
+export const DRIVEWAY_DEPTH_M = 8;
+
 export function drivewaysForTier(tier) {
     return tier <= 2 ? 1 : tier < 4 ? 2 : 3;
 }
@@ -55,18 +59,22 @@ function endClearM(gate, arriving) {
     return setbackM + Math.max(STOP_LINE_CLEAR_M, pocketM ? pocketM + TURN_LANE_TAPER_M + POCKET_MARGIN_M : 0);
 }
 
-/** Merge, peel-off and slip-road points along a direction's pieces, in that direction's own along-block distance. */
+/**
+ * Merge, peel-off and slip-road points along a direction's pieces, in that direction's own along-block distance -
+ * plus where one road hands over to the next, since a car only lines up for its driveway once on the driveway's road.
+ */
 function joinPointsAlong(engine, pieces) {
     const points = [];
     let offsetM = 0;
-    for (const piece of pieces) {
+    pieces.forEach((piece, i) => {
         const atPoints = [
             ...(engine.divergesFrom.get(piece.roadKey) ?? []).map((j) => j.fromAtM),
             ...(engine.mergesInto.get(piece.roadKey) ?? []).map((j) => j.toAtM),
         ];
         for (const atM of atPoints) if (atM >= piece.fromM && atM <= piece.toM) points.push(offsetM + atM - piece.fromM);
         offsetM += piece.toM - piece.fromM;
-    }
+        if (i < pieces.length - 1) points.push(offsetM);
+    });
     return points;
 }
 
@@ -163,6 +171,7 @@ export function buildDriveways(engine, graph, blocks, routing, { countForTier = 
                     alongM: u,
                     x: point.x + outward.x * halfWidthM,
                     y: point.y + outward.y * halfWidthM,
+                    outward,
                     headingDeg: (Math.atan2(outward.x, -outward.y) * 180) / Math.PI,
                 });
             });
@@ -176,7 +185,19 @@ export function buildDriveways(engine, graph, blocks, routing, { countForTier = 
                 .filter((w) => w.side === kerb || !twoWay || !median)
                 .map((w) => {
                     const alongM = k === 0 ? w.alongM : L - w.alongM;
-                    return { drivewayId: w.id, ...pointAlong(d.pieces, alongM), alongM, side: w.side === kerb ? 'left' : 'right', crossesOncoming: twoWay && w.side !== kerb };
+                    const at = pointAlong(d.pieces, alongM);
+                    const crossesOncoming = twoWay && w.side !== kerb;
+                    return {
+                        drivewayId: w.id,
+                        ...at,
+                        /** Where the block starts on this driveway's road - a car is on its way to the driveway from here. */
+                        fromM: d.pieces.find((p) => p.roadKey === at.roadKey).fromM,
+                        alongM,
+                        side: w.side === kerb ? 'left' : 'right',
+                        crossesOncoming,
+                        /** The same spot on the other direction's road, where a car turning across has to find a gap. */
+                        oncoming: crossesOncoming ? pointAlong(block.dirs[1 - k].pieces, L - alongM) : null,
+                    };
                 });
             dirs.set(d.id, { id: d.id, blockId: block.id, reach, usableM: block.usableM, weight: 0 });
         }

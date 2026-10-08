@@ -140,7 +140,7 @@ export function buildRoutingGraph(engine, nodePenaltyS = DEFAULT_NODE_PENALTY_S,
     const addArc = (from, fields, toRoad, entryM, penaltyS = 0) => {
         const k = stateAt(toRoad, entryM);
         const { runM, runS } = runTo(toRoad, entryM, k);
-        arcs.push({ from, to: stateId(toRoad.key, k), ...fields, entryM, costS: penaltyS + runS, lengthM: runM });
+        arcs.push({ from, to: stateId(toRoad.key, k), ...fields, entryM, costS: penaltyS + runS, runS, lengthM: runM });
     };
 
     for (const road of roads.values()) {
@@ -170,6 +170,11 @@ export function buildRoutingGraph(engine, nodePenaltyS = DEFAULT_NODE_PENALTY_S,
                 }
                 addArc(from, { kind: 'move', nodeId: gate.node.id, movement: option.movement, option }, toRoad, option.entryDistanceM, penaltyS + (turnPenaltyS[option.movement] ?? 0));
             }
+            // Round a roundabout and back the way it came (engine.js's _uturnOption()).
+            const { uturnOption } = gate;
+            if (uturnOption && roads.has(optionRoadKey(uturnOption))) {
+                addArc(from, { kind: 'move', nodeId: gate.node.id, movement: 'uturn', option: uturnOption }, roads.get(optionRoadKey(uturnOption)), uturnOption.entryDistanceM, penaltyS + (turnPenaltyS.uturn ?? 0));
+            }
         });
 
         // The road's end: onto the joined road, or out of the network.
@@ -178,7 +183,7 @@ export function buildRoutingGraph(engine, nodePenaltyS = DEFAULT_NODE_PENALTY_S,
         if (join) {
             addArc(end, { kind: 'join', joinIndex: joins.findIndex((j) => j.from.key === road.key && j.fromAtM == null) }, roads.get(join.to.key), join.toAtM ?? 0);
         } else if (road.lengthM - (road.gates.at(-1)?.centreDistanceM ?? 0) >= MIN_EXIT_RUN_M) {
-            arcs.push({ from: end, to: `exit:${road.key}`, kind: 'exit', costS: 0, lengthM: 0 });
+            arcs.push({ from: end, to: `exit:${road.key}`, kind: 'exit', costS: 0, runS: 0, lengthM: 0 });
         }
     }
 

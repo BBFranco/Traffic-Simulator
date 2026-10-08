@@ -939,6 +939,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
         setHtml('batch-summary', fresh.html.batchSummary);
         setHtml('research-question-cards', fresh.html.researchQuestionCards);
         setHtml('metric-section-groups', fresh.html.metricSectionGroups);
+        setHtml('routing-metrics', fresh.html.routingMetrics);
 
         const perConditionBody = document.querySelector('#per-condition-table tbody');
         if (perConditionBody) perConditionBody.innerHTML = fresh.html.perConditionRows;

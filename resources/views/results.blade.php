@@ -256,6 +256,10 @@
         </details>
     </section>
 
+    <div id="routing-metrics">
+        @include('results.partials.routing-metrics')
+    </div>
+
     {{-- ============================================ segmented + distribution --}}
     <section class="mb-8">
         <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Load shedding, segmented</h2>
