@@ -76,6 +76,9 @@ const CROSS_DECISION_WINDOW_M = 5;
 /** A car joining a road picks its lane for a junction this close along it (m) - see _joinTargetSlot(). */
 const JOIN_PLAN_REACH_M = 150;
 /** How far before the end of a joined road a car starts following traffic (and the signal) on the road it joins. */
+/** A car stopped within this of the end of its road is waiting to join the next (_joinObstacle(), _handOff()). */
+const JOIN_HOLD_REACH_M = 2;
+const JOIN_HOLD_SPEED_MPS = 0.5;
 const JOIN_LOOKAHEAD_M = 150;
 /** A joined road whose first stop line sits within this of its start is approached from the road before it - that road's cars queue for its signal. */
 const JOIN_FEED_REACH_M = 5;
@@ -3241,6 +3244,10 @@ export class SimulationEngine {
 
         const slot = this._joinTargetSlot(join, car);
         if (join.toAtM != null) return this._mergeObstacle(join, car, join.to.lanes()[slot]);
+        // Stood at the end of its road, it is waiting its turn to join even before it is past the end: the cars
+        // beside it heading for the same lane let it in first (_handOff()). Otherwise a lane that keeps the joined
+        // lane's tail right at the entry starves it for good (Jan Shoba's southbound merge after an outage).
+        if (offsetM - car.distanceM < JOIN_HOLD_REACH_M && car.speedMps < JOIN_HOLD_SPEED_MPS) car.joinHeldSinceS ??= this.simTimeS;
         const tail = lastCarIn(join.to.lanes()[slot]);
         const leader = tail ? { distanceM: offsetM + tail.distanceM, speedMps: tail.speedMps, lengthM: tail.lengthM } : null;
         return nearestAhead(leader, this._joinSignalObstacle(join, car));

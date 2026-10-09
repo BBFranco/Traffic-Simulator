@@ -531,11 +531,20 @@ function drawCover(report, data, variants, corridorLayout) {
     if (data.lockupLabel) {
         doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
         const warning = doc.splitTextToSize(
-            `Lockup in this batch: the lockup watch found a vehicle that stood still for 5 minutes or more, or vehicles waiting on each other in a cycle for a minute - a simulation fault, not traffic. Locked runs: ${data.lockupLabel}.`,
+            `Lockup in this batch: the lockup watch found a vehicle that stood still for 5 minutes or more with the whole queue ahead of it stuck too, or vehicles waiting on each other in a cycle for a minute - a simulation fault, not traffic. Locked runs: ${data.lockupLabel}.`,
             CONTENT_WIDTH
         );
         doc.text(warning, PAGE.margin, report.y);
         report.y += warning.length * 3.6 + 3;
+    }
+    if (data.starvedLabel) {
+        doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...COLOURS.ink);
+        const note = doc.splitTextToSize(
+            `Starved approaches: a vehicle stood still for 5 minutes or more while the queue ahead of it still moved - an approach that couldn't get into traffic backed up past it. Saturation, not a fault; these runs are in the results. Runs: ${data.starvedLabel}.`,
+            CONTENT_WIDTH
+        );
+        doc.text(note, PAGE.margin, report.y);
+        report.y += note.length * 3.6 + 3;
     }
     if (data.hasNonStationaryBatch) {
         doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);

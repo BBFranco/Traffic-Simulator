@@ -111,9 +111,16 @@
 
     <div id="lockup-banner" class="mb-6 rounded-lg border border-rose-300 bg-rose-50 p-4 text-[12px] leading-relaxed text-rose-900 dark:border-rose-500/25 dark:bg-rose-500/5 dark:text-rose-200/85 {{ $lockupLabel ? '' : 'hidden' }}">
         <strong class="font-semibold">Lockup in this batch.</strong>
-        The lockup watch found a vehicle that stood still for 5 minutes or more, or vehicles waiting on each other in a cycle for a minute - a simulation fault,
+        The lockup watch found a vehicle that stood still for 5 minutes or more with the whole queue ahead of it stuck too, or vehicles waiting on each other in a cycle for a minute - a simulation fault,
         not traffic. Fix it and rerun before reading these results.
         Locked runs: <span id="lockup-label">{{ $lockupLabel }}</span>.
+    </div>
+
+    <div id="starved-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85 {{ $starvedLabel ? '' : 'hidden' }}">
+        <strong class="font-semibold">Starved approaches.</strong>
+        In these runs a vehicle stood still for 5 minutes or more while the queue ahead of it still moved - an approach that
+        couldn't get into traffic backed up past it. That is saturation, not a fault, and it is in the results.
+        Runs: <span id="starved-label">{{ $starvedLabel }}</span>.
     </div>
 
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">

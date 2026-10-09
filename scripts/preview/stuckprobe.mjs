@@ -73,7 +73,7 @@ for (let tick = 0; tick < warm + duration; tick += 1) {
             cars.push({ car, stuckS: now - since });
         }
         const stuck = cars.filter((c) => c.stuckS > 120).length;
-        console.log(`\n== measured ${(m * dt).toFixed(0)} s  power ${e.snapshot().powerState}  stopped ${cars.length}  stopped>120s ${stuck}  departuresWaiting ${e.departures.reduce((s, d) => s + d.waiting.length, 0)}  (${((Date.now() - start) / 1000).toFixed(0)} s wall)`);
+        console.log(`\n== measured ${(m * dt).toFixed(0)} s  power ${e.snapshot().powerState}  stopped ${cars.length}  stopped>120s ${stuck}  departuresWaiting ${(e.departures ?? []).reduce((s, d) => s + d.waiting.length, 0)}  (${((Date.now() - start) / 1000).toFixed(0)} s wall)`);
         console.log('   most stopped roads:', [...byRoad].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k}=${n}`).join(' | '));
         if (stuck) for (const { car, stuckS } of cars.sort((a, b) => b.stuckS - a.stuckS).slice(0, top)) {
             console.log(`   car ${car.id} stopped ${stuckS.toFixed(0)} s  ${where(car)}  wait ${car.totalWaitS.toFixed(0)}  ${car.trip ? `trip -> ${car.trip.destId}` : ''}`);

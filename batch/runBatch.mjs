@@ -186,9 +186,9 @@ function withSweepSettings(config, args) {
     return config;
 }
 
-/** The junction(s) a lockup is at: the waits-on cycle's, else where the longest standstill was. */
+/** The junction(s) a lockup is at: the waits-on cycle's, else where the stuck queue was. */
 function lockupJunctions(lockup) {
-    return lockup.firstCycle ? lockup.firstCycle.nodeIds.join(', ') : lockup.longestStill?.nodeId ?? 'unknown junction';
+    return lockup.firstCycle ? lockup.firstCycle.nodeIds.join(', ') : lockup.locked?.nodeId ?? 'unknown junction';
 }
 
 async function main() {
@@ -214,6 +214,7 @@ async function main() {
     let completed = 0;
     let mismatches = 0;
     const lockups = [];
+    const starved = [];
     const pendingPosts = [];
 
     console.log(`Running ${matrix.length} conditions x ${args.reps} reps = ${totalRuns} runs against "${args.corridor}"...`);
@@ -253,6 +254,9 @@ async function main() {
             if (lockup.isLockup) {
                 lockups.push(`${condition.key}/${seed} at ${lockupJunctions(lockup)}`);
                 console.warn(`  !!! LOCKUP on ${condition.key}, seed ${seed}, at ${lockupJunctions(lockup)}: ${JSON.stringify(lockup)}`);
+            } else if (lockup.starved) {
+                // Saturation, not a fault: something ahead still moved. Listed at the end, doesn't fail the batch.
+                starved.push(`${condition.key}/${seed} at ${lockup.starved.nodeId} (${lockup.starved.seconds} s)`);
             }
 
             if (args.post) {
@@ -298,6 +302,9 @@ async function main() {
         await postBatch(args.post, pendingPosts);
     }
 
+    if (starved.length) {
+        console.log(`\n${starved.length}/${totalRuns} runs had a starved approach (stood 5+ min behind a queue that still moved - saturation):\n  ${starved.join('\n  ')}`);
+    }
     if (lockups.length) {
         console.warn(`\n!!! ${lockups.length}/${totalRuns} runs locked up - do not read this batch until they are fixed:\n  ${lockups.join('\n  ')}`);
         process.exitCode = 1;

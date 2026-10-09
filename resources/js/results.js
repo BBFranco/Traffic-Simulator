@@ -936,6 +936,9 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     document.getElementById('lockup-banner')?.classList.toggle('hidden', !fresh.lockupLabel);
     const lockupLabel = document.getElementById('lockup-label');
     if (lockupLabel) lockupLabel.textContent = fresh.lockupLabel ?? '';
+    document.getElementById('starved-banner')?.classList.toggle('hidden', !fresh.starvedLabel);
+    const starvedLabel = document.getElementById('starved-label');
+    if (starvedLabel) starvedLabel.textContent = fresh.starvedLabel ?? '';
 
     if (fresh.html) {
         const setHtml = (id, html) => {

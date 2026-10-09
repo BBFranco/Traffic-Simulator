@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\SimulationRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -60,6 +59,19 @@ class ResultsLockupBannerTest extends TestCase
         $this->actingAs(User::factory()->create())
             ->getJson(route('results.data', ['routing' => 'random']))
             ->assertOk()
-            ->assertJsonPath('lockupLabel', null);
+            ->assertJsonPath('lockupLabel', null)
+            ->assertJsonPath('starvedLabel', null);
+    }
+
+    public function test_a_starved_approach_is_listed_but_not_a_lockup(): void
+    {
+        $starved = ['seconds' => 518, 'carId' => 11035, 'nodeId' => 'lynnwood_herold', 'place' => 'Herold Street, lane 0, 587 m', 'atS' => 4666];
+        $this->storeRun((string) Str::uuid(), 20270129, ['longestStillS' => 518, 'locked' => null, 'starved' => $starved, 'cycles' => 0, 'firstCycle' => null, 'isLockup' => false]);
+
+        $this->actingAs(User::factory()->create())
+            ->getJson(route('results.data', ['routing' => 'random']))
+            ->assertOk()
+            ->assertJsonPath('lockupLabel', null)
+            ->assertJsonPath('starvedLabel', 'Adaptive (camera), load shedding, seed 20270129 at lynnwood_herold (518 s)');
     }
 }

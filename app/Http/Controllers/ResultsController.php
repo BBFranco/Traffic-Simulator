@@ -116,6 +116,7 @@ class ResultsController extends Controller
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
                 'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
                 'lockupLabel' => $payload['lockupLabel'],
+                'starvedLabel' => $payload['starvedLabel'],
                 'routingMetrics' => $payload['routingMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
@@ -162,6 +163,7 @@ class ResultsController extends Controller
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
             'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
             'lockupLabel' => $payload['lockupLabel'],
+            'starvedLabel' => $payload['starvedLabel'],
             'routingMetrics' => $payload['routingMetrics'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
@@ -628,6 +630,7 @@ class ResultsController extends Controller
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
             'warmupDriftingLabel' => $this->warmupDriftingLabel((clone $query)),
             'lockupLabel' => $this->lockupLabel((clone $query)),
+            'starvedLabel' => $this->starvedLabel((clone $query)),
             'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
         ];
     }
@@ -695,21 +698,52 @@ class ResultsController extends Controller
     private function lockupLabel(Builder $query): ?string
     {
         $lockedRuns = $query->where('diagnostics->lockup->isLockup', true)->orderBy('id')->get(['controller_mode', 'sensor_mode', 'power_state', 'seed', 'diagnostics']);
-        if ($lockedRuns->isEmpty()) {
+
+        return $this->flaggedRunsLabel($lockedRuns, function (array $lockup): string {
+            if (isset($lockup['firstCycle'])) {
+                return implode(', ', $lockup['firstCycle']['nodeIds']);
+            }
+
+            // Batches from before the watch split locked from starved only have the longest standstill.
+            return $lockup['locked']['nodeId'] ?? $lockup['longestStill']['nodeId'] ?? 'unknown junction';
+        });
+    }
+
+    /**
+     * The runs where a vehicle stood for minutes behind a queue that still moved - saturation the lockup watch reports
+     * but doesn't fail the batch on, e.g. "Green wave, load shedding, seed 20270129 at lynnwood_herold (518 s)".
+     *
+     * @param  Builder<SimulationRun>  $query
+     */
+    private function starvedLabel(Builder $query): ?string
+    {
+        $starvedRuns = $query->where('diagnostics->lockup->isLockup', false)
+            ->whereNotNull('diagnostics->lockup->starved')
+            ->orderBy('id')
+            ->get(['controller_mode', 'sensor_mode', 'power_state', 'seed', 'diagnostics']);
+
+        return $this->flaggedRunsLabel($starvedRuns, fn (array $lockup): string => "{$lockup['starved']['nodeId']} ({$lockup['starved']['seconds']} s)");
+    }
+
+    /**
+     * @param  Collection<int, SimulationRun>  $runs
+     * @param  callable(array): string  $where  the junction(s) a run's lockup record points at
+     */
+    private function flaggedRunsLabel(Collection $runs, callable $where): ?string
+    {
+        if ($runs->isEmpty()) {
             return null;
         }
 
         $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
         $shown = 5;
-        $label = $lockedRuns->take($shown)->map(function (SimulationRun $run) use ($modeLabels): string {
-            $lockup = $run->diagnostics['lockup'];
-            $junctions = isset($lockup['firstCycle']) ? implode(', ', $lockup['firstCycle']['nodeIds']) : ($lockup['longestStill']['nodeId'] ?? 'unknown junction');
+        $label = $runs->take($shown)->map(function (SimulationRun $run) use ($modeLabels, $where): string {
             $sensor = $run->controller_mode === 'adaptive' ? " ({$run->sensor_mode})" : '';
 
-            return sprintf('%s%s, %s, seed %d at %s', $modeLabels[$run->controller_mode] ?? $run->controller_mode, $sensor, str_replace('_', ' ', $run->power_state), $run->seed, $junctions);
+            return sprintf('%s%s, %s, seed %d at %s', $modeLabels[$run->controller_mode] ?? $run->controller_mode, $sensor, str_replace('_', ' ', $run->power_state), $run->seed, $where($run->diagnostics['lockup']));
         })->join('; ');
 
-        return $lockedRuns->count() > $shown ? "{$label}; and ".($lockedRuns->count() - $shown).' more' : $label;
+        return $runs->count() > $shown ? "{$label}; and ".($runs->count() - $shown).' more' : $label;
     }
 
     /**
