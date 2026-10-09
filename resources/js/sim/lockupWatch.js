@@ -46,7 +46,7 @@ const ROUNDABOUT_EXIT_RUN_M = 3;
 const SPAWN_CLEARANCE_M = 4;
 /** A front car this close to the end of its road is waiting on the lane it joins. */
 const JOIN_WAIT_REACH_M = 10;
-/** A held turner waits on whichever car is within this of where it would land. */
+/** A held turner waits on the nearest car from this far short of where it would land, onwards. */
 const LANDING_REACH_M = 20;
 const MAX_CHAIN = 500;
 
@@ -151,11 +151,14 @@ export class LockupWatch {
                 : option.connectorId
                   ? engine.connectorState.get(option.connectorId)?.[option.dirKey]?.lanes
                   : null;
+            // The nearest car from just short of the landing onwards, however far down the road: with the landing itself
+            // clear for a moment, it is still that queue the turner can't get into (Herold at Lynnwood) - stopping the
+            // chain at the turner would read a starved approach as stuck.
             let best = null;
             for (const lane of lanes ?? []) {
                 for (const other of lane.cars) {
-                    const gap = Math.abs(other.distanceM - option.entryDistanceM);
-                    if (gap < LANDING_REACH_M && (!best || gap < best.gap)) best = { gap, car: other };
+                    const beyond = other.distanceM - (option.entryDistanceM - LANDING_REACH_M);
+                    if (beyond >= 0 && (!best || beyond < best.beyond)) best = { beyond, car: other };
                 }
             }
             if (best) return best.car;
