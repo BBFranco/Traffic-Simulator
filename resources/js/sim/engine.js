@@ -51,15 +51,13 @@ import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, 
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
 import { LockupWatch } from './lockupWatch.js';
+import { ROLLING_WINDOW_S, avgWaitNow, rollingAvgWait, rollingThroughputPerMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Upstream window counted as "queued" for the stats-footer chips. */
 const QUEUE_WINDOW_M = 150;
 /** Matches the yellow/all-red constants every controller (fixedTime/adaptive/greenWave) times its transition on - only used here to caption the hover tooltip's countdown. */
 const YELLOW_S = 3;
 const ALL_RED_S = 1;
-/** Wait-time/throughput rolling window - also makes "cleared in the window" equal cleared-per-minute. */
-const ROLLING_WINDOW_S = 60;
-export const CHART_SAMPLE_INTERVAL_S = 0.5;
 /**
  * How a vehicle's wait is counted - stamped on every batch run so results under different
  * accounting are never compared as like for like. 'trip-carried-v1': a turn no longer resets it
@@ -295,6 +293,10 @@ function carryTripStats(from, to) {
     to.waitByKey = from.waitByKey;
     to.stoppedKeys = from.stoppedKeys;
     to.waitSeenS = from.waitSeenS;
+    to.stopCount = from.stopCount;
+    to.inStop = from.inStop;
+    // Stops before the turn were on the approach it left (metrics/liveMetrics.js's arrivals on green).
+    to.stopMark = from.stopCount;
     // Wait in the junction box belongs to the road it is turning off.
     to.turnFromKey = from.road.statsKey;
     return to;
@@ -668,6 +670,8 @@ export class SimulationEngine {
         this.lockupWatch = new LockupWatch(this);
         /** Per-junction wait/throughput for the Simulator's hover tooltip - off in batch runs (setNodeStatsTracking()). */
         this.trackNodeStats = false;
+        /** The live statistics panel's collector (metrics/liveMetrics.js) - null in batch runs (setLiveMetrics()). */
+        this.liveMetrics = null;
 
         for (const arterial of layout.arterials) {
             const infos = arterial.intersections.map((node) => {
@@ -1134,8 +1138,6 @@ export class SimulationEngine {
                     recentClears: [],
                     clearedByNode: Object.fromEntries(arterial.intersections.map((node) => [node.id, 0])),
                 },
-                chartSamples: [],
-                chartAccumS: 0,
             });
         }
 
@@ -1394,7 +1396,6 @@ export class SimulationEngine {
         this._pruneRolling(this.totalStats);
         this._pruneRolling(this.arterialScopeStats);
 
-        this._sampleChart(dt);
         this.lockupWatch.observe();
     }
 
@@ -1492,7 +1493,6 @@ export class SimulationEngine {
             const state = this.arterialState.get(arterial.id);
             const liveCars = this.carriagewaysByArterial.get(arterial.id).flatMap((carriageway) => this._carriagewayCars(carriageway));
             const stoppedCars = liveCars.filter((c) => c.stoppedNow);
-            const recent = state.stats.recentClears;
 
             const queues = {};
             for (const info of this.nodeInfosByArterial.get(arterial.id) ?? []) {
@@ -1501,32 +1501,25 @@ export class SimulationEngine {
 
             stats[arterial.id] = {
                 onRoad: liveCars.length,
-                avgWaitNow: stoppedCars.length
-                    ? stoppedCars.reduce((s, c) => s + c.totalWaitS, 0) / stoppedCars.length
-                    : 0,
-                avgWaitRolling: recent.length ? recent.reduce((s, c) => s + c.waitS, 0) / recent.length : 0,
-                throughputPerMin: recent.length,
+                avgWaitNow: avgWaitNow(stoppedCars),
+                avgWaitRolling: rollingAvgWait(state.stats.recentClears),
+                throughputPerMin: rollingThroughputPerMin(state.stats.recentClears),
                 clearedTotal: state.stats.clearedTotal,
                 waitSumTotal: state.stats.waitSumTotal,
                 clearedWithoutStopTotal: state.stats.clearedWithoutStopTotal,
-                clearedWithoutStopPct: state.stats.clearedTotal
-                    ? (state.stats.clearedWithoutStopTotal / state.stats.clearedTotal) * 100
-                    : null,
+                clearedWithoutStopPct: zeroStopPct(state.stats.clearedWithoutStopTotal, state.stats.clearedTotal),
                 queues,
                 clearedByNode: state.stats.clearedByNode,
-                chartSamples: state.chartSamples,
             };
         }
 
         const bucketStats = (bucket) => ({
-            avgWaitRolling: bucket.recentClears.length
-                ? bucket.recentClears.reduce((s, c) => s + c.waitS, 0) / bucket.recentClears.length
-                : 0,
-            throughputPerMin: bucket.recentClears.length,
+            avgWaitRolling: rollingAvgWait(bucket.recentClears),
+            throughputPerMin: rollingThroughputPerMin(bucket.recentClears),
             clearedTotal: bucket.clearedTotal,
             waitSumTotal: bucket.waitSumTotal,
             clearedWithoutStopTotal: bucket.clearedWithoutStopTotal,
-            clearedWithoutStopPct: bucket.clearedTotal ? (bucket.clearedWithoutStopTotal / bucket.clearedTotal) * 100 : null,
+            clearedWithoutStopPct: zeroStopPct(bucket.clearedWithoutStopTotal, bucket.clearedTotal),
         });
         const sideStreet = bucketStats(this.sideStreetStats);
         const total = bucketStats(this.totalStats);
@@ -4091,6 +4084,11 @@ export class SimulationEngine {
         return n;
     }
 
+    /** Live sim only: attach the live statistics collector (metrics/liveMetrics.js), or null to detach. Reads only - the run is unchanged. */
+    setLiveMetrics(collector) {
+        this.liveMetrics = collector;
+    }
+
     /** Live sim only: count vehicles through each junction and their wait there (see _trackNodePassages()). Reads only - the run is unchanged. */
     setNodeStatsTracking(on) {
         this.trackNodeStats = !!on;
@@ -4315,6 +4313,7 @@ export class SimulationEngine {
     _recordNodeClears(state, gates, car) {
         while (car.nextNodeIndex < gates.length && car.distanceM >= gates[car.nextNodeIndex].stopLineDistanceM) {
             state.stats.clearedByNode[gates[car.nextNodeIndex].node.id] += 1;
+            this.liveMetrics?.onStopLineCross(car, gates[car.nextNodeIndex]);
             car.nextNodeIndex += 1;
         }
     }
@@ -4853,6 +4852,7 @@ export class SimulationEngine {
         }
         if (usedArterial) this._recordInBucket(this.arterialScopeStats, arterialWaitS, stoppedOnArterial);
         this.allWaitTimesTotal.push(car.totalWaitS);
+        this.liveMetrics?.onVehicleClear(car);
     }
 
     _recordInBucket(bucket, waitS, stopped) {
@@ -4907,20 +4907,6 @@ export class SimulationEngine {
         const cutoff = this.simTimeS - ROLLING_WINDOW_S;
         while (stats.recentClears.length && stats.recentClears[0].tS < cutoff) {
             stats.recentClears.shift();
-        }
-    }
-
-    _sampleChart(dt) {
-        for (const state of this.arterialState.values()) {
-            state.chartAccumS += dt;
-            if (state.chartAccumS < CHART_SAMPLE_INTERVAL_S) continue;
-            state.chartAccumS -= CHART_SAMPLE_INTERVAL_S;
-
-            // Cumulative and never trimmed - unlike the rolling wait/throughput
-            // stats above, "cleared over time" should show the whole run, not
-            // a 60s window that would make a full-corridor traversal (which can
-            // take longer than 60s) look permanently flat.
-            state.chartSamples.push(state.stats.clearedTotal);
         }
     }
 }

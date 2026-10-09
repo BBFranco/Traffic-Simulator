@@ -1,0 +1,22 @@
+{
+  "1|fixed|false|": "8fa537245aeb69fd",
+  "1|fixed|true|": "a2eb25ea8ccd9ab9",
+  "1|adaptive|false|": "b91a783367f1ab9c",
+  "1|adaptive|true|": "a2eb25ea8ccd9ab9",
+  "1|green_wave|false|": "b0c812661d2ae35e",
+  "1|green_wave|true|": "a2eb25ea8ccd9ab9",
+  "2|fixed|false|": "c9adf1916e77239d",
+  "2|fixed|true|": "8e505e840e8c7af4",
+  "2|adaptive|false|": "684562cdede6fbff",
+  "2|adaptive|true|": "8e505e840e8c7af4",
+  "2|green_wave|false|": "c98e14b9130dd7df",
+  "2|green_wave|true|": "8e505e840e8c7af4",
+  "3|fixed|false|": "1b00299f75ba78da",
+  "3|fixed|true|": "962d64662687ef82",
+  "3|adaptive|false|": "bea9b589d94fb997",
+  "3|adaptive|true|": "962d64662687ef82",
+  "3|green_wave|false|": "30400aba57990e90",
+  "3|green_wave|true|": "962d64662687ef82",
+  "1|fixed|false|destination": "a2834163a4fc5149",
+  "2|fixed|false|destination": "80b9711ad2594ac9"
+}

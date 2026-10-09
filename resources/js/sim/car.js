@@ -208,6 +208,9 @@ export class Car {
         this.everStopped = false;
         this.stoppedForSignal = false;
         this.totalWaitS = 0;
+        /** Stats only, never read by the driving model: times it has come to a stop, and whether it is in one now. */
+        this.stopCount = 0;
+        this.inStop = false;
 
         /**
          * The movement this car intends at the next intersection -
@@ -481,7 +484,10 @@ export function stepCar(car, ahead, dt, maxAccelMps2 = Infinity, speedLimitMps =
         car.totalWaitS += dt;
         car.everStopped = true;
         if (ahead?.isSignal) car.stoppedForSignal = true;
+        // A stop is a drop below STOPPED_SPEED_MPS after being above it - not every tick spent stopped.
+        if (!car.inStop) car.stopCount += 1;
     }
+    car.inStop = car.stoppedNow;
 
     car.speedMps = newSpeed;
     car.distanceM += newSpeed * dt;

@@ -62,10 +62,15 @@ class NavigationTest extends TestCase
             ->assertSee('id="step-button"', false)
             ->assertSee('id="reset-button"', false)
             ->assertSee('data-segmented="speed"', false)
-            // Stats footer scaffolding and its live chart.
-            ->assertSee('id="stats-columns"', false)
+            // Live statistics: KPI bar, its toggle, the expanded panels, road table and chart.
+            ->assertSee('id="live-stats"', false)
+            ->assertSee('id="live-stats-toggle"', false)
+            ->assertSee('data-kpi="stranded"', false)
+            ->assertSee('data-live-panel="routing"', false)
+            ->assertSee('id="live-road-rows"', false)
             ->assertSee('id="stats-chart"', false)
-            ->assertSee('Cleared all lights without stopping');
+            ->assertSee('data-layer="showQueueHeatmap"', false)
+            ->assertSee('Throughput over time');
 
         // All five sensor models from the spec's table are offered.
         foreach (['none', 'inductive_loop', 'radar', 'camera', 'magnetometer'] as $sensor) {

@@ -293,6 +293,17 @@
                                     {{ $label }}
                                 </label>
                             @endforeach
+                            @foreach ($mapOverlays as $key => $overlay)
+                                <label class="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200">
+                                    <input type="checkbox" data-layer="{{ $key }}"
+                                           class="h-3 w-3 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-500 focus:ring-offset-0 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-500">
+                                    {{ $overlay['label'] }}
+                                </label>
+                                <div class="ms-[18px] flex items-center gap-1 text-[9px] text-slate-500">
+                                    <span class="h-1.5 w-8 rounded-sm bg-gradient-to-r {{ $overlay['ramp'] }}"></span>
+                                    {{ $overlay['legend'] }}
+                                </div>
+                            @endforeach
                         </div>
                     </div>
                 </div>
@@ -330,32 +341,97 @@
             </div>
 
             {{-- ======================================================= FOOTER --}}
-            <footer class="shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
-                    <h2 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Live statistics</h2>
-                    <span class="text-[10px] text-slate-500">One column per arterial</span>
+            {{-- Live statistics: a slim KPI bar, expandable into the full panel. It sits in the
+                 #sim-stage column under #canvas-wrap, so expanding it shrinks the map (whose
+                 ResizeObserver redraws it) rather than covering it. Every value is filled by
+                 simulator.js from metrics/liveMetrics.js, once a simulated second. --}}
+            <footer id="live-stats" data-expanded="false" class="group/live flex min-h-0 flex-col border-t lg:max-h-[60%] group-data-[fullscreen=true]/stage:max-h-[60%] border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex shrink-0 items-center gap-2 px-3 py-2">
+                    <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+                    @foreach ($liveKpis as $key => $kpi)
+                        <div data-kpi="{{ $key }}"
+                             class="{{ $loop->index >= 4 ? 'hidden sm:flex' : 'flex' }} min-w-[124px] shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-950/50">
+                            <div class="min-w-0">
+                                <div class="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{{ $kpi['label'] }}</div>
+                                <div class="flex items-baseline gap-1">
+                                    <span data-kpi-value class="font-mono text-sm tabular-nums leading-tight text-slate-900 dark:text-slate-100">—</span>
+                                    <span class="text-[9px] text-slate-500">{{ $kpi['unit'] }}</span>
+                                </div>
+                            </div>
+                            <canvas data-spark class="ms-auto h-[22px] w-[44px]" aria-hidden="true"></canvas>
+                        </div>
+                    @endforeach
+
+                    <div class="flex shrink-0 items-center gap-1.5">
+                        <span id="live-chip-power" class="{{ $pillNeutral }}">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" data-chip-dot></span>
+                            <span data-chip-text class="tabular-nums">Power on</span>
+                        </span>
+                        <span id="live-chip-drift" class="{{ $pillNeutral }}" title="Trend of the rolling avg wait over the last 10 min, tested like the warm-up probe">
+                            <span class="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" data-chip-dot></span>
+                            <span data-chip-text>Settling</span>
+                        </span>
+                        <span id="live-chip-spillback" class="{{ $pillNeutral }}" title="Approaches whose queue reaches back into the junction upstream">
+                            <span class="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" data-chip-dot></span>
+                            <span data-chip-text class="tabular-nums">0 spillbacks</span>
+                        </span>
+                    </div>
+                    </div>
+
+                    <button type="button" id="live-stats-toggle" aria-expanded="false" aria-controls="live-stats-details" title="Show or hide the full statistics (S)"
+                            class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+                        <span class="group-data-[expanded=true]/live:hidden">Details</span>
+                        <span class="hidden group-data-[expanded=true]/live:inline">Hide</span>
+                        <span aria-hidden="true" class="transition group-data-[expanded=true]/live:rotate-180">▴</span>
+                    </button>
                 </div>
 
-                {{-- A fixed max-height + internal scroll on the arterial-column grid, not the
-                     whole footer - a corridor with many arterials (metro-interchange has 6,
-                     Hatfield has 2) must not keep growing the footer until it eats the map
-                     canvas's space. The chart lives in its own fixed-width sidebar outside
-                     that grid so it always keeps a stable width/position regardless of how
-                     many stats-column rows are scrolled underneath it. --}}
-                <div class="flex max-h-[280px] items-stretch">
-                    {{-- One stats column per arterial, built from the loaded corridor. --}}
-                    <div id="stats-columns" class="grid min-w-0 flex-1 auto-rows-min grid-cols-1 gap-0 overflow-y-auto sm:grid-cols-2"></div>
+                <div id="live-stats-details" class="hidden min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 group-data-[expanded=true]/live:block dark:border-slate-800">
+                    <div class="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2 xl:grid-flow-col xl:auto-cols-fr xl:grid-cols-none dark:bg-slate-800">
+                        @foreach ($livePanels as $panelKey => $panel)
+                            <section data-live-panel="{{ $panelKey }}" @class(['bg-white px-4 py-3 dark:bg-slate-900', 'hidden' => $panel['routingOnly']])>
+                                <h3 class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{{ $panel['title'] }}</h3>
+                                <dl class="mt-2 space-y-1">
+                                    @foreach ($panel['rows'] as $rowKey => $rowLabel)
+                                        <div data-live-row="{{ $rowKey }}" class="flex items-baseline justify-between gap-3 text-[11px]">
+                                            <dt class="min-w-0 text-slate-500">{{ $rowLabel }}</dt>
+                                            <dd data-live="{{ $rowKey }}" class="min-w-0 break-words text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">—</dd>
+                                        </div>
+                                    @endforeach
+                                </dl>
+                            </section>
+                        @endforeach
+                    </div>
 
-                    <div class="w-[280px] shrink-0 overflow-y-auto border-slate-200 px-4 py-3 lg:border-l dark:border-slate-800">
-                        <div class="flex items-baseline justify-between">
-                            <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Vehicles cleared over time</span>
-                            <span class="text-[10px] text-slate-500">cumulative count</span>
+                    <div class="flex flex-col border-t border-slate-200 lg:flex-row dark:border-slate-800">
+                        <div class="min-w-0 flex-1 overflow-x-auto px-4 py-3">
+                            <table class="w-full text-[11px]">
+                                <thead>
+                                    <tr class="border-b border-slate-200 text-slate-500 dark:border-slate-800">
+                                        @foreach ($liveRoadColumns as $columnKey => $columnLabel)
+                                            <th scope="col" @class(['py-1 font-medium', 'text-left' => $loop->first, 'text-right' => ! $loop->first])>
+                                                <button type="button" data-sort="{{ $columnKey }}" class="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-slate-200">
+                                                    {{ $columnLabel }}<span data-sort-mark aria-hidden="true"></span>
+                                                </button>
+                                            </th>
+                                        @endforeach
+                                    </tr>
+                                </thead>
+                                <tbody id="live-road-rows"></tbody>
+                            </table>
                         </div>
-                        <div class="relative mt-2 h-[200px]">
-                            <canvas id="stats-chart"></canvas>
-                            <div id="stats-chart-empty"
-                                 class="absolute inset-0 flex items-center justify-center rounded bg-slate-50/60 text-[10px] text-slate-500 dark:bg-slate-950/40">
-                                Awaiting simulation data
+
+                        <div class="w-full shrink-0 border-slate-200 px-4 py-3 lg:w-[340px] lg:border-l dark:border-slate-800">
+                            <div class="flex items-baseline justify-between">
+                                <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Throughput over time</span>
+                                <span class="text-[10px] text-slate-500">veh/min, 60 s rolling</span>
+                            </div>
+                            <div class="relative mt-2 h-[160px]">
+                                <canvas id="stats-chart"></canvas>
+                                <div id="stats-chart-empty"
+                                     class="absolute inset-0 flex items-center justify-center rounded bg-slate-50/60 text-[10px] text-slate-500 dark:bg-slate-950/40">
+                                    Awaiting simulation data
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -372,46 +448,6 @@
          written directly into the page above. --}}
     <template id="segmented-template">
         <x-segmented control="__CONTROL__" size="sm" :options="$controllerModeOptions" />
-    </template>
-
-    <template id="stats-column-template">
-        <div class="border-b border-slate-200 px-4 py-3 [&:nth-child(even)]:sm:border-l dark:border-slate-800" data-stats-column>
-            <div class="flex items-center gap-2">
-                <span class="h-2.5 w-2.5 shrink-0 rounded-full" data-accent-dot></span>
-                <span class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100" data-arterial-name></span>
-                <span class="ms-auto shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                      data-stat="mode"></span>
-            </div>
-
-            <dl class="mt-2 grid grid-cols-3 gap-x-4 gap-y-2">
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Avg wait now</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="avgWaitNow">—</dd>
-                </div>
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Avg wait rolling</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="avgWaitRolling">—</dd>
-                </div>
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Cleared / min</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="throughput">—</dd>
-                </div>
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Cars on road</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="onRoad">—</dd>
-                </div>
-                <div class="col-span-2">
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">
-                        Cleared all lights without stopping
-                    </dt>
-                    <dd class="font-mono text-base leading-tight text-sky-700 dark:text-sky-300" data-stat="clearedWithoutStop">—</dd>
-                </div>
-                <div class="col-span-3">
-                    <dt class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Vehicles cleared by road section</dt>
-                    <dd class="flex flex-wrap gap-1" data-cleared-chips></dd>
-                </div>
-            </dl>
-        </div>
     </template>
 
     <template id="cleared-chip-template">

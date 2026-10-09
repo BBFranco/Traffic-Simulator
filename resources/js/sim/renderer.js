@@ -27,6 +27,17 @@ import { turnLaneShapes, alignedDashes } from '../renderers/turnLaneShapes.js';
 import { carShapeFor } from './carShapes.js';
 import { DRIVEWAY_DEPTH_M, DRIVEWAY_WIDTH_M } from './routing/driveways.js';
 
+/** Live overlay ramps: one hue each, opacity carrying the magnitude (rose for queues, violet for density) - SimulatorComposer's legends match. */
+const OVERLAY_RAMPS = { queue: [225, 29, 72], density: [124, 58, 237] };
+/** A queue this long, and this many vehicles per lane-km (near jam density), are full colour. */
+const QUEUE_FULL_VEH = 20;
+const DENSITY_FULL_VEH_PER_KM = 120;
+
+function overlayColour([r, g, b], t) {
+    const clamped = Math.max(0, Math.min(1, t));
+    return `rgba(${r}, ${g}, ${b}, ${(0.18 + 0.67 * clamped).toFixed(3)})`;
+}
+
 export const ARTERIAL_ACCENTS = ['#0284c7', '#ea580c', '#8b5cf6', '#059669'];
 
 /**
@@ -269,7 +280,16 @@ export class LayoutRenderer {
             showDistances: true,
             showSignalHeads: true,
             showRouting: true,
+            // Live statistics overlays (metrics/liveMetrics.js), off until ticked in the Layers box.
+            showQueueHeatmap: false,
+            showDensity: false,
         };
+        /** `{ queues: [{ points, queue }], density: Map(road id -> veh/lane-km) }` from the latest live sample, or null. */
+        this.liveOverlays = null;
+    }
+
+    setLiveOverlays(overlays) {
+        this.liveOverlays = overlays;
     }
 
     setLayout(layout, { refit = true } = {}) {
@@ -436,6 +456,7 @@ export class LayoutRenderer {
         if (this.options.showLaneMarkings) this.drawRoadMarkings();
         this.drawJunctions();
         this.drawStopLines();
+        this.drawLiveOverlays();
         this.drawRoutingTierLines();
         this.drawCars();
         if (this.laneEditor) this.drawLaneEditor();
@@ -1450,6 +1471,51 @@ export class LayoutRenderer {
             ctx.fillRect(end.x + 10, end.y - 9, width + 8, 18);
             ctx.fillStyle = PALETTE.label;
             ctx.fillText(label, end.x + 14, end.y);
+        }
+        ctx.restore();
+    }
+
+    /**
+     * Density along each road and each approach's queue, as single-hue sequential ramps (more
+     * opaque = more) under the cars. Their legends sit by their checkboxes in the Layers box.
+     */
+    drawLiveOverlays() {
+        const overlays = this.liveOverlays;
+        const { showDensity, showQueueHeatmap } = this.options;
+        if (!overlays || (!showDensity && !showQueueHeatmap)) return;
+        const { ctx } = this;
+        const { scale } = this.camera;
+        ctx.save();
+        ctx.lineJoin = 'round';
+        if (showDensity && overlays.density) {
+            ctx.lineCap = 'butt';
+            this.eachRoad(({ from, to, widthM, curvePoints, ref, kind }) => {
+                if (kind !== 'arterial' && kind !== 'connector') return;
+                const density = overlays.density.get(ref.id);
+                if (!density) return;
+                ctx.strokeStyle = overlayColour(OVERLAY_RAMPS.density, density / DENSITY_FULL_VEH_PER_KM);
+                ctx.lineWidth = Math.max(2, widthM * scale);
+                this.pathRoad(from, to, curvePoints);
+                ctx.stroke();
+            });
+        }
+        if (showQueueHeatmap) {
+            ctx.lineCap = 'round';
+            ctx.lineWidth = Math.max(5, 3.2 * scale);
+            for (const { points, queue } of overlays.queues) {
+                ctx.strokeStyle = overlayColour(OVERLAY_RAMPS.queue, queue / QUEUE_FULL_VEH);
+                ctx.beginPath();
+                points.forEach((point, i) => {
+                    const p = this.camera.toScreen(point);
+                    if (i) ctx.lineTo(p.x, p.y);
+                    else ctx.moveTo(p.x, p.y);
+                });
+                if (points.length === 1) {
+                    const p = this.camera.toScreen(points[0]);
+                    ctx.lineTo(p.x + 0.1, p.y);
+                }
+                ctx.stroke();
+            }
         }
         ctx.restore();
     }

@@ -15,6 +15,7 @@
 import { buildLayout } from './corridor.js';
 import { SimulationEngine, WAIT_ACCOUNTING } from './engine.js';
 import { controllerConfigFor } from './controllers/phasePlan.js';
+import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
 const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
@@ -240,8 +241,8 @@ function buildSummary({
     const perArterial = arterialBuckets.map(({ id, s }) => {
         return {
             id,
-            avgWaitTime: s.clearedTotal ? s.waitSumTotal / s.clearedTotal : 0,
-            throughputPerMin: s.clearedTotal / (durationSeconds / 60),
+            avgWaitTime: avgWait(s.waitSumTotal, s.clearedTotal),
+            throughputPerMin: perMin(s.clearedTotal, durationSeconds),
             clearedTotal: s.clearedTotal,
             waitSumTotal: s.waitSumTotal,
             clearedWithoutStopTotal: s.clearedWithoutStopTotal,
@@ -260,18 +261,16 @@ function buildSummary({
     const clearedTotalArterial = arterialScope.clearedTotal;
     const waitSumTotalArterial = arterialScope.waitSumTotal;
     const clearedWithoutStopTotalArterial = arterialScope.clearedWithoutStopTotal;
-    const throughputPerMinArterial = clearedTotalArterial / (durationSeconds / 60);
-    const avgWaitTimeArterial = clearedTotalArterial ? waitSumTotalArterial / clearedTotalArterial : 0;
-    const pctClearedWithoutStopArterial = clearedTotalArterial
-        ? (clearedWithoutStopTotalArterial / clearedTotalArterial) * 100
-        : null;
+    const throughputPerMinArterial = perMin(clearedTotalArterial, durationSeconds);
+    const avgWaitTimeArterial = avgWait(waitSumTotalArterial, clearedTotalArterial);
+    const pctClearedWithoutStopArterial = zeroStopPct(clearedWithoutStopTotalArterial, clearedTotalArterial);
 
     // Side-street scope: the engine already keeps one combined bucket across
     // every connector (see engine.js's `sideStreetStats`), so no further
     // aggregation is needed here.
     const sideStreet = finalSnap.sideStreet;
-    const avgWaitTimeSideStreet = sideStreet.clearedTotal ? sideStreet.waitSumTotal / sideStreet.clearedTotal : 0;
-    const throughputPerMinSideStreet = sideStreet.clearedTotal / (durationSeconds / 60);
+    const avgWaitTimeSideStreet = avgWait(sideStreet.waitSumTotal, sideStreet.clearedTotal);
+    const throughputPerMinSideStreet = perMin(sideStreet.clearedTotal, durationSeconds);
 
     // Total scope: the engine's own every-vehicle-once bucket - not arterial + side street, since
     // a trip can use both and is counted in each it used (engine.js's WAIT_ACCOUNTING).
@@ -279,9 +278,9 @@ function buildSummary({
     const clearedTotal = total.clearedTotal;
     const waitSumTotal = total.waitSumTotal;
     const clearedWithoutStopTotal = total.clearedWithoutStopTotal;
-    const throughputPerMin = clearedTotal / (durationSeconds / 60);
-    const avgWaitTime = clearedTotal ? waitSumTotal / clearedTotal : 0;
-    const pctClearedWithoutStop = clearedTotal ? (clearedWithoutStopTotal / clearedTotal) * 100 : null;
+    const throughputPerMin = perMin(clearedTotal, durationSeconds);
+    const avgWaitTime = avgWait(waitSumTotal, clearedTotal);
+    const pctClearedWithoutStop = zeroStopPct(clearedWithoutStopTotal, clearedTotal);
 
     const totalCumulativeByTick = buildCumulativeByTick(totalRows);
     const arterialCumulativeByTick = buildCumulativeByTick(arterialScopeRows);
@@ -443,11 +442,11 @@ function measuredDiagnostics(engine, atMeasureStart) {
 function routingSummary(stats, departures, nowS) {
     return {
         trips: stats.trips,
-        meanTripS: stats.trips ? stats.tripTimeSumS / stats.trips : null,
-        meanTripDelayS: stats.tripsOnPlan ? stats.tripDelaySumS / stats.tripsOnPlan : null,
+        meanTripS: meanTripS(stats),
+        meanTripDelayS: meanTripDelayS(stats),
         toExit: stats.toExit,
         pulledOff: stats.pulledOff,
-        divertedPct: stats.trips ? (stats.diverted / stats.trips) * 100 : null,
+        divertedPct: divertedPct(stats),
         missedTurns: stats.missedTurns,
         missedBy: stats.missedBy,
         rerouted: stats.rerouted,
@@ -459,9 +458,9 @@ function routingSummary(stats, departures, nowS) {
         departed: stats.departed,
         departedByDriveway: stats.departedByDriveway,
         /** Cars still waiting in a driveway to pull out when the run ended - a road too busy to leave onto shows up here. */
-        departuresWaiting: departures.reduce((sum, d) => sum + d.waiting.length, 0),
+        departuresWaiting: carsInDriveways(departures),
         /** Mean time a car that pulled out had waited in its driveway first - in neither its trip nor any wait metric. */
-        meanDrivewayWaitS: stats.departed ? stats.drivewayWaitSumS / stats.departed : null,
+        meanDrivewayWaitS: meanDrivewayWaitS(stats),
         /** Longest any car still in a driveway at the end had been waiting there. */
         longestDrivewayWaitS: Math.max(0, ...departures.map((d) => (d.waiting.length ? nowS - d.waiting[0].queuedAtS : 0))),
         departuresWaitingByDriveway: Object.fromEntries(departures.filter((d) => d.waiting.length).map((d) => [d.origin.dirId, d.waiting.length])),
@@ -541,8 +540,8 @@ function segmentStats(cumulativeByTick, fromTick, toTick, dt, finalCumulative = 
     const seconds = (toTick - fromTick) * dt;
 
     return {
-        avgWaitTime: clearedDelta > 0 ? waitDelta / clearedDelta : null,
-        throughputPerMin: seconds > 0 ? clearedDelta / (seconds / 60) : null,
+        avgWaitTime: clearedDelta > 0 ? avgWait(waitDelta, clearedDelta) : null,
+        throughputPerMin: seconds > 0 ? perMin(clearedDelta, seconds) : null,
         clearedTotal: clearedDelta,
     };
 }

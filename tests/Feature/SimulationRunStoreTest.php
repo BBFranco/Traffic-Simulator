@@ -125,4 +125,25 @@ class SimulationRunStoreTest extends TestCase
             ->assertOk()
             ->assertJsonPath('runs.0.routing_mode', 'random');
     }
+
+    public function test_each_replay_run_carries_its_fixed_time_twin_on_the_same_seed(): void
+    {
+        $batchId = (string) Str::uuid();
+        $runs = [
+            $this->runPayload(['batch_id' => $batchId, 'seed' => 3, 'controller_mode' => 'fixed', 'sensor_mode' => null, 'avg_wait_time' => 40, 'throughput_per_min' => 250]),
+            $this->runPayload(['batch_id' => $batchId, 'seed' => 3, 'controller_mode' => 'adaptive', 'sensor_mode' => 'radar', 'avg_wait_time' => 30]),
+            $this->runPayload(['batch_id' => $batchId, 'seed' => 3, 'controller_mode' => 'green_wave', 'sensor_mode' => 'radar', 'power_state' => 'load_shedding']),
+        ];
+        $this->postJson(route('simulation-runs.store'), ['runs' => $runs])->assertCreated();
+
+        $response = $this->actingAs(User::factory()->create())
+            ->getJson(route('simulator.sample-runs', ['corridor' => 'hatfield-realistic']))
+            ->assertOk()
+            ->assertJsonCount(3, 'runs');
+
+        $twins = collect($response->json('runs'))->mapWithKeys(fn (array $run): array => ["{$run['controller_mode']}|{$run['power_state']}" => $run['fixed_twin']]);
+        $this->assertEquals(40, $twins['adaptive|normal']['avg_wait_time']);
+        $this->assertEquals(250, $twins['adaptive|normal']['throughput_per_min']);
+        $this->assertNull($twins['green_wave|load_shedding'], 'no fixed-time run with load shedding in this batch');
+    }
 }

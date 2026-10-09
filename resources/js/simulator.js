@@ -21,16 +21,18 @@ import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { ARTERIAL_ACCENTS } from './sim/renderer.js';
 import { Renderer2D } from './renderers/Renderer2D.js';
 import { VIEW_2D, VIEW_3D } from './renderers/RendererInterface.js';
-import { SimulationEngine, CHART_SAMPLE_INTERVAL_S } from './sim/engine.js';
-import { Chart, INK, applyChartTheme, baseOptions, lineDataset } from './charts/theme.js';
+import { SimulationEngine } from './sim/engine.js';
+import { LiveMetrics } from './sim/metrics/liveMetrics.js';
+import { LiveStatsPanel } from './sim/metrics/liveStatsPanel.js';
+import { applyChartTheme } from './charts/theme.js';
 import { onThemeChange } from './theme.js';
 import { initTooltips } from './tooltips.js';
 
 /** Physics timestep - decoupled from render framerate so batch mode (build step 13) reuses the same engine unmodified. */
 const FIXED_DT_S = 0.1;
 
-/** Sentinel node id for the arterial-wide "Total" chip appended to the per-intersection cleared-by-road-section chips. */
-const ARTERIAL_TOTAL_CHIP_ID = 'arterial-total';
+/** Live statistics refresh once a simulated second: every this many fixed ticks. */
+const LIVE_SAMPLE_EVERY_TICKS = Math.round(1 / FIXED_DT_S);
 
 const boot = JSON.parse(document.getElementById('sim-boot').textContent);
 
@@ -99,8 +101,13 @@ const state = {
 
 let layout = null;
 let engine = null;
-let footerChart = null;
-let lastChartSampleCount = 0;
+/** The live statistics collector for the current engine (metrics/liveMetrics.js), and its footer panel. */
+let liveMetrics = null;
+let livePanel = null;
+/** Ticks since the last reset - the 1 Hz live sample counts these, not the float sim clock. */
+let liveTicks = 0;
+/** The newest live sample not yet shown - catch-up can take several per frame, only the last is drawn. */
+let pendingLiveSample = null;
 let accumulatorS = 0;
 let lastFrameMs = null;
 let rafId = null;
@@ -135,7 +142,6 @@ let replay = null;
 const el = {
     canvasWrap: document.getElementById('canvas-wrap'),
     simClock: document.getElementById('sim-clock'),
-    statsChartEmpty: document.getElementById('stats-chart-empty'),
     canvas: document.getElementById('sim-canvas'),
     tooltip: document.getElementById('node-tooltip'),
     outageOverlay: document.getElementById('outage-overlay'),
@@ -155,7 +161,7 @@ const el = {
     busRatioValue: document.getElementById('bus-ratio-value'),
     randomEventsInput: document.getElementById('random-events'),
     destinationRoutingInput: document.getElementById('destination-routing'),
-    statsColumns: document.getElementById('stats-columns'),
+    liveStats: document.getElementById('live-stats'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
     runToTimeButton: document.getElementById('run-to-time-button'),
@@ -179,6 +185,8 @@ initTooltips();
 const renderer2d = new Renderer2D(el.canvas);
 /** The 2D map's LayoutRenderer - the pan/zoom/hover/layer handlers below drive its camera directly, exactly as before. */
 const renderer = renderer2d.inner;
+
+livePanel = new LiveStatsPanel(el.liveStats, { onSelectCar: (id) => selectCar(id), shortNodeLabel });
 
 /**
  * View switching. Renderers only ever READ engine.snapshot() - switching never
@@ -313,8 +321,6 @@ async function loadCorridor(id, { config = null } = {}) {
     renderCorridorSummary();
     buildArterialModeControls();
     buildDemandControls();
-    buildStatsColumns();
-    buildFooterChart();
 
     // A different corridor means different nodes/arterials, so the engine
     // (which precomputes stop-line distances per node at construction time)
@@ -322,9 +328,15 @@ async function loadCorridor(id, { config = null } = {}) {
     engine = new SimulationEngine(layout);
     engine.setNodeStatsTracking(true); // the hover tooltip's per-junction wait and throughput
     engine.reset(engineResetOptions());
+    // Built after reset(): the collector reads the engine's per-road state for its road table.
+    liveMetrics = new LiveMetrics(engine, { dt: FIXED_DT_S });
+    liveMetrics.wantOverlays = overlaysWanted();
+    engine.setLiveMetrics(liveMetrics);
     syncDriveways();
     accumulatorS = 0;
 
+    resetLiveStats();
+    livePanel.setContext({ routingActive: engine.routingActive });
     resetRunState();
     await fetchSampleRuns(id);
 
@@ -491,7 +503,6 @@ function buildArterialModeControls() {
         segmentedHandlers.set(control, (value) => {
             state.arterialModes[arterial.id] = value;
             engine.setArterialMode(arterial.id, value);
-            updateStatsModeLabels();
             logChange(control, value);
         });
 
@@ -595,34 +606,6 @@ function updateDemandReadouts() {
     });
 }
 
-function buildStatsColumns() {
-    const columns = layout.arterials.map((arterial, index) => {
-        const column = cloneTemplate('stats-column-template');
-        column.dataset.arterialId = arterial.id;
-        column.querySelector('[data-accent-dot]').style.backgroundColor = accentFor(index);
-        column.querySelector('[data-arterial-name]').textContent = arterial.shortName;
-
-        const chips = column.querySelector('[data-cleared-chips]');
-        const arterialTotalChip = cloneTemplate('cleared-chip-template');
-        arterialTotalChip.querySelector('[data-chip-label]').textContent = 'Total';
-        arterialTotalChip.dataset.nodeId = ARTERIAL_TOTAL_CHIP_ID;
-        chips.replaceChildren(
-            ...arterial.intersections.map((node) => {
-                const chip = cloneTemplate('cleared-chip-template');
-                chip.querySelector('[data-chip-label]').textContent = shortNodeLabel(node);
-                chip.dataset.nodeId = node.id;
-                return chip;
-            }),
-            arterialTotalChip
-        );
-
-        return column;
-    });
-
-    el.statsColumns.replaceChildren(...columns);
-    updateStatsModeLabels();
-}
-
 /** "Pretorius & Hilda" -> "Hilda": the cross street is what distinguishes them. */
 function shortNodeLabel(node) {
     if (node.crossStreetName) return node.crossStreetName.replace(/\s+St$/i, '');
@@ -630,13 +613,6 @@ function shortNodeLabel(node) {
     return (parts[1] ?? node.name).trim();
 }
 
-function updateStatsModeLabels() {
-    el.statsColumns.querySelectorAll('[data-stats-column]').forEach((column) => {
-        const mode = state.arterialModes[column.dataset.arterialId];
-        const badge = column.querySelector('[data-stat="mode"]');
-        if (badge) badge.textContent = MODE_LABELS[mode] ?? mode;
-    });
-}
 
 /* ------------------------------------------------------- the picked car */
 
@@ -763,7 +739,15 @@ function updateSelectedCar() {
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && selectedCarId !== null) selectCar(null);
+    // S shows or hides the full live statistics - not while typing, and not with a modifier (browser shortcuts).
+    if ((event.key === 's' || event.key === 'S') && !event.ctrlKey && !event.metaKey && !event.altKey && !isTyping(event.target)) {
+        livePanel.toggle();
+    }
 });
+
+function isTyping(target) {
+    return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+}
 
 /** Clicks on the 3D view pick a car too - OrbitControls owns its drags, so only a press and release in one spot counts. */
 function watch3dClicks(canvas) {
@@ -1001,6 +985,7 @@ function zoomButton(factor) {
 document.querySelectorAll('input[data-layer]').forEach((input) => {
     input.addEventListener('change', () => {
         renderer.setOptions({ [input.dataset.layer]: input.checked });
+        if (liveMetrics) liveMetrics.wantOverlays = overlaysWanted();
         renderer.draw();
         logChange(`layer:${input.dataset.layer}`, input.checked);
     });
@@ -1067,7 +1052,8 @@ function restartEngine() {
     // interrupted by a Reset before it could consume (and restore) the flag itself.
     replay = null;
     pauseAfterCatchUp = true;
-    buildFooterChart();
+    resetLiveStats();
+    livePanel.setContext({ routingActive: engine.routingActive });
     resetRunState();
 }
 
@@ -1227,6 +1213,8 @@ async function startReplay(run) {
     buildArterialModeControls();
 
     restartEngine(); // real engine.reset() with all of the above now in `state`
+    // A fixed-time run is its own baseline; any other replay compares against its fixed-time twin.
+    livePanel.setContext({ routingActive: engine.routingActive, replayTwin: run.controller_mode === 'fixed' ? null : run.fixed_twin ?? null });
 
     const config = run.raw_config_json ?? {};
     const warmupTicks = config.warmupTicks ?? 0;
@@ -1349,101 +1337,39 @@ function renderPowerPill(effectiveLoadShedding) {
 /** Clears every stat readout back to the em-dash placeholder. */
 function resetRunState() {
     el.simClock.textContent = '00:00.0';
-    el.statsColumns.querySelectorAll('[data-stat]').forEach((node) => {
-        if (node.dataset.stat !== 'mode') node.textContent = '—';
-    });
-    el.statsColumns.querySelectorAll('[data-chip-value]').forEach((node) => {
-        node.textContent = '—';
-    });
     renderRunPill();
-    updateStatsModeLabels();
 }
 
-/* ------------------------------------------------------------- footer chart */
+/* ------------------------------------------------------------ live statistics */
 
-/**
- * The live throughput chart. `appendChartSampleIfNeeded()` below feeds it a
- * point per arterial every 0.5 sim-seconds from `engine.js`'s cumulative
- * cleared-vehicle count, so the line's slope reads as throughput.
- *
- * Rebuilt whenever the corridor changes - the series are the arterials, so a
- * different corridor means a different legend.
- */
-function buildFooterChart() {
-    const canvas = document.getElementById('stats-chart');
-    if (footerChart) {
-        footerChart.destroy();
-        footerChart = null;
-    }
-    const options = baseOptions({
-        tickFormat: (v) => `${v}`,
-        xTitle: '',
-    });
-    options.layout.padding.top = 10;
-    options.scales.y.suggestedMin = 0;
-    options.plugins.legend = {
-        display: true,
-        position: 'bottom',
-        labels: {
-            boxWidth: 8,
-            boxHeight: 8,
-            usePointStyle: true,
-            pointStyle: 'circle',
-            color: INK.secondary,
-            padding: 12,
-        },
-    };
-
-    footerChart = new Chart(canvas, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                ...(layout?.arterials ?? []).map((arterial, index) =>
-                    lineDataset({ label: arterial.shortName, data: [], colour: accentFor(index) })
-                ),
-                // All arterials summed - appended last so appendChartSampleIfNeeded()
-                // can find it by index without a label lookup.
-                lineDataset({ label: 'Total', data: [], colour: INK.muted }),
-            ],
-        },
-        options,
-    });
-
-    lastChartSampleCount = 0;
-    el.statsChartEmpty?.classList.remove('hidden');
-
-    return footerChart;
+/** Live statistics start over: Reset, a new corridor, a new replay, and a replay's end of warm-up. */
+function resetLiveStats() {
+    liveMetrics?.reset();
+    liveTicks = 0;
+    pendingLiveSample = null;
+    renderer.setLiveOverlays(null);
+    livePanel.reset();
 }
 
-/** Pushes fresh chart points only when the engine actually produced new samples this frame. */
-function appendChartSampleIfNeeded(snapshot) {
-    if (!footerChart || !layout) return;
+function overlaysWanted() {
+    return Boolean(renderer.options.showQueueHeatmap || renderer.options.showDensity);
+}
 
-    const totalSamples = layout.arterials.reduce((n, a) => n + (snapshot.stats[a.id]?.chartSamples.length ?? 0), 0);
-    if (totalSamples === lastChartSampleCount) return;
-    lastChartSampleCount = totalSamples;
+/** Called after every engine tick: a live sample once a simulated second, skipped during a replay's silent warm-up. */
+function sampleLiveStats() {
+    liveTicks += 1;
+    if (liveTicks % LIVE_SAMPLE_EVERY_TICKS !== 0 || (replay && !replay.statsReset)) return;
+    pendingLiveSample = liveMetrics.sample();
+}
 
-    // Labelled in elapsed seconds, not sample index - the sample count keeps
-    // growing for the life of the run, so a raw index reads as if the chart
-    // had stalled once autoSkip starts hiding most of the ticks.
-    const perArterialSamples = layout.arterials.map((a) => snapshot.stats[a.id]?.chartSamples ?? []);
-    const first = perArterialSamples[0] ?? [];
-    footerChart.data.labels = first.map((_, i) => `${i * CHART_SAMPLE_INTERVAL_S}`);
-    footerChart.data.datasets.forEach((dataset, index) => {
-        // The 'Total' dataset is appended after one per arterial - see buildFooterChart().
-        dataset.data =
-            index < perArterialSamples.length
-                ? perArterialSamples[index].slice()
-                : first.map((_, i) => perArterialSamples.reduce((sum, samples) => sum + (samples[i] ?? 0), 0));
-    });
-    footerChart.update('none');
-    el.statsChartEmpty?.classList.toggle('hidden', totalSamples > 0);
+function renderLiveStats() {
+    if (!pendingLiveSample) return;
+    livePanel.update(pendingLiveSample, liveMetrics);
+    renderer.setLiveOverlays(pendingLiveSample.overlays);
+    pendingLiveSample = null;
 }
 
 /* -------------------------------------------------------------- render loop */
-
-const fmtSeconds = (s) => `${s.toFixed(1)}s`;
 
 function updateSimClock(simTimeS) {
     const totalTenths = Math.floor(simTimeS * 10);
@@ -1453,50 +1379,14 @@ function updateSimClock(simTimeS) {
     el.simClock.textContent = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${tenths}`;
 }
 
-function setStat(column, name, text) {
-    const node = column.querySelector(`[data-stat="${name}"]`);
-    if (node) node.textContent = text;
-}
-
-function updateStatsFooter(snapshot) {
-    el.statsColumns.querySelectorAll('[data-stats-column]').forEach((column) => {
-        const arterialId = column.dataset.arterialId;
-        const stats = snapshot.stats[arterialId];
-        if (!stats) return;
-
-        setStat(column, 'avgWaitNow', fmtSeconds(stats.avgWaitNow));
-        setStat(column, 'avgWaitRolling', fmtSeconds(stats.avgWaitRolling));
-        setStat(column, 'throughput', String(stats.throughputPerMin));
-        setStat(column, 'onRoad', String(stats.onRoad));
-        setStat(
-            column,
-            'clearedWithoutStop',
-            stats.clearedWithoutStopPct == null ? '—' : `${Math.round(stats.clearedWithoutStopPct)}%`
-        );
-
-        // Precise cumulative counts straight from the engine's own bookkeeping,
-        // not a sensor reading - unlike the queue chips these used to be, power
-        // cuts never blank these. The arterial's own "Total" chip is the whole
-        // road's clear count (clearedTotal), not a per-intersection section.
-        column.querySelectorAll('[data-cleared-chips] > [data-node-id]').forEach((chipEl) => {
-            const valueEl = chipEl.querySelector('[data-chip-value]');
-            if (!valueEl) return;
-            const nodeId = chipEl.dataset.nodeId;
-            const value = nodeId === ARTERIAL_TOTAL_CHIP_ID ? stats.clearedTotal : stats.clearedByNode[nodeId];
-            valueEl.textContent = value == null ? '—' : String(value);
-        });
-    });
-}
-
 /** One frame: push the engine's latest state into the canvas, footer stats and chart. */
 function renderFrame(snapshot) {
     updateSelectedCar();
     // alpha = progress towards the next tick; the 2D map ignores it, the 3D view interpolates with it.
     activeRenderer().update(snapshot, accumulatorS / FIXED_DT_S);
-    updateStatsFooter(snapshot);
+    renderLiveStats();
     updateSimClock(snapshot.simTimeS);
     renderPowerPill(snapshot.powerState === 'load_shedding');
-    appendChartSampleIfNeeded(snapshot);
     updateDemandReadouts();
     if (!el.tooltip.classList.contains('hidden')) renderTooltip();
 }
@@ -1560,6 +1450,7 @@ function animate(nowMs) {
  */
 function tickEngine() {
     engine.tick(FIXED_DT_S);
+    sampleLiveStats();
     if (!replay) return;
 
     replay.ticks += 1;
@@ -1567,6 +1458,7 @@ function tickEngine() {
 
     if (!replay.statsReset && measuredTick >= 0) {
         engine.resetStats();
+        resetLiveStats();
         replay.statsReset = true;
         logChange('replay', 'warm-up complete, stats reset');
     }
@@ -1609,7 +1501,7 @@ function tickEngine() {
         renderer2d.setTheme(theme);
         renderer3d?.setTheme(theme);
         applyChartTheme(theme);
-        if (!firstThemeCall) buildFooterChart();
+        if (!firstThemeCall) livePanel.setTheme();
         firstThemeCall = false;
     });
 

@@ -49,6 +49,8 @@ class SimulatorController extends Controller
      *
      * `raw_config_json` carries everything (seed, warmup/outage/duration ticks) a replay needs
      * to reproduce that run's exact timeline - see runHeadless.js's buildSummary().
+     * `fixed_twin` is the same batch's fixed-time run on the same seed and power state, for the
+     * live panel's "vs fixed-time" delta - null when the batch has none.
      */
     public function sampleRuns(Request $request): JsonResponse
     {
@@ -71,6 +73,18 @@ class SimulatorController extends Controller
         $runs = SimulationRun::query()
             ->whereIn('id', $ids)
             ->get(['id', 'seed', 'controller_mode', 'sensor_mode', 'power_state', 'routing_mode', 'corridor_config', 'raw_config_json']);
+
+        $fixedTwins = SimulationRun::query()
+            ->where('batch_id', $latestBatchId)
+            ->where('controller_mode', 'fixed')
+            ->whereIn('seed', $runs->pluck('seed'))
+            ->get(['seed', 'power_state', 'avg_wait_time', 'throughput_per_min'])
+            ->keyBy(fn (SimulationRun $run): string => "{$run->seed}|{$run->power_state}");
+
+        $runs->each(fn (SimulationRun $run) => $run->setAttribute(
+            'fixed_twin',
+            $fixedTwins->get("{$run->seed}|{$run->power_state}")?->only(['avg_wait_time', 'throughput_per_min'])
+        ));
 
         return response()->json(['runs' => $runs]);
     }

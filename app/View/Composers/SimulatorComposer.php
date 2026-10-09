@@ -20,6 +20,10 @@ class SimulatorComposer
             'controllerModeOptions' => $this->controllerModeOptions(),
             'speedOptions' => $this->speedOptions(),
             'viewOptions' => $this->viewOptions(),
+            'liveKpis' => $this->liveKpis(),
+            'livePanels' => $this->livePanels(),
+            'liveRoadColumns' => $this->liveRoadColumns(),
+            'mapOverlays' => $this->mapOverlays(),
             'inset' => 'rounded-md border border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-950/40',
             'tinyInput' => 'rounded border-slate-300 bg-white py-0.5 text-[10px] text-slate-900 focus:border-sky-500 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100',
             'checkbox' => 'rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-500',
@@ -97,5 +101,99 @@ class SimulatorComposer
     private function viewOptions(): array
     {
         return ['2d' => '2D', '3d' => '3D'];
+    }
+
+    /**
+     * The collapsed live-statistics bar, in order. The last two drop off at narrow widths.
+     *
+     * @return array<string, array{label: string, unit: string}>
+     */
+    private function liveKpis(): array
+    {
+        return [
+            'onNetwork' => ['label' => 'On network', 'unit' => 'veh'],
+            'throughput' => ['label' => 'Throughput', 'unit' => 'veh/min'],
+            'avgWait' => ['label' => 'Avg wait', 'unit' => 's'],
+            'stopsPerVeh' => ['label' => 'Stops/veh', 'unit' => ''],
+            'zeroStopPct' => ['label' => 'Zero-stop', 'unit' => '%'],
+            'stranded' => ['label' => 'Stranded', 'unit' => 'veh'],
+        ];
+    }
+
+    /**
+     * The expanded live-statistics panels; each row key is a field simulator.js fills.
+     *
+     * @return array<string, array{title: string, routingOnly: bool, rows: array<string, string>}>
+     */
+    private function livePanels(): array
+    {
+        return [
+            'flow' => ['title' => 'Flow', 'routingOnly' => false, 'rows' => [
+                'onNetwork' => 'On network',
+                'completed' => 'Completed',
+                'throughputPerMin' => 'Throughput, veh/min',
+                'avgSpeedKph' => 'Avg speed, km/h',
+            ]],
+            'delay' => ['title' => 'Delay', 'routingOnly' => false, 'rows' => [
+                'avgWaitRolling' => 'Avg wait, last 60 s',
+                'avgWaitRun' => 'Avg wait, run',
+                'tripDelayS' => 'Trip delay',
+                'stopsPerVeh' => 'Stops/veh',
+                'zeroStopPct' => 'Zero-stop',
+                'arrivalsOnGreenPct' => 'Arrivals on green',
+            ]],
+            'health' => ['title' => 'Queues and health', 'routingOnly' => false, 'rows' => [
+                'avgQueue' => 'Avg queue, veh',
+                'maxQueue' => 'Max queue',
+                'spillback' => 'Spillbacks, now / total',
+                'blocked' => 'Blocked junctions, now / total',
+                'stranded' => 'Stranded',
+                'worst' => 'Longest wait',
+                'drift' => 'Drift',
+            ]],
+            'signals' => ['title' => 'Signals', 'routingOnly' => false, 'rows' => [
+                'signalsDark' => 'Signals dark',
+                'outage' => 'Power',
+                'recoveryPct' => 'Throughput vs pre-cut',
+                'replayDelta' => 'Vs fixed-time, same seed',
+            ]],
+            'routing' => ['title' => 'Routing', 'routingOnly' => true, 'rows' => [
+                'divertedPct' => 'Diverted',
+                'missedDrivewaysPct' => 'Missed driveways',
+                'missedTurns' => 'Missed turns',
+                'lostArrivals' => 'Lost arrivals',
+                'drivewayWaitS' => 'Driveway wait',
+                'carsInDriveways' => 'Cars in driveways',
+            ]],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function liveRoadColumns(): array
+    {
+        return [
+            'name' => 'Road',
+            'onRoad' => 'Cars',
+            'avgWaitNow' => 'Wait now',
+            'clearedPerMin' => 'Cleared/min',
+            'zeroStopPct' => 'Zero-stop',
+            'queue' => 'Queue',
+        ];
+    }
+
+    /**
+     * Live-statistics overlays in the map's Layers box - off until ticked. The ramps match
+     * renderer.js's OVERLAY_RAMPS: one hue, opacity carrying the magnitude.
+     *
+     * @return array<string, array{label: string, legend: string, ramp: string}>
+     */
+    private function mapOverlays(): array
+    {
+        return [
+            'showQueueHeatmap' => ['label' => 'Queue heatmap', 'legend' => '0 to 20+ veh', 'ramp' => 'from-rose-600/20 to-rose-600/85'],
+            'showDensity' => ['label' => 'Density', 'legend' => '0 to 120+ veh/lane-km', 'ramp' => 'from-violet-600/20 to-violet-600/85'],
+        ];
     }
 }
