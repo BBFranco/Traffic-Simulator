@@ -528,6 +528,15 @@ function drawCover(report, data, variants, corridorLayout) {
     });
 
     report.y = 102;
+    if (data.lockupLabel) {
+        doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
+        const warning = doc.splitTextToSize(
+            `Lockup in this batch: the lockup watch found a vehicle that stood still for 5 minutes or more, or vehicles waiting on each other in a cycle for a minute - a simulation fault, not traffic. Locked runs: ${data.lockupLabel}.`,
+            CONTENT_WIDTH
+        );
+        doc.text(warning, PAGE.margin, report.y);
+        report.y += warning.length * 3.6 + 3;
+    }
     if (data.hasNonStationaryBatch) {
         doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
         const warning = doc.splitTextToSize(
@@ -744,14 +753,14 @@ function distributionTable(report, data, variants) {
         data.powerStates.forEach((power) => {
             const row = variant.row(power);
             if (!row) return;
-            body.push([variant.label, POWER_LABELS[power] ?? power, fmt(row.avg_wait_time), fmt(row.median_wait_time), fmt(row.p95_wait_time), fmt(row.max_wait_time)]);
+            body.push([variant.label, POWER_LABELS[power] ?? power, fmt(row.avg_wait_time), fmt(row.median_wait_time), fmt(row.p95_wait_time), fmt(row.max_wait_time), fmt(row.worst_wait_time)]);
         });
     });
 
     report.table({
-        head: [['Variant', 'Power', 'Mean (s)', 'Median (s)', 'P95 (s)', 'Max (s)']],
+        head: [['Variant', 'Power', 'Mean (s)', 'Median (s)', 'P95 (s)', 'Max, run mean (s)', 'Max, worst run (s)']],
         body,
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
     });
 }
 
@@ -848,6 +857,17 @@ function drawRoutingTrips(report, rows) {
     });
 }
 
+/** The warm-up probe's per-controller settle times (from empty, normal power) - how much cushion the warm-up leaves each. */
+function warmupSettleNote(settle) {
+    if (!settle) return null;
+    const labels = { fixed: 'fixed-time', green_wave: 'green wave', adaptive: 'adaptive (inductive loop)' };
+    const minutes = (value) => (value == null ? 'never' : `${value} min`);
+    const parts = Object.entries(settle).map(
+        ([mode, scopes]) => `${labels[mode] ?? mode} ${minutes(scopes.total)} (main arterial ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)})`
+    );
+    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x 1.5, capped at 60 min; "never" is a scope still drifting.`;
+}
+
 function drawMethodNotes(report, data) {
     const minRecoveredRuns = data.minRecoveredRuns ?? 10;
     // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
@@ -855,17 +875,22 @@ function drawMethodNotes(report, data) {
         ? `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`
         : 'a warm-up (not recorded for this batch)';
     report.sectionTitle('Method notes', null, SCOPES.length + 2);
+    const settleNote = warmupSettleNote(data.batchStamp?.warmupSettleMinutes);
     [
         `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring ${data.batchStamp?.measuredMinutes ?? 40} simulated minutes at dt = 0.1 s.`,
+        ...(settleNote ? [settleNote] : []),
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         'Load-shedding conditions cut power a quarter of the way into the measured window and restore it at the halfway mark. While the lights are dark every controller falls back to all-way-stop behaviour.',
+        ...(data.batchStamp?.routingMode === 'destination'
+            ? ['Under destination routing the network clears more vehicles while the lights are dark than under random turning, and about the same for every controller. It is not a counting artefact: driveway pull-offs keep the same share of throughput (about 42%) before, during and after the outage. Why the dark network clears more in this mode is still open.']
+            : []),
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
-        'The wait-time distribution (median / P95 / max) is recorded for the total scope only.',
+        `The wait-time distribution (median / P95 / max) is recorded for the total scope only. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them.`,
         'Model assumption - letting cars in: a car that has waited 10 s to join a queued lane (turning at a junction, or pulling out of a driveway) is let in - the cars behind where it joins stop short until it is in. A crawling queue never leaves the gap a merge needs, so without this such a car would wait indefinitely. It is a behavioural choice and applies identically to every controller.',
         'Inductive loop and magnetometer are modelled identically for now: both only see whether a stopped car is at the stop line, and the first stopped car is always inside both zones, so their rows match to the digit. They are two labels for one detector, not independent evidence - the adaptive average counts that detector twice.',
     ].forEach((note) => report.paragraph(`•  ${note}`));

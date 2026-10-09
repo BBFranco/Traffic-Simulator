@@ -477,7 +477,7 @@ async function runBatch(demandOverrides, routingMode = 'random') {
                 jobs[jobIndex] = null; // let its rows go
                 jobIndex += 1;
 
-                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, batchStartedAt, build: __BUILD_STAMP__ }));
+                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build: __BUILD_STAMP__ }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
@@ -933,6 +933,9 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     document.getElementById('non-stationary-culprit')?.classList.toggle('hidden', !fresh.warmupDriftingLabel);
     const culpritLabel = document.getElementById('non-stationary-culprit-label');
     if (culpritLabel) culpritLabel.textContent = fresh.warmupDriftingLabel ?? '';
+    document.getElementById('lockup-banner')?.classList.toggle('hidden', !fresh.lockupLabel);
+    const lockupLabel = document.getElementById('lockup-label');
+    if (lockupLabel) lockupLabel.textContent = fresh.lockupLabel ?? '';
 
     if (fresh.html) {
         const setHtml = (id, html) => {

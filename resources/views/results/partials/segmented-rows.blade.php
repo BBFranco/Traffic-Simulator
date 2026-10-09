@@ -10,6 +10,7 @@
                 <td class="px-4 py-2 text-right">{{ $row['median_wait_time'] === null ? '—' : number_format($row['median_wait_time'], 1) }}</td>
                 <td class="px-4 py-2 text-right">{{ $row['p95_wait_time'] === null ? '—' : number_format($row['p95_wait_time'], 1) }}</td>
                 <td class="px-4 py-2 text-right">{{ $row['max_wait_time'] === null ? '—' : number_format($row['max_wait_time'], 1) }}</td>
+                <td class="px-4 py-2 text-right">{{ $row['worst_wait_time'] === null ? '—' : number_format($row['worst_wait_time'], 1) }}</td>
                 <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_pre_outage'.$suffix] === null ? '—' : number_format($row['avg_wait_time_pre_outage'.$suffix], 1) }}</td>
                 <td class="px-4 py-2 text-right text-slate-400">{{ $row['avg_wait_time_during_outage'.$suffix] === null ? '—' : number_format($row['avg_wait_time_during_outage'.$suffix], 1) }}</td>
                 <td class="px-4 py-2 text-right">{{ $row['avg_wait_time_post_recovery'.$suffix] === null ? '—' : number_format($row['avg_wait_time_post_recovery'.$suffix], 1) }}</td>

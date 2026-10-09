@@ -118,11 +118,22 @@ export function probeCondition({ corridorConfig, controllerMode, sensorMode, see
 export function chooseWarmup(probes) {
     const verdicts = probes.flatMap((probe) => Object.values(probe.scopes)).filter((scope) => scope.truncationTick != null);
     const stationary = verdicts.length > 0 && verdicts.every((scope) => scope.stationary);
-    if (!stationary) return { warmupTicks: MAX_WARMUP_TICKS, stationary: false, drifting: driftingControllers(probes), probes };
+    const settle = settleTicks(probes);
+    if (!stationary) return { warmupTicks: MAX_WARMUP_TICKS, stationary: false, drifting: driftingControllers(probes), settle, probes };
 
     const slowest = Math.max(...verdicts.map((scope) => scope.convergedAtTick));
     const padded = Math.ceil((slowest * WARMUP_SAFETY_MARGIN) / WARMUP_ROUNDING_TICKS) * WARMUP_ROUNDING_TICKS;
-    return { warmupTicks: Math.min(MAX_WARMUP_TICKS, Math.max(MIN_WARMUP_TICKS, padded)), stationary: true, drifting: [], probes };
+    return { warmupTicks: Math.min(MAX_WARMUP_TICKS, Math.max(MIN_WARMUP_TICKS, padded)), stationary: true, drifting: [], settle, probes };
+}
+
+/** Per controller, the tick each scope's wait levelled off at - null where it never did, or the scope carries no traffic. */
+function settleTicks(probes) {
+    return Object.fromEntries(
+        probes.map((probe) => [
+            probe.controllerMode,
+            Object.fromEntries(Object.entries(probe.scopes).map(([name, scope]) => [name, scope.truncationTick == null ? null : scope.convergedAtTick])),
+        ])
+    );
 }
 
 /** The controllers whose waits never levelled off, with how far (%) each such scope was still drifting - what the "not stationary" flag is about. */

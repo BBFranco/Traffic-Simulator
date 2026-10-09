@@ -7,11 +7,12 @@
 /**
  * `warmupStationary`: the batch's warm-up probe verdict (sim/warmupProbe.js), null when the warm-up was hand-picked.
  * `warmupDrifting`: the probe's controllers that never levelled off, with each scope's drift (%) - empty when stationary.
+ * `warmupSettle`: per probed controller, the tick each scope's wait levelled off at (null: never) - kept in raw_config_json.
  * `batchStartedAt`: when the batch was launched (ISO-8601), so /results can show how long it took.
  * `build`: `{ commit, dirty, source }` of the code that ran the batch.
  * `batchKind`: 'main' (the dataset Results shows) or 'sensitivity' (an appendix batch).
  */
-export function toApiPayload(summary, batchId, { warmupStationary = null, warmupDrifting = null, batchStartedAt = null, build = null, batchKind = 'main' } = {}) {
+export function toApiPayload(summary, batchId, { warmupStationary = null, warmupDrifting = null, warmupSettle = null, batchStartedAt = null, build = null, batchKind = 'main' } = {}) {
     return {
         batch_id: batchId,
         batch_started_at: batchStartedAt,
@@ -80,6 +81,6 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, warmup
         // Demand lost at full map-edge entries, and roundabout overruns (should be 0) - over the measured window.
         diagnostics: summary.diagnostics ?? null,
         // `build`: the code the batch ran (git commit, dirty tree) - see batch/buildStamp.mjs and vite.config.js.
-        raw_config_json: { ...summary.rawConfig, build },
+        raw_config_json: { ...summary.rawConfig, build, warmupSettle },
     };
 }

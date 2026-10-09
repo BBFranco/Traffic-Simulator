@@ -436,6 +436,7 @@ function measuredDiagnostics(engine, atMeasureStart) {
     return {
         arrivalsLost: Math.round(engine.accounting.arrivalsLost - atMeasureStart.arrivalsLost),
         roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
+        lockup: engine.lockupWatch.report(),
     };
 }
 

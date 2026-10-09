@@ -115,6 +115,7 @@ class ResultsController extends Controller
                 'sensitivityAppendix' => $payload['sensitivityAppendix'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
                 'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
+                'lockupLabel' => $payload['lockupLabel'],
                 'routingMetrics' => $payload['routingMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
@@ -160,6 +161,7 @@ class ResultsController extends Controller
             'sensitivityAppendix' => $payload['sensitivityAppendix'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
             'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
+            'lockupLabel' => $payload['lockupLabel'],
             'routingMetrics' => $payload['routingMetrics'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
@@ -625,6 +627,7 @@ class ResultsController extends Controller
             'sensitivityAppendix' => $this->sensitivityAppendix->forCorridor($corridorFilter, $routingMode, $batchIds),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
             'warmupDriftingLabel' => $this->warmupDriftingLabel((clone $query)),
+            'lockupLabel' => $this->lockupLabel((clone $query)),
             'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
         ];
     }
@@ -683,6 +686,32 @@ class ResultsController extends Controller
      * @param  Builder<SimulationRun>  $query
      * @return array<string, mixed>|null
      */
+    /**
+     * The runs the lockup watch (sim/lockupWatch.js) flagged, e.g. "Adaptive (camera), load shedding, seed 20270104 at
+     * south_hilda" - null when none did, or the batch predates the watch.
+     *
+     * @param  Builder<SimulationRun>  $query
+     */
+    private function lockupLabel(Builder $query): ?string
+    {
+        $lockedRuns = $query->where('diagnostics->lockup->isLockup', true)->orderBy('id')->get(['controller_mode', 'sensor_mode', 'power_state', 'seed', 'diagnostics']);
+        if ($lockedRuns->isEmpty()) {
+            return null;
+        }
+
+        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $shown = 5;
+        $label = $lockedRuns->take($shown)->map(function (SimulationRun $run) use ($modeLabels): string {
+            $lockup = $run->diagnostics['lockup'];
+            $junctions = isset($lockup['firstCycle']) ? implode(', ', $lockup['firstCycle']['nodeIds']) : ($lockup['longestStill']['nodeId'] ?? 'unknown junction');
+            $sensor = $run->controller_mode === 'adaptive' ? " ({$run->sensor_mode})" : '';
+
+            return sprintf('%s%s, %s, seed %d at %s', $modeLabels[$run->controller_mode] ?? $run->controller_mode, $sensor, str_replace('_', ' ', $run->power_state), $run->seed, $junctions);
+        })->join('; ');
+
+        return $lockedRuns->count() > $shown ? "{$label}; and ".($lockedRuns->count() - $shown).' more' : $label;
+    }
+
     /**
      * Which controller kept a batch from settling, from its warm-up probe, e.g. "Green wave (total +63%, side streets +82%)".
      * Null when every controller levelled off, or the batch predates the probe recording it.
@@ -748,6 +777,7 @@ class ResultsController extends Controller
             'waitAccounting' => $waitAccounting,
             'routingMode' => $latest->routing_mode,
             'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
+            'warmupSettleMinutes' => $this->warmupSettleMinutes($config),
             'measuredMinutes' => $minutes($config['durationTicks'] ?? null),
             'firstSeed' => $seeds?->first_seed,
             'lastSeed' => $seeds?->last_seed,
@@ -759,6 +789,24 @@ class ResultsController extends Controller
             'controllerConfig' => $controllers,
             'routingTiersHash' => $config['routingTiersHash'] ?? null,
         ];
+    }
+
+    /**
+     * Per probed controller, when each scope's wait levelled off in the warm-up probe, in minutes from empty - null
+     * where it never did. Null for a batch from before the probe recorded it.
+     *
+     * @return array<string, array<string, float|null>>|null
+     */
+    private function warmupSettleMinutes(array $config): ?array
+    {
+        if (! isset($config['warmupSettle'])) {
+            return null;
+        }
+        $dt = $config['dt'] ?? 0.1;
+
+        return collect($config['warmupSettle'])
+            ->map(fn (array $scopes): array => collect($scopes)->map(fn (?int $tick): ?float => $tick === null ? null : round($tick * $dt / 60, 1))->all())
+            ->all();
     }
 
     /** A stored (UTC) timestamp in the zone people read it in, e.g. "25 Sep 2026, 11:42". */
@@ -828,6 +876,8 @@ class ResultsController extends Controller
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $clauses[] = "avg({$column}) as {$column}";
         }
+        // max_wait_time above is the mean of each run's own max - this is the single worst wait in any run.
+        $clauses[] = 'max(max_wait_time) as worst_wait_time';
         foreach (self::RECOVERY_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
@@ -932,6 +982,7 @@ class ResultsController extends Controller
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
         }
+        $result['worst_wait_time'] = $row->worst_wait_time === null ? null : round((float) $row->worst_wait_time, 1);
         // avg() skips runs that never recovered, so the mean alone hides how many it's built on.
         foreach (self::RECOVERY_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {

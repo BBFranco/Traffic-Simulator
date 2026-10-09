@@ -109,6 +109,13 @@
         <span id="non-stationary-culprit" class="{{ $warmupDriftingLabel ? '' : 'hidden' }}">Still drifting: <span id="non-stationary-culprit-label">{{ $warmupDriftingLabel }}</span>.</span>
     </div>
 
+    <div id="lockup-banner" class="mb-6 rounded-lg border border-rose-300 bg-rose-50 p-4 text-[12px] leading-relaxed text-rose-900 dark:border-rose-500/25 dark:bg-rose-500/5 dark:text-rose-200/85 {{ $lockupLabel ? '' : 'hidden' }}">
+        <strong class="font-semibold">Lockup in this batch.</strong>
+        The lockup watch found a vehicle that stood still for 5 minutes or more, or vehicles waiting on each other in a cycle for a minute - a simulation fault,
+        not traffic. Fix it and rerun before reading these results.
+        Locked runs: <span id="lockup-label">{{ $lockupLabel }}</span>.
+    </div>
+
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">
             <span id="batch-progress-label" class="font-semibold">Starting...</span>
@@ -283,7 +290,8 @@
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait (s, Total)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, run mean (s, Total)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, worst run (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage wait (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage wait (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery wait (s)</th>

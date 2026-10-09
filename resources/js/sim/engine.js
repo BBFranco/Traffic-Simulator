@@ -50,6 +50,7 @@ import { readQueueLength, detectQueuePresence, detectPresenceAtStopLine, sensorA
 import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection } from './corridor.js';
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
+import { LockupWatch } from './lockupWatch.js';
 
 /** Upstream window counted as "queued" for the stats-footer chips. */
 const QUEUE_WINDOW_M = 150;
@@ -661,6 +662,7 @@ export class SimulationEngine {
         this.randomEvents = false;
         this.eventRng = new SeededRandom(1);
         this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0 };
+        this.lockupWatch = new LockupWatch(this);
         /** Per-junction wait/throughput for the Simulator's hover tooltip - off in batch runs (setNodeStatsTracking()). */
         this.trackNodeStats = false;
 
@@ -1085,6 +1087,7 @@ export class SimulationEngine {
         };
         this.powerState = this._computePowerState();
         this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0 };
+        this.lockupWatch = new LockupWatch(this);
         /** Cars currently driving their turn through a junction - on neither the arterial nor the cross street yet (see _stepTurningCars()). */
         this.turningCars = [];
         this._resetNodeStats();
@@ -1320,6 +1323,7 @@ export class SimulationEngine {
         }
         this.allWaitTimesTotal = [];
         this.routingStats = newRoutingStats();
+        this.lockupWatch.resetRecord();
     }
 
     setManualLoadShedding(active) {
@@ -1388,6 +1392,7 @@ export class SimulationEngine {
         this._pruneRolling(this.arterialScopeStats);
 
         this._sampleChart(dt);
+        this.lockupWatch.observe();
     }
 
     /** Everything the render loop / stats footer needs for one frame (or one row of headless output). */
@@ -3211,7 +3216,9 @@ export class SimulationEngine {
             points.push({ x: c.x + Math.cos(angle) * circulatingRadiusM, y: c.y + Math.sin(angle) * circulatingRadiusM });
         }
         points.push(out, end);
-        return buildPolylinePath(points);
+        const path = buildPolylinePath(points);
+        // Where it reaches the circulating line and where it leaves it - before and after, it is on its own entry or exit leg.
+        return { ...path, ringEntryAtM: path.cumulative[1], ringExitAtM: path.cumulative[points.length - 3] };
     }
 
     /** True if the roundabout at `info` keeps a car on `approachId` at its yield line right now - it has someone to give way to, or (`car`) its way out is backed up. */
@@ -3841,15 +3848,16 @@ export class SimulationEngine {
             }
             const targetLanes = this._turnTargetLanes(path);
             const exitBlocked = this._turnExitBlocked(targetLanes, car.lane, path.exitDistanceM, car.lengthM);
-            const pathEnd = exitBlocked ? { distanceM: path.lengthM, speedMps: 0 } : null;
+            const pathEnd = exitBlocked ? { distanceM: path.lengthM, speedMps: 0, exitLanes: targetLanes, exitDistanceM: path.exitDistanceM } : null;
             if (path.fromDriveway) this._waitToPullOut(car, path, exitBlocked);
             const ringLeader = path.ringNodeId ? this._ringLeader(car, onRings.get(path.ringNodeId)) : null;
             // Waiting in the box for a gap: held short of the oncoming lanes until there is one - which the oncoming side
             // stopping for its amber/red gives at the latest. Once it goes, it is committed.
             if (path.boxWait && (!path.boxWait.mustYield() || this.simTimeS - path.boxWait.sinceS > BOX_WAIT_MAX_S)) path.boxWait = null;
             const boxHold = path.boxWait ? { distanceM: path.boxWait.atM, speedMps: 0 } : null;
-            const ahead = nearestAhead(nearestAhead(nearestAhead(leaderByKey.get(path.key) ?? null, pathEnd), ringLeader), boxHold);
+            const ahead = nearestAhead(nearestAhead(nearestAhead(this._sameWayLeader(car, leaderByKey.get(path.key) ?? null), pathEnd), ringLeader), boxHold);
             stepCar(car, ahead, dt, Infinity, path.speedLimitMps);
+            car.waitsOn = ahead; // lockupWatch.js reads it
             leaderByKey.set(path.key, car);
 
             if (car.distanceM < path.lengthM || exitBlocked) {
@@ -3873,6 +3881,18 @@ export class SimulationEngine {
             this._letInDone(car, car.road, car.lane);
         }
         this.turningCars = stillTurning;
+    }
+
+    /**
+     * The car ahead from the same entry, if it is ahead on `car`'s own way. Round a roundabout, cars from one entry
+     * share only the way in: once `car` is on the ring, one leaving by another exit is past or beside it, not ahead -
+     * the ring itself (_ringLeader()) says who is - and following it there can lock the two against each other.
+     */
+    _sameWayLeader(car, leader) {
+        const path = car.turnPath;
+        if (!leader?.turnPath || !path.ringNodeId || car.distanceM < path.ringEntryAtM) return leader;
+        const samePath = leader.road === car.road && leader.lane === car.lane && Math.abs(leader.turnPath.lengthM - path.lengthM) < 2;
+        return samePath ? leader : null;
     }
 
     /** A car pulling out of a driveway, stood at the end of its way out for room in the lane: after LET_IN_AFTER_S it is let in. */
@@ -3932,7 +3952,8 @@ export class SimulationEngine {
      * that has just come in from another entry is followed, not driven through.
      */
     _ringLeader(car, ring) {
-        if (!ring) return null;
+        // Off the ring on its way out, nobody going round is ahead of it - only alongside at the same angle.
+        if (!ring || car.distanceM >= car.turnPath.ringExitAtM) return null;
         const { node, cars } = ring;
         const self = cars.find((c) => c.car === car);
         const p = carRenderPoint(car);
@@ -3946,7 +3967,7 @@ export class SimulationEngine {
             best = { aheadM, other: other.car };
         }
         if (!best) return null;
-        return { distanceM: car.distanceM + best.aheadM, speedMps: best.other.speedMps, lengthM: best.other.lengthM };
+        return { distanceM: car.distanceM + best.aheadM, speedMps: best.other.speedMps, lengthM: best.other.lengthM, car: best.other };
     }
 
     /** Stop-line detector for gap-out timing - independent of `sensorMode`, see sensors.js's detectPresenceAtStopLine(). */

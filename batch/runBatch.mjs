@@ -186,6 +186,11 @@ function withSweepSettings(config, args) {
     return config;
 }
 
+/** The junction(s) a lockup is at: the waits-on cycle's, else where the longest standstill was. */
+function lockupJunctions(lockup) {
+    return lockup.firstCycle ? lockup.firstCycle.nodeIds.join(', ') : lockup.longestStill?.nodeId ?? 'unknown junction';
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
@@ -208,6 +213,7 @@ async function main() {
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
     let mismatches = 0;
+    const lockups = [];
     const pendingPosts = [];
 
     console.log(`Running ${matrix.length} conditions x ${args.reps} reps = ${totalRuns} runs against "${args.corridor}"...`);
@@ -243,8 +249,14 @@ async function main() {
                 console.warn(`  ! car accounting mismatch on ${condition.key}/${seed}: ${JSON.stringify(summary.carAccounting)}`);
             }
 
+            const lockup = summary.diagnostics.lockup;
+            if (lockup.isLockup) {
+                lockups.push(`${condition.key}/${seed} at ${lockupJunctions(lockup)}`);
+                console.warn(`  !!! LOCKUP on ${condition.key}, seed ${seed}, at ${lockupJunctions(lockup)}: ${JSON.stringify(lockup)}`);
+            }
+
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, batchStartedAt, build, batchKind }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build, batchKind }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to
@@ -286,6 +298,10 @@ async function main() {
         await postBatch(args.post, pendingPosts);
     }
 
+    if (lockups.length) {
+        console.warn(`\n!!! ${lockups.length}/${totalRuns} runs locked up - do not read this batch until they are fixed:\n  ${lockups.join('\n  ')}`);
+        process.exitCode = 1;
+    }
     if (mismatches) {
         console.warn(`Done, but ${mismatches}/${totalRuns} runs failed the car-conservation check - see warnings above.`);
         process.exitCode = 1;
