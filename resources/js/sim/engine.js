@@ -2175,7 +2175,7 @@ export class SimulationEngine {
             // Physical clearance check, on top of MOBIL's own acceleration-based
             // safety criterion below - stops a change that would leave two cars
             // visually overlapping even if the accelerations alone would allow it.
-            if (!hasLaneChangeClearance(car, tgtLeader, tgtFollower)) continue;
+            if (!hasLaneChangeClearance(car, tgtLeader, tgtFollower) || this._inLetInGap(car, targetIndex)) continue;
 
             const tgtLeaderAhead = nearestAhead(tgtLeader, signalAhead);
             const accSelfAfter = carAcceleration(car, tgtLeaderAhead);
@@ -2217,7 +2217,7 @@ export class SimulationEngine {
         const targetIndex = car.lane + Math.sign(preferredLane - car.lane);
         if (allowedLanes && !allowedLanes.includes(targetIndex)) return;
         const { leader, follower } = neighborsInLane(state.lanes[targetIndex].cars, car);
-        if (!hasLaneChangeClearance(car, leader, follower)) return;
+        if (!hasLaneChangeClearance(car, leader, follower) || this._inLetInGap(car, targetIndex)) return;
         if (follower && !mobilIsSafe(carAcceleration(follower, car), car.mobilParams)) return;
         this._moveToLane(state, car, targetIndex, MANDATORY_LANE_CHANGE_COOLDOWN_S);
     }
@@ -2299,7 +2299,7 @@ export class SimulationEngine {
         const targetIndex = car.lane + Math.sign(nearestAllowed - car.lane);
         if (!slotOpenAt(state.laneLayout, targetIndex, car.distanceM)) return;
         const { leader, follower } = neighborsInLane(state.lanes[targetIndex].cars, car);
-        if (!hasClearanceAhead(car, leader)) {
+        if (!hasClearanceAhead(car, leader) || this._inLetInGap(car, targetIndex)) {
             if (isCourteous) car.mergeDropBack = true;
             return;
         }
@@ -2515,6 +2515,7 @@ export class SimulationEngine {
                 continue;
             }
             if (car.turnPlan?.nodeId === gate.node.id && car.turnPlan.blockedSinceS != null) {
+                car.turnPlan.heldSeenTick = this.tickNo; // still held on its approach - see _letInActive()
                 return { distanceM: gate.stopLineDistanceM, speedMps: 0, isSignal: true, nodeId: gate.node.id, controllerType: gate.info.controllerType };
             }
             const obstacle = this._connectorSignalAhead(gate.info, gate.stopLineDistanceM, car, gate.approach?.id, gate.phase);
@@ -3509,6 +3510,7 @@ export class SimulationEngine {
 
         // A car waiting for a gap to make its turn holds at the stop line whatever the signal shows.
         if (car.turnPlan?.nodeId === nearest.node.id && car.turnPlan.blockedSinceS != null) {
+            car.turnPlan.heldSeenTick = this.tickNo; // still held on its approach - see _letInActive()
             return {
                 distanceM: nearest.stopLineDistanceM,
                 speedMps: 0,
@@ -3925,22 +3927,34 @@ export class SimulationEngine {
     /**
      * `heldPlan`: a junction turner's plan - the lane keeps letting it in for as long as it is still held on that plan,
      * through its red as well. It only asks on its green, and a red longer than LET_IN_HOLD_S (a green wave's side
-     * street) would otherwise let the gap fill again before its next green.
+     * street) would otherwise let the gap fill again before its next green. "Still held" is the step loop having held
+     * it at its stop line this tick or the last (`heldSeenTick`): once it has turned - as a new Car, onto whichever
+     * lane it got in the end - or given up, nothing stamps the plan any more and the lane carries on. Judged by the
+     * plan's own fields alone, the stale entry of a car that turned into another lane held its lane for good.
      */
     _askToBeLetIn(car, road, laneIndex, exitDistanceM, heldPlan = null) {
         if (!this.letIn.has(road)) this.letIn.set(road, new Map());
-        this.letIn.get(road).set(laneIndex, { carId: car.id, car, heldPlan, exitDistanceM, lengthM: car.lengthM, untilS: this.simTimeS + LET_IN_HOLD_S });
+        this.letIn.get(road).set(laneIndex, { carId: car.id, heldPlan, exitDistanceM, lengthM: car.lengthM, untilS: this.simTimeS + LET_IN_HOLD_S });
     }
 
     _letInActive(waiting) {
         if (waiting.untilS >= this.simTimeS) return true;
-        return waiting.heldPlan !== null && waiting.car.turnPlan === waiting.heldPlan && waiting.heldPlan.blockedSinceS != null;
+        return waiting.heldPlan !== null && waiting.heldPlan.blockedSinceS != null && waiting.heldPlan.heldSeenTick >= this.tickNo - 1;
     }
 
     /** `car` has joined lane `laneIndex` of `road`: whoever was letting it in carries on. */
     _letInDone(car, road, laneIndex) {
         const lanes = this.letIn.get(road);
         if (lanes?.get(laneIndex)?.carId === car.id) lanes.delete(laneIndex);
+    }
+
+    /**
+     * Would `car`, moving into lane `laneIndex` of its road, land in the room a let-in is keeping for a waiting car
+     * (_askToBeLetIn())? The lane holds back behind that room, but a car from the lane beside it would otherwise take it.
+     */
+    _inLetInGap(car, laneIndex) {
+        const waiting = this.letIn.get(car.road)?.get(laneIndex);
+        return Boolean(waiting && this._letInActive(waiting) && Math.abs(car.distanceM - waiting.exitDistanceM) < (car.lengthM + waiting.lengthM) / 2 + SPAWN_CLEARANCE_M);
     }
 
     /** Where a car stops to let one in ahead of it (_askToBeLetIn()): short of the room that car needs - unless already into it. */

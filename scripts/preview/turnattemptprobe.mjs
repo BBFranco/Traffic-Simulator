@@ -32,7 +32,11 @@ for (const name of ['_mayProceed', '_turnLanding', '_turnExitBlocked', '_waitToT
     const original = e[name].bind(e);
     e[name] = (...args) => {
         const out = original(...args);
-        if (calls) calls.push(`${name}=${show(out)}`);
+        if (calls && name === '_turnExitBlocked' && out) {
+            const [lanes, laneIndex, exitDistanceM] = args;
+            const near = lanes[laneIndex].cars.filter((c) => Math.abs(c.distanceM - exitDistanceM) < 25);
+            calls.push(`${name}=true near ${near.map((c) => `${c.id}@${c.distanceM.toFixed(1)}/v${c.speedMps.toFixed(1)}${e._letInHold(c) ? '/held' : ''}`).join(' ')}`);
+        } else if (calls) calls.push(`${name}=${show(out)}`);
         return out;
     };
 }

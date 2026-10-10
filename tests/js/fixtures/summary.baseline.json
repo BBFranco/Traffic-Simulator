@@ -291,13 +291,13 @@
         "arrivalsLost": 3,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 65,
+          "longestStillS": 66,
           "longestStill": {
-            "seconds": 65,
+            "seconds": 66,
             "carId": 1373,
             "nodeId": "lynnwood_janshoba",
             "place": "Jan Shoba, lane 0, 187 m",
-            "atS": 587
+            "atS": 588
           },
           "locked": null,
           "starved": null,
@@ -309,18 +309,18 @@
       "powerState": "load_shedding",
       "sensorMode": "inductive_loop",
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 32.986608015640286,
-      "avgWaitTimeArterial": 29.026931330472127,
-      "avgWaitTimeSideStreet": 15.419815668202718,
-      "throughputPerMin": 127.875,
-      "throughputPerMinArterial": 116.5,
-      "throughputPerMinSideStreet": 54.25,
-      "pctClearedWithoutStop": 9.970674486803519,
-      "pctClearedWithoutStopArterial": 11.802575107296137,
-      "pctClearedWithoutStopSideStreet": 37.55760368663594,
-      "medianWait": 27.000000000000114,
-      "p95Wait": 89.1999999999992,
-      "maxWait": 170.99999999999457,
+      "avgWaitTime": 32.78393378773127,
+      "avgWaitTimeArterial": 28.80278372591009,
+      "avgWaitTimeSideStreet": 15.628868360277083,
+      "throughputPerMin": 128.375,
+      "throughputPerMinArterial": 116.75,
+      "throughputPerMinSideStreet": 54.125,
+      "pctClearedWithoutStop": 9.931840311587147,
+      "pctClearedWithoutStopArterial": 11.563169164882227,
+      "pctClearedWithoutStopSideStreet": 37.1824480369515,
+      "medianWait": 26.80000000000011,
+      "p95Wait": 88.39999999999925,
+      "maxWait": 167.0999999999948,
       "preOutage": {
         "avgWaitTime": 15.713553113553177,
         "throughputPerMin": 109.2,
@@ -332,9 +332,9 @@
         "clearedTotal": 263
       },
       "postRecovery": {
-        "avgWaitTime": 44.372073921971186,
-        "throughputPerMin": 162.33333333333334,
-        "clearedTotal": 487
+        "avgWaitTime": 43.85539714867611,
+        "throughputPerMin": 163.66666666666666,
+        "clearedTotal": 491
       },
       "preOutageArterial": {
         "avgWaitTime": 15.08200000000006,
@@ -347,9 +347,9 @@
         "clearedTotal": 228
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 37.408810572687194,
-        "throughputPerMin": 151.33333333333334,
-        "clearedTotal": 454
+        "avgWaitTime": 36.9129385964912,
+        "throughputPerMin": 152,
+        "clearedTotal": 456
       },
       "preOutageSideStreet": {
         "avgWaitTime": 6.256626506024114,
@@ -362,9 +362,9 @@
         "clearedTotal": 133
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 21.21834862385309,
-        "throughputPerMin": 72.66666666666667,
-        "clearedTotal": 218
+        "avgWaitTime": 21.66221198156668,
+        "throughputPerMin": 72.33333333333333,
+        "clearedTotal": 217
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -377,30 +377,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 16.621860465116352,
-          "throughputPerMin": 26.875,
-          "clearedTotal": 215,
-          "waitSumTotal": 3573.7000000000157,
-          "clearedWithoutStopTotal": 62,
-          "pctClearedWithoutStop": 28.837209302325583
+          "avgWaitTime": 16.698130841121564,
+          "throughputPerMin": 26.75,
+          "clearedTotal": 214,
+          "waitSumTotal": 3573.4000000000146,
+          "clearedWithoutStopTotal": 60,
+          "pctClearedWithoutStop": 28.037383177570092
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 19.777725118483534,
-          "throughputPerMin": 26.375,
-          "clearedTotal": 211,
-          "waitSumTotal": 4173.100000000026,
-          "clearedWithoutStopTotal": 36,
-          "pctClearedWithoutStop": 17.061611374407583
+          "avgWaitTime": 19.508490566037857,
+          "throughputPerMin": 26.5,
+          "clearedTotal": 212,
+          "waitSumTotal": 4135.800000000026,
+          "clearedWithoutStopTotal": 35,
+          "pctClearedWithoutStop": 16.50943396226415
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 13.508235294117675,
-          "throughputPerMin": 31.875,
-          "clearedTotal": 255,
-          "waitSumTotal": 3444.600000000007,
+          "avgWaitTime": 13.555511811023651,
+          "throughputPerMin": 31.75,
+          "clearedTotal": 254,
+          "waitSumTotal": 3443.100000000007,
           "clearedWithoutStopTotal": 75,
-          "pctClearedWithoutStop": 29.411764705882355
+          "pctClearedWithoutStop": 29.527559055118108
         },
         {
           "id": "arcadia_west",
@@ -485,12 +485,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 22.100000000000122,
-          "throughputPerMin": 23.625,
-          "clearedTotal": 189,
-          "waitSumTotal": 4176.900000000023,
-          "clearedWithoutStopTotal": 31,
-          "pctClearedWithoutStop": 16.402116402116402
+          "avgWaitTime": 22.428125000000122,
+          "throughputPerMin": 24,
+          "clearedTotal": 192,
+          "waitSumTotal": 4306.2000000000235,
+          "clearedWithoutStopTotal": 29,
+          "pctClearedWithoutStop": 15.104166666666666
         },
         {
           "id": "dyer_mall",
@@ -521,18 +521,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 28.15614457831317,
-          "throughputPerMin": 51.875,
-          "clearedTotal": 415,
-          "waitSumTotal": 11684.799999999967,
-          "clearedWithoutStopTotal": 105,
-          "pctClearedWithoutStop": 25.301204819277107
+          "avgWaitTime": 27.774999999999928,
+          "throughputPerMin": 51.5,
+          "clearedTotal": 412,
+          "waitSumTotal": 11443.29999999997,
+          "clearedWithoutStopTotal": 106,
+          "pctClearedWithoutStop": 25.728155339805824
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1758,
-        "totalClearedNetwork": 1056,
-        "onRoadNetwork": 702,
+        "totalSpawned": 1755,
+        "totalClearedNetwork": 1060,
+        "onRoadNetwork": 695,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -561,7 +561,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "b50c3bccab80a24f"
+    "rowsHash": "59029c4406f6a7aa"
   },
   "1|green_wave|random|true": {
     "summary": {
@@ -591,17 +591,17 @@
       "powerState": "load_shedding",
       "sensorMode": "inductive_loop",
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 36.87411167512692,
-      "avgWaitTimeArterial": 33.64026845637582,
-      "avgWaitTimeSideStreet": 14.526976744186044,
-      "throughputPerMin": 123.125,
-      "throughputPerMinArterial": 111.75,
-      "throughputPerMinSideStreet": 53.75,
-      "pctClearedWithoutStop": 14.51776649746193,
-      "pctClearedWithoutStopArterial": 15.995525727069351,
-      "pctClearedWithoutStopSideStreet": 38.83720930232558,
-      "medianWait": 31.70000000000018,
-      "p95Wait": 96.2999999999988,
+      "avgWaitTime": 37.002063983488156,
+      "avgWaitTimeArterial": 33.59206349206349,
+      "avgWaitTimeSideStreet": 14.720567375886507,
+      "throughputPerMin": 121.125,
+      "throughputPerMinArterial": 110.25,
+      "throughputPerMinSideStreet": 52.875,
+      "pctClearedWithoutStop": 14.035087719298245,
+      "pctClearedWithoutStopArterial": 15.759637188208616,
+      "pctClearedWithoutStopSideStreet": 37.825059101654844,
+      "medianWait": 32.20000000000019,
+      "p95Wait": 96.3999999999988,
       "maxWait": 156.99999999999537,
       "preOutage": {
         "avgWaitTime": 15.05317725752514,
@@ -614,9 +614,9 @@
         "clearedTotal": 241
       },
       "postRecovery": {
-        "avgWaitTime": 51.604044943820156,
-        "throughputPerMin": 148.33333333333334,
-        "clearedTotal": 445
+        "avgWaitTime": 52.44242424242419,
+        "throughputPerMin": 143,
+        "clearedTotal": 429
       },
       "preOutageArterial": {
         "avgWaitTime": 14.262030075188022,
@@ -629,9 +629,9 @@
         "clearedTotal": 216
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 46.21189320388336,
-        "throughputPerMin": 137.33333333333334,
-        "clearedTotal": 412
+        "avgWaitTime": 46.48274999999989,
+        "throughputPerMin": 133.33333333333334,
+        "clearedTotal": 400
       },
       "preOutageSideStreet": {
         "avgWaitTime": 7.0720000000000285,
@@ -644,9 +644,9 @@
         "clearedTotal": 129
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 19.524875621890487,
-        "throughputPerMin": 67,
-        "clearedTotal": 201
+        "avgWaitTime": 20.127319587628772,
+        "throughputPerMin": 64.66666666666667,
+        "clearedTotal": 194
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -659,30 +659,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 21.809230769230858,
-          "throughputPerMin": 24.375,
-          "clearedTotal": 195,
-          "waitSumTotal": 4252.8000000000175,
-          "clearedWithoutStopTotal": 64,
-          "pctClearedWithoutStop": 32.82051282051282
+          "avgWaitTime": 21.819791666666756,
+          "throughputPerMin": 24,
+          "clearedTotal": 192,
+          "waitSumTotal": 4189.400000000017,
+          "clearedWithoutStopTotal": 63,
+          "pctClearedWithoutStop": 32.8125
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 22.809302325581513,
-          "throughputPerMin": 26.875,
-          "clearedTotal": 215,
-          "waitSumTotal": 4904.0000000000255,
-          "clearedWithoutStopTotal": 36,
-          "pctClearedWithoutStop": 16.74418604651163
+          "avgWaitTime": 23.023474178403887,
+          "throughputPerMin": 26.625,
+          "clearedTotal": 213,
+          "waitSumTotal": 4904.000000000028,
+          "clearedWithoutStopTotal": 35,
+          "pctClearedWithoutStop": 16.431924882629108
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 7.034146341463428,
-          "throughputPerMin": 30.75,
-          "clearedTotal": 246,
-          "waitSumTotal": 1730.4000000000033,
-          "clearedWithoutStopTotal": 112,
-          "pctClearedWithoutStop": 45.52845528455284
+          "avgWaitTime": 7.175918367346952,
+          "throughputPerMin": 30.625,
+          "clearedTotal": 245,
+          "waitSumTotal": 1758.1000000000033,
+          "clearedWithoutStopTotal": 109,
+          "pctClearedWithoutStop": 44.48979591836735
         },
         {
           "id": "arcadia_west",
@@ -767,12 +767,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 30.523076923076935,
-          "throughputPerMin": 21.125,
-          "clearedTotal": 169,
-          "waitSumTotal": 5158.400000000002,
-          "clearedWithoutStopTotal": 33,
-          "pctClearedWithoutStop": 19.526627218934912
+          "avgWaitTime": 30.62764705882355,
+          "throughputPerMin": 21.25,
+          "clearedTotal": 170,
+          "waitSumTotal": 5206.7000000000035,
+          "clearedWithoutStopTotal": 34,
+          "pctClearedWithoutStop": 20
         },
         {
           "id": "dyer_mall",
@@ -803,18 +803,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 34.810918114143846,
-          "throughputPerMin": 50.375,
-          "clearedTotal": 403,
-          "waitSumTotal": 14028.799999999968,
-          "clearedWithoutStopTotal": 81,
-          "pctClearedWithoutStop": 20.099255583126553
+          "avgWaitTime": 34.529262086513924,
+          "throughputPerMin": 49.125,
+          "clearedTotal": 393,
+          "waitSumTotal": 13569.99999999997,
+          "clearedWithoutStopTotal": 79,
+          "pctClearedWithoutStop": 20.10178117048346
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1710,
-        "totalClearedNetwork": 1019,
-        "onRoadNetwork": 691,
+        "totalSpawned": 1703,
+        "totalClearedNetwork": 1003,
+        "onRoadNetwork": 700,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -843,7 +843,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "e890141766d177d0"
+    "rowsHash": "340c0c4b4dc19761"
   },
   "1|fixed|destination|false": {
     "summary": {
@@ -1665,15 +1665,15 @@
       "routingMode": "random",
       "routing": null,
       "diagnostics": {
-        "arrivalsLost": 11,
+        "arrivalsLost": 2,
         "roundaboutOverruns": 0,
         "lockup": {
           "longestStillS": 68,
           "longestStill": {
             "seconds": 68,
-            "carId": 1333,
+            "carId": 1324,
             "nodeId": "lynnwood_duxbury",
-            "place": "Lynnwood Road, westbound, lane 2, 238 m",
+            "place": "Lynnwood Road, westbound, lane 2, 239 m",
             "atS": 531
           },
           "locked": null,
@@ -1686,62 +1686,62 @@
       "powerState": "load_shedding",
       "sensorMode": null,
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 41.60307062436026,
-      "avgWaitTimeArterial": 36.73501683501684,
-      "avgWaitTimeSideStreet": 19.073012048192677,
-      "throughputPerMin": 122.125,
-      "throughputPerMinArterial": 111.375,
-      "throughputPerMinSideStreet": 51.875,
-      "pctClearedWithoutStop": 3.5823950870010237,
-      "pctClearedWithoutStopArterial": 4.377104377104377,
-      "pctClearedWithoutStopSideStreet": 31.08433734939759,
-      "medianWait": 34.50000000000022,
-      "p95Wait": 105.39999999999829,
-      "maxWait": 168.09999999999474,
+      "avgWaitTime": 43.11701030927824,
+      "avgWaitTimeArterial": 38.42244897959175,
+      "avgWaitTimeSideStreet": 18.32540415704384,
+      "throughputPerMin": 121.25,
+      "throughputPerMinArterial": 110.25,
+      "throughputPerMinSideStreet": 54.125,
+      "pctClearedWithoutStop": 4.123711340206185,
+      "pctClearedWithoutStopArterial": 5.555555555555555,
+      "pctClearedWithoutStopSideStreet": 30.94688221709007,
+      "medianWait": 35.20000000000023,
+      "p95Wait": 116.59999999999765,
+      "maxWait": 185.39999999999375,
       "preOutage": {
-        "avgWaitTime": 23.052895752895854,
+        "avgWaitTime": 22.36563706563717,
         "throughputPerMin": 103.6,
         "clearedTotal": 259
       },
       "duringOutage": {
-        "avgWaitTime": 40.42279411764726,
-        "throughputPerMin": 108.8,
-        "clearedTotal": 272
+        "avgWaitTime": 42.023574144486915,
+        "throughputPerMin": 105.2,
+        "clearedTotal": 263
       },
       "postRecovery": {
-        "avgWaitTime": 53.095291479820375,
-        "throughputPerMin": 148.66666666666666,
-        "clearedTotal": 446
+        "avgWaitTime": 55.75580357142815,
+        "throughputPerMin": 149.33333333333334,
+        "clearedTotal": 448
       },
       "preOutageArterial": {
-        "avgWaitTime": 21.462127659574573,
-        "throughputPerMin": 94,
-        "clearedTotal": 235
+        "avgWaitTime": 20.900862068965626,
+        "throughputPerMin": 92.8,
+        "clearedTotal": 232
       },
       "duringOutageArterial": {
-        "avgWaitTime": 37.08744939271278,
-        "throughputPerMin": 98.8,
-        "clearedTotal": 247
+        "avgWaitTime": 36.74549180327894,
+        "throughputPerMin": 97.6,
+        "clearedTotal": 244
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 45.297555012224755,
-        "throughputPerMin": 136.33333333333334,
-        "clearedTotal": 409
+        "avgWaitTime": 49.442610837438025,
+        "throughputPerMin": 135.33333333333334,
+        "clearedTotal": 406
       },
       "preOutageSideStreet": {
-        "avgWaitTime": 10.187912087912116,
-        "throughputPerMin": 36.4,
-        "clearedTotal": 91
+        "avgWaitTime": 10.14731182795702,
+        "throughputPerMin": 37.2,
+        "clearedTotal": 93
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 15.036065573770541,
-        "throughputPerMin": 48.8,
-        "clearedTotal": 122
+        "avgWaitTime": 17.385833333333384,
+        "throughputPerMin": 48,
+        "clearedTotal": 120
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 25.513861386138377,
-        "throughputPerMin": 67.33333333333333,
-        "clearedTotal": 202
+        "avgWaitTime": 22.294999999999888,
+        "throughputPerMin": 73.33333333333333,
+        "clearedTotal": 220
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -1754,30 +1754,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 18.687096774193652,
-          "throughputPerMin": 27.125,
-          "clearedTotal": 217,
-          "waitSumTotal": 4055.100000000022,
-          "clearedWithoutStopTotal": 37,
-          "pctClearedWithoutStop": 17.050691244239633
+          "avgWaitTime": 18.779545454545534,
+          "throughputPerMin": 27.5,
+          "clearedTotal": 220,
+          "waitSumTotal": 4131.500000000017,
+          "clearedWithoutStopTotal": 43,
+          "pctClearedWithoutStop": 19.545454545454547
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 21.17105263157906,
-          "throughputPerMin": 28.5,
-          "clearedTotal": 228,
-          "waitSumTotal": 4827.0000000000255,
+          "avgWaitTime": 20.29178082191787,
+          "throughputPerMin": 27.375,
+          "clearedTotal": 219,
+          "waitSumTotal": 4443.900000000014,
           "clearedWithoutStopTotal": 29,
-          "pctClearedWithoutStop": 12.719298245614036
+          "pctClearedWithoutStop": 13.24200913242009
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 15.30387931034487,
-          "throughputPerMin": 29,
-          "clearedTotal": 232,
-          "waitSumTotal": 3550.50000000001,
+          "avgWaitTime": 17.419918699187047,
+          "throughputPerMin": 30.75,
+          "clearedTotal": 246,
+          "waitSumTotal": 4285.300000000014,
           "clearedWithoutStopTotal": 46,
-          "pctClearedWithoutStop": 19.82758620689655
+          "pctClearedWithoutStop": 18.69918699186992
         },
         {
           "id": "arcadia_west",
@@ -1862,12 +1862,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 32.66835443037992,
-          "throughputPerMin": 19.75,
-          "clearedTotal": 158,
-          "waitSumTotal": 5161.600000000028,
-          "clearedWithoutStopTotal": 19,
-          "pctClearedWithoutStop": 12.025316455696203
+          "avgWaitTime": 33.40993377483465,
+          "throughputPerMin": 18.875,
+          "clearedTotal": 151,
+          "waitSumTotal": 5044.9000000000315,
+          "clearedWithoutStopTotal": 21,
+          "pctClearedWithoutStop": 13.90728476821192
         },
         {
           "id": "dyer_mall",
@@ -1898,18 +1898,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 38.12770780856403,
-          "throughputPerMin": 49.625,
-          "clearedTotal": 397,
-          "waitSumTotal": 15136.69999999992,
-          "clearedWithoutStopTotal": 102,
-          "pctClearedWithoutStop": 25.692695214105793
+          "avgWaitTime": 40.98205128205091,
+          "throughputPerMin": 48.75,
+          "clearedTotal": 390,
+          "waitSumTotal": 15982.999999999856,
+          "clearedWithoutStopTotal": 97,
+          "pctClearedWithoutStop": 24.871794871794872
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1687,
-        "totalClearedNetwork": 995,
-        "onRoadNetwork": 692,
+        "totalSpawned": 1738,
+        "totalClearedNetwork": 988,
+        "onRoadNetwork": 750,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -1938,7 +1938,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "88017bb53455b3d0"
+    "rowsHash": "0cc7871033f01e04"
   },
   "2|adaptive|random|true": {
     "summary": {
@@ -1950,13 +1950,13 @@
         "arrivalsLost": 2,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 85,
+          "longestStillS": 89,
           "longestStill": {
-            "seconds": 85,
-            "carId": 397,
-            "nodeId": "lynnwood_janshoba",
-            "place": "Jan Shoba, lane 3, 1918 m",
-            "atS": 595
+            "seconds": 89,
+            "carId": 1497,
+            "nodeId": "lynnwood_duxbury",
+            "place": "Duxbury, lane 1, 245 m",
+            "atS": 585
           },
           "locked": null,
           "starved": null,
@@ -1968,17 +1968,17 @@
       "powerState": "load_shedding",
       "sensorMode": "inductive_loop",
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 36.35753554502374,
-      "avgWaitTimeArterial": 32.99699481865285,
-      "avgWaitTimeSideStreet": 14.101948051948067,
-      "throughputPerMin": 131.875,
-      "throughputPerMinArterial": 120.625,
-      "throughputPerMinSideStreet": 57.75,
-      "pctClearedWithoutStop": 6.919431279620854,
-      "pctClearedWithoutStopArterial": 9.32642487046632,
-      "pctClearedWithoutStopSideStreet": 34.41558441558442,
+      "avgWaitTime": 36.30743179680155,
+      "avgWaitTimeArterial": 33.04755102040817,
+      "avgWaitTimeSideStreet": 13.408639308855319,
+      "throughputPerMin": 132.875,
+      "throughputPerMinArterial": 122.5,
+      "throughputPerMinSideStreet": 57.875,
+      "pctClearedWithoutStop": 6.773283160865475,
+      "pctClearedWithoutStopArterial": 9.591836734693878,
+      "pctClearedWithoutStopSideStreet": 34.12526997840173,
       "medianWait": 30.20000000000016,
-      "p95Wait": 88.59999999999924,
+      "p95Wait": 88.49999999999925,
       "maxWait": 163.79999999999498,
       "preOutage": {
         "avgWaitTime": 16.873267326732734,
@@ -1991,9 +1991,9 @@
         "clearedTotal": 262
       },
       "postRecovery": {
-        "avgWaitTime": 49.69265306122443,
-        "throughputPerMin": 163.33333333333334,
-        "clearedTotal": 490
+        "avgWaitTime": 49.371485943775056,
+        "throughputPerMin": 166,
+        "clearedTotal": 498
       },
       "preOutageArterial": {
         "avgWaitTime": 16.175547445255532,
@@ -2006,9 +2006,9 @@
         "clearedTotal": 238
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 44.547240618101455,
-        "throughputPerMin": 151,
-        "clearedTotal": 453
+        "avgWaitTime": 44.28290598290591,
+        "throughputPerMin": 156,
+        "clearedTotal": 468
       },
       "preOutageSideStreet": {
         "avgWaitTime": 5.623966942148766,
@@ -2021,9 +2021,9 @@
         "clearedTotal": 126
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 19.393023255813944,
-        "throughputPerMin": 71.66666666666667,
-        "clearedTotal": 215
+        "avgWaitTime": 17.882407407407424,
+        "throughputPerMin": 72,
+        "clearedTotal": 216
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -2036,30 +2036,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 16.676548672566433,
-          "throughputPerMin": 28.25,
-          "clearedTotal": 226,
-          "waitSumTotal": 3768.900000000014,
-          "clearedWithoutStopTotal": 67,
-          "pctClearedWithoutStop": 29.646017699115045
+          "avgWaitTime": 15.73733905579405,
+          "throughputPerMin": 29.125,
+          "clearedTotal": 233,
+          "waitSumTotal": 3666.800000000014,
+          "clearedWithoutStopTotal": 73,
+          "pctClearedWithoutStop": 31.330472103004293
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 20.905905511811156,
-          "throughputPerMin": 31.75,
-          "clearedTotal": 254,
-          "waitSumTotal": 5310.100000000034,
-          "clearedWithoutStopTotal": 31,
-          "pctClearedWithoutStop": 12.204724409448819
+          "avgWaitTime": 21.012878787878908,
+          "throughputPerMin": 33,
+          "clearedTotal": 264,
+          "waitSumTotal": 5547.4000000000315,
+          "clearedWithoutStopTotal": 30,
+          "pctClearedWithoutStop": 11.363636363636363
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 18.827155172413836,
-          "throughputPerMin": 29,
-          "clearedTotal": 232,
-          "waitSumTotal": 4367.90000000001,
-          "clearedWithoutStopTotal": 49,
-          "pctClearedWithoutStop": 21.120689655172413
+          "avgWaitTime": 18.660683760683803,
+          "throughputPerMin": 29.25,
+          "clearedTotal": 234,
+          "waitSumTotal": 4366.6000000000095,
+          "clearedWithoutStopTotal": 51,
+          "pctClearedWithoutStop": 21.794871794871796
         },
         {
           "id": "arcadia_west",
@@ -2144,12 +2144,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 25.29545454545468,
-          "throughputPerMin": 27.5,
-          "clearedTotal": 220,
-          "waitSumTotal": 5565.00000000003,
-          "clearedWithoutStopTotal": 42,
-          "pctClearedWithoutStop": 19.090909090909093
+          "avgWaitTime": 25.37657657657671,
+          "throughputPerMin": 27.75,
+          "clearedTotal": 222,
+          "waitSumTotal": 5633.6000000000295,
+          "clearedWithoutStopTotal": 44,
+          "pctClearedWithoutStop": 19.81981981981982
         },
         {
           "id": "dyer_mall",
@@ -2180,18 +2180,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 31.293170731707185,
-          "throughputPerMin": 51.25,
-          "clearedTotal": 410,
-          "waitSumTotal": 12830.199999999946,
-          "clearedWithoutStopTotal": 102,
-          "pctClearedWithoutStop": 24.878048780487806
+          "avgWaitTime": 31.362380952380832,
+          "throughputPerMin": 52.5,
+          "clearedTotal": 420,
+          "waitSumTotal": 13172.19999999995,
+          "clearedWithoutStopTotal": 104,
+          "pctClearedWithoutStop": 24.761904761904763
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1784,
-        "totalClearedNetwork": 1080,
-        "onRoadNetwork": 704,
+        "totalSpawned": 1762,
+        "totalClearedNetwork": 1088,
+        "onRoadNetwork": 674,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -2220,7 +2220,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "326e49a3f2a11812"
+    "rowsHash": "de5a9cc90990ea35"
   },
   "2|green_wave|random|true": {
     "summary": {
@@ -2232,13 +2232,13 @@
         "arrivalsLost": 3,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 68,
+          "longestStillS": 66,
           "longestStill": {
-            "seconds": 68,
-            "carId": 1333,
+            "seconds": 66,
+            "carId": 537,
             "nodeId": "lynnwood_duxbury",
             "place": "Lynnwood Road, westbound, lane 1, 239 m",
-            "atS": 536
+            "atS": 253
           },
           "locked": null,
           "starved": null,
@@ -2250,62 +2250,62 @@
       "powerState": "load_shedding",
       "sensorMode": "inductive_loop",
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 40.54443368828652,
-      "avgWaitTimeArterial": 36.89579288025892,
-      "avgWaitTimeSideStreet": 17.90209790209784,
-      "throughputPerMin": 129.125,
-      "throughputPerMinArterial": 115.875,
-      "throughputPerMinSideStreet": 53.625,
-      "pctClearedWithoutStop": 11.423039690222653,
-      "pctClearedWithoutStopArterial": 13.052858683926646,
-      "pctClearedWithoutStopSideStreet": 34.4988344988345,
-      "medianWait": 34.900000000000226,
-      "p95Wait": 101.29999999999852,
-      "maxWait": 183.29999999999387,
+      "avgWaitTime": 37.886766169154164,
+      "avgWaitTimeArterial": 33.457330415754896,
+      "avgWaitTimeSideStreet": 17.763507109004696,
+      "throughputPerMin": 125.625,
+      "throughputPerMinArterial": 114.25,
+      "throughputPerMinSideStreet": 52.75,
+      "pctClearedWithoutStop": 13.134328358208954,
+      "pctClearedWithoutStopArterial": 16.411378555798688,
+      "pctClearedWithoutStopSideStreet": 34.360189573459714,
+      "medianWait": 32.100000000000186,
+      "p95Wait": 100.29999999999858,
+      "maxWait": 173.29999999999444,
       "preOutage": {
-        "avgWaitTime": 16.68972602739736,
-        "throughputPerMin": 116.8,
-        "clearedTotal": 292
+        "avgWaitTime": 16.936458333333437,
+        "throughputPerMin": 115.2,
+        "clearedTotal": 288
       },
       "duringOutage": {
-        "avgWaitTime": 40.84569288389523,
+        "avgWaitTime": 41.473033707865255,
         "throughputPerMin": 106.8,
         "clearedTotal": 267
       },
       "postRecovery": {
-        "avgWaitTime": 55.07004219409265,
-        "throughputPerMin": 158,
-        "clearedTotal": 474
+        "avgWaitTime": 49.16711111111085,
+        "throughputPerMin": 150,
+        "clearedTotal": 450
       },
       "preOutageArterial": {
-        "avgWaitTime": 15.606766917293324,
-        "throughputPerMin": 106.4,
-        "clearedTotal": 266
+        "avgWaitTime": 15.74790874524724,
+        "throughputPerMin": 105.2,
+        "clearedTotal": 263
       },
       "duringOutageArterial": {
-        "avgWaitTime": 35.587445887446,
-        "throughputPerMin": 92.4,
-        "clearedTotal": 231
+        "avgWaitTime": 35.509663865546266,
+        "throughputPerMin": 95.2,
+        "clearedTotal": 238
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 50.768139534883645,
-        "throughputPerMin": 143.33333333333334,
-        "clearedTotal": 430
+        "avgWaitTime": 43.552058111380006,
+        "throughputPerMin": 137.66666666666666,
+        "clearedTotal": 413
       },
       "preOutageSideStreet": {
-        "avgWaitTime": 7.148514851485171,
-        "throughputPerMin": 40.4,
-        "clearedTotal": 101
+        "avgWaitTime": 7.747368421052654,
+        "throughputPerMin": 38,
+        "clearedTotal": 95
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 19.88962962962967,
+        "avgWaitTime": 19.422222222222285,
         "throughputPerMin": 54,
         "clearedTotal": 135
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 22.139378238341788,
-        "throughputPerMin": 64.33333333333333,
-        "clearedTotal": 193
+        "avgWaitTime": 21.55312499999985,
+        "throughputPerMin": 64,
+        "clearedTotal": 192
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -2318,30 +2318,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 26.862393162393186,
-          "throughputPerMin": 29.25,
-          "clearedTotal": 234,
-          "waitSumTotal": 6285.800000000006,
-          "clearedWithoutStopTotal": 60,
-          "pctClearedWithoutStop": 25.64102564102564
+          "avgWaitTime": 20.334710743801683,
+          "throughputPerMin": 30.25,
+          "clearedTotal": 242,
+          "waitSumTotal": 4921.000000000007,
+          "clearedWithoutStopTotal": 82,
+          "pctClearedWithoutStop": 33.88429752066116
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 21.261290322580766,
-          "throughputPerMin": 27.125,
-          "clearedTotal": 217,
-          "waitSumTotal": 4613.700000000026,
-          "clearedWithoutStopTotal": 45,
-          "pctClearedWithoutStop": 20.737327188940093
+          "avgWaitTime": 20.009502262443526,
+          "throughputPerMin": 27.625,
+          "clearedTotal": 221,
+          "waitSumTotal": 4422.1000000000195,
+          "clearedWithoutStopTotal": 44,
+          "pctClearedWithoutStop": 19.90950226244344
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 9.424714828897352,
-          "throughputPerMin": 32.875,
-          "clearedTotal": 263,
-          "waitSumTotal": 2478.7000000000035,
-          "clearedWithoutStopTotal": 105,
-          "pctClearedWithoutStop": 39.92395437262358
+          "avgWaitTime": 7.44341085271319,
+          "throughputPerMin": 32.25,
+          "clearedTotal": 258,
+          "waitSumTotal": 1920.400000000003,
+          "clearedWithoutStopTotal": 116,
+          "pctClearedWithoutStop": 44.96124031007752
         },
         {
           "id": "arcadia_west",
@@ -2426,12 +2426,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 40.82210526315783,
-          "throughputPerMin": 23.75,
-          "clearedTotal": 190,
-          "waitSumTotal": 7756.199999999987,
-          "clearedWithoutStopTotal": 30,
-          "pctClearedWithoutStop": 15.789473684210526
+          "avgWaitTime": 39.25777777777778,
+          "throughputPerMin": 22.5,
+          "clearedTotal": 180,
+          "waitSumTotal": 7066.4000000000015,
+          "clearedWithoutStopTotal": 26,
+          "pctClearedWithoutStop": 14.444444444444443
         },
         {
           "id": "dyer_mall",
@@ -2462,18 +2462,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 31.951100244498715,
-          "throughputPerMin": 51.125,
-          "clearedTotal": 409,
-          "waitSumTotal": 13067.999999999975,
-          "clearedWithoutStopTotal": 96,
-          "pctClearedWithoutStop": 23.4718826405868
+          "avgWaitTime": 32.152493438320114,
+          "throughputPerMin": 47.625,
+          "clearedTotal": 381,
+          "waitSumTotal": 12250.099999999962,
+          "clearedWithoutStopTotal": 93,
+          "pctClearedWithoutStop": 24.409448818897637
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1774,
-        "totalClearedNetwork": 1063,
-        "onRoadNetwork": 711,
+        "totalSpawned": 1741,
+        "totalClearedNetwork": 1035,
+        "onRoadNetwork": 706,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -2502,7 +2502,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "0f272bc1cea1a91f"
+    "rowsHash": "6ea2974236b7410c"
   },
   "2|fixed|destination|false": {
     "summary": {
