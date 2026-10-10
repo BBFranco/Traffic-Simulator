@@ -542,9 +542,13 @@ function turnMovement(arterialHeading, exitHeading) {
     return cross > 0 ? 'right' : 'left';
 }
 
-/** Physical bumper clearance to both neighbours in a target lane - stops a change from ever visually overlapping two cars. */
+/**
+ * Physical bumper clearance to both neighbours in a target lane - stops a change from ever visually overlapping two cars.
+ * Ahead, the gap must also be one the car can brake for (MOBIL's safety test, on itself): at 50 km/h, 2 m behind a car
+ * stood in a turn pocket is no room at all - it would drive through it and leave it stuck behind.
+ */
 function hasClearanceAhead(car, leader) {
-    return !leader || leader.distanceM - leader.lengthM - car.distanceM >= MIN_LANE_CHANGE_GAP_M;
+    return !leader || (leader.distanceM - leader.lengthM - car.distanceM >= MIN_LANE_CHANGE_GAP_M && mobilIsSafe(carAcceleration(car, leader), car.mobilParams));
 }
 
 function hasClearanceBehind(car, follower) {
@@ -3249,13 +3253,19 @@ export class SimulationEngine {
     /**
      * A car on a turn road merging partway into `lane`: it follows whoever is
      * just past the merge point, and - close to the end of its road - gives way
-     * to a car on the main road that would reach the merge point too soon.
+     * to a car on the main road that would reach the merge point too soon. Stood
+     * giving way for LET_IN_AFTER_S, it is let in, as at a junction: a crawling
+     * queue never leaves the gap mergeGapBehind() asks for.
      */
     _mergeObstacle(join, car, lane) {
         const offsetM = join.from.lengthM;
         const { leader, follower } = aroundPoint(lane, join.toAtM);
         const ahead = leader ? { distanceM: offsetM + leader.distanceM - join.toAtM, speedMps: leader.speedMps, lengthM: leader.lengthM } : null;
         if (offsetM - car.distanceM < MERGE_WATCH_M && ((follower && !mergeGapBehind(follower, car, join.toAtM)) || this._turnComingInto(join.to.road, lane, join.toAtM))) {
+            if (car.speedMps < JOIN_HOLD_SPEED_MPS) {
+                car.joinHeldSinceS ??= this.simTimeS;
+                if (this.simTimeS - car.joinHeldSinceS >= LET_IN_AFTER_S) this._askToBeLetIn(car, join.to.road, join.to.lanes().indexOf(lane), join.toAtM);
+            }
             return nearestAhead(ahead, { distanceM: offsetM, speedMps: 0 });
         }
         return ahead;
@@ -3378,6 +3388,7 @@ export class SimulationEngine {
             return false;
         }
         lane.cars.shift();
+        this._letInDone(car, join.to.road, slot);
         const drawnAt = carWorldPoint(car);
         car.road = join.to.road;
         car.lane = slot;
@@ -3908,12 +3919,22 @@ export class SimulationEngine {
     /** A junction turner held at the stop line because the lane it turns into has no room: after LET_IN_AFTER_S it is let in. */
     _waitToTurnIn(car, road, laneIndex, exitDistanceM) {
         const sinceS = car.turnPlan?.blockedSinceS;
-        if (sinceS != null && this.simTimeS - sinceS >= LET_IN_AFTER_S) this._askToBeLetIn(car, road, laneIndex, exitDistanceM);
+        if (sinceS != null && this.simTimeS - sinceS >= LET_IN_AFTER_S) this._askToBeLetIn(car, road, laneIndex, exitDistanceM, car.turnPlan);
     }
 
-    _askToBeLetIn(car, road, laneIndex, exitDistanceM) {
+    /**
+     * `heldPlan`: a junction turner's plan - the lane keeps letting it in for as long as it is still held on that plan,
+     * through its red as well. It only asks on its green, and a red longer than LET_IN_HOLD_S (a green wave's side
+     * street) would otherwise let the gap fill again before its next green.
+     */
+    _askToBeLetIn(car, road, laneIndex, exitDistanceM, heldPlan = null) {
         if (!this.letIn.has(road)) this.letIn.set(road, new Map());
-        this.letIn.get(road).set(laneIndex, { carId: car.id, exitDistanceM, lengthM: car.lengthM, untilS: this.simTimeS + LET_IN_HOLD_S });
+        this.letIn.get(road).set(laneIndex, { carId: car.id, car, heldPlan, exitDistanceM, lengthM: car.lengthM, untilS: this.simTimeS + LET_IN_HOLD_S });
+    }
+
+    _letInActive(waiting) {
+        if (waiting.untilS >= this.simTimeS) return true;
+        return waiting.heldPlan !== null && waiting.car.turnPlan === waiting.heldPlan && waiting.heldPlan.blockedSinceS != null;
     }
 
     /** `car` has joined lane `laneIndex` of `road`: whoever was letting it in carries on. */
@@ -3925,7 +3946,7 @@ export class SimulationEngine {
     /** Where a car stops to let one in ahead of it (_askToBeLetIn()): short of the room that car needs - unless already into it. */
     _letInHold(car) {
         const waiting = this.letIn.get(car.road)?.get(car.lane);
-        if (!waiting || waiting.untilS < this.simTimeS) return null;
+        if (!waiting || !this._letInActive(waiting)) return null;
         const stopM = waiting.exitDistanceM - (car.lengthM + waiting.lengthM) / 2 - SPAWN_CLEARANCE_M;
         return car.distanceM < stopM ? { distanceM: stopM + car.lengthM / 2, speedMps: 0 } : null;
     }
