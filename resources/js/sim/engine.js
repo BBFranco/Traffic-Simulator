@@ -1104,6 +1104,8 @@ export class SimulationEngine {
         this._resetNodeStats();
         /** Road -> lane -> the car its cars are letting in (_askToBeLetIn()): where it joins, its length, until when. */
         this.letIn = new Map();
+        /** Turn path key -> the turn plan held longest at its stop line for it (_turnHeldForOther()). */
+        this.turnClaims = new Map();
         // Combined side-street (all connectors) wait/throughput stats - one bucket, not
         // one per connector, since nothing downstream needs per-connector granularity.
         this.sideStreetStats = { clearedTotal: 0, clearedWithoutStopTotal: 0, waitSumTotal: 0, recentClears: [] };
@@ -2609,6 +2611,7 @@ export class SimulationEngine {
         const { laneIndex, exitDistanceM } = landing;
         const pathKey = `${node.id}:${connector.id}:${dirKey}->${carriageway.id}:${laneIndex}`;
 
+        if (this._turnHeldForOther(car, pathKey)) return false;
         const turnAhead = this.turningCars.some((c) => c.turnPath.key === pathKey && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (turnAhead) return false;
         if (this._turnExitBlocked(landing.lanes, laneIndex, exitDistanceM, car.lengthM)) {
@@ -3678,6 +3681,22 @@ export class SimulationEngine {
     }
 
     /**
+     * Two lanes turning into the same lane (a turn pocket beside a shared lane, into a one-lane street) take turns:
+     * `car` waits while another car, held longer at its stop line for the same turn path, is still held there. Without
+     * this the lane the step loop visits first takes every gap, and a pocket whose cars can't go straight instead
+     * waits for good. "Still held" is the same stamp as a through-red let-in's (`heldSeenTick`, see _letInActive()).
+     */
+    _turnHeldForOther(car, pathKey) {
+        const plan = car.turnPlan;
+        const sinceS = plan.blockedSinceS ?? this.simTimeS;
+        const claim = this.turnClaims.get(pathKey);
+        const held = claim && claim !== plan && claim.blockedSinceS != null && claim.heldSeenTick >= this.tickNo - 1;
+        if (held && claim.blockedSinceS <= sinceS) return true;
+        this.turnClaims.set(pathKey, plan);
+        return false;
+    }
+
+    /**
      * A car whose turn is blocked holds at the stop line - for at most
      * MAX_TURN_WAIT_S, then carries straight on. One in a turn lane
      * (`canGoStraight` false) has nowhere straight to go, so it keeps waiting -
@@ -3719,6 +3738,7 @@ export class SimulationEngine {
         // Wait at the stop line while the car ahead on the same turn is still pulling away,
         // or the cross-street lane is occupied where this turn comes out - and, turning
         // right off a two-way arterial, for a gap in the oncoming half.
+        if (this._turnHeldForOther(car, pathKey)) return false;
         const turnAhead = this.turningCars.some((c) => c.turnPath.key === pathKey && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (turnAhead) return false;
         if (this._turnExitBlocked(landing.lanes, laneIndex, exitDistanceM, car.lengthM)) {
