@@ -3759,9 +3759,8 @@ export class SimulationEngine {
     /**
      * Where a turning car comes out. Normally the lane `landing` names on the
      * street it turns onto - but when that street is only a stub before it
-     * widens into the next road (a join), the car turns straight into its lane
-     * on the wider road: a left turn into the new kerb lane, a right turn into
-     * the median lane.
+     * widens into the next road (a join), the car turns straight into the lane
+     * its turning lane pairs with on the wider road (turnTargetLane()).
      */
     _turnLanding(fromKey, movement, landing) {
         const join = this.joinsFrom.get(fromKey);
@@ -3770,7 +3769,9 @@ export class SimulationEngine {
         const to = join.to.laneLayout;
         if (to.mainLanes <= from.mainLanes || join.from.lengthM - landing.exitDistanceM > 15) return landing;
         const mainIndex = Math.max(0, Math.min(landing.laneIndex - from.kerbSlots, from.mainLanes - 1));
-        const main = movement === 'left' ? 0 : movement === 'right' ? to.mainLanes - 1 : Math.min(mainIndex + to.mainLanes - from.mainLanes, to.mainLanes - 1);
+        // The wider road's extra lanes are on the kerb side: a left turn keeps its pairing from the kerb (a double left
+        // still fills two lanes), anything else keeps it from the median.
+        const main = Math.min(movement === 'left' ? mainIndex : mainIndex + to.mainLanes - from.mainLanes, to.mainLanes - 1);
         const [, dirKey] = join.to.key.split(':');
         return {
             road: join.to.road,
