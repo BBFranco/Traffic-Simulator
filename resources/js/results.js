@@ -39,6 +39,7 @@ import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from './sim/batchSchedule.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
@@ -368,15 +369,12 @@ onThemeChange((theme) => {
  * (sim/batchWorker.js) so the page stays responsive while it works.
  */
 const REPS_PER_CONDITION = 30;
-const DURATION_TICKS = 36000; // 60 measured simulated minutes per run at DT=0.1s - 30 min after the power comes back, so wait-recovery isn't cut off
+const DURATION_TICKS = MEASURED_TICKS; // sim/batchSchedule.js: 90 measured minutes, 60 of them after the power comes back
 // Warm-up (run BEFORE anything is measured, discarded from every stat - see
 // engine.js's resetStats()) is measured per corridor before each batch by
 // sim/warmupProbe.js, not a constant: 360 s suits the small corridors, the
 // 54-junction network needs tens of minutes.
-// Load-shedding conditions cut power a quarter of the way into the MEASURED window
-// and restore it at the halfway mark - see batch/runBatch.mjs's matching default schedule.
-const POWER_OUTAGE_START_TICK = Math.round(DURATION_TICKS * 0.25);
-const POWER_OUTAGE_END_TICK = Math.round(DURATION_TICKS * 0.5);
+// Load-shedding conditions cut power 15 min into the MEASURED window and restore it at 30 min (sim/batchSchedule.js).
 const DT = 0.1;
 const BASE_SEED = 20260101;
 /** Batch the network writes - don't POST 360 times (build step 17). */

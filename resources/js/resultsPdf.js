@@ -891,7 +891,7 @@ function drawMethodNotes(report, data) {
         `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring ${data.batchStamp?.measuredMinutes ?? 40} simulated minutes at dt = 0.1 s.`,
         ...(settleNote ? [settleNote] : []),
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
-        'Load-shedding conditions cut power a quarter of the way into the measured window and restore it at the halfway mark. While the lights are dark every controller falls back to all-way-stop behaviour.',
+        `Load-shedding conditions cut power ${data.batchStamp?.outageStartMinutes ?? '-'} min into the measured window and restore it at ${data.batchStamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour.`,
         ...(data.batchStamp?.routingMode === 'destination'
             ? ['Under destination routing the network clears more vehicles while the lights are dark than under random turning, and about the same for every controller. It is not a counting artefact: driveway pull-offs keep the same share of throughput (about 42%) before, during and after the outage. Why the dark network clears more in this mode is still open.']
             : []),

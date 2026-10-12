@@ -15,7 +15,7 @@
  *
  * Usage:
  *   node batch/runBatch.mjs [--corridor=hatfield-pretorius-francisbaard]
- *     [--reps=30] [--duration=36000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
+ *     [--reps=30] [--duration=54000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
  *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal] [--webster-turn-weight]
@@ -26,19 +26,18 @@
  * --probe-only with --demand-scale is the volume acceptance test: does every controller settle inside the cap.
  * It is stored as a 'sensitivity' batch, so it never replaces the baseline on /results.
  *
- * --duration is in MEASURED ticks at dt=0.1s (36000 ticks = 60 simulated minutes
- * per run by default). --warmup-ticks run BEFORE that and are discarded from
+ * --duration is in MEASURED ticks at dt=0.1s (54000 ticks = 90 simulated minutes
+ * per run by default, sim/batchSchedule.js). --warmup-ticks run BEFORE that and are discarded from
  * every stat (engine.js's resetStats(), runHeadless.js's warmupTicks doc).
  * By default ('auto') they're measured for this corridor first by
  * sim/warmupProbe.js - one long from-empty run per controller - exactly as the
  * /results batch button does; pass a number to skip the probe. --probe-only
  * prints the probe's verdict and stops.
  *
- * A load-shedding condition's outage starts a quarter of the way into the
- * MEASURED window (i.e. warm-up doesn't count) and power is restored at the
- * halfway mark, by default (25%/50% of --duration) - override either tick
- * explicitly if a different schedule is needed. Both must fall strictly
- * before --duration.
+ * A load-shedding condition's outage starts 15 min into the MEASURED window
+ * (i.e. warm-up doesn't count) and power is restored at 30 min, by default
+ * (sim/batchSchedule.js) - override either tick explicitly if a different
+ * schedule is needed. Both must fall strictly before --duration.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,6 +48,7 @@ import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experim
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from '../resources/js/sim/batchSchedule.js';
 import { buildStamp } from './buildStamp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,7 +61,7 @@ function parseArgs(argv) {
     const args = {
         corridor: 'hatfield-pretorius-francisbaard',
         reps: 30,
-        duration: 36000,
+        duration: MEASURED_TICKS,
         warmupTicks: 'auto',
         probeOnly: false,
         baseSeed: 20260101,
@@ -95,11 +95,9 @@ function parseArgs(argv) {
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
     }
-    // Default outage schedule: starts a quarter of the way in, power restored at the
-    // halfway mark - only filled in once `duration` is known, so a custom --duration
-    // still gets a proportionally-placed outage.
-    if (args.powerOutageStartTick == null) args.powerOutageStartTick = Math.round(args.duration * 0.25);
-    if (args.powerOutageEndTick == null) args.powerOutageEndTick = Math.round(args.duration * 0.5);
+    // Default outage schedule: 15-30 min into the measured window, whatever its length.
+    if (args.powerOutageStartTick == null) args.powerOutageStartTick = POWER_OUTAGE_START_TICK;
+    if (args.powerOutageEndTick == null) args.powerOutageEndTick = POWER_OUTAGE_END_TICK;
     return args;
 }
 

@@ -793,7 +793,12 @@ class ResultsController extends Controller
         $controllerLabel = $controllers === null
             ? 'signal rules not recorded'
             : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s";
-        $outageEndTicks = $config['powerOutageEndTick'] ?? null;
+        // Normal-power runs store no outage, so read the schedule off one of the batch's load-shedding runs.
+        $outageConfig = SimulationRun::query()
+            ->where('batch_id', $latest->batch_id)
+            ->where('power_state', 'load_shedding')
+            ->first(['raw_config_json'])?->raw_config_json ?? [];
+        $outageEndTicks = $outageConfig['powerOutageEndTick'] ?? null;
         $waitAccounting = $config['waitAccounting'] ?? 'turn-reset (pre-2026-10-04)';
 
         return [
@@ -813,6 +818,8 @@ class ResultsController extends Controller
             'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
             'warmupSettleMinutes' => $this->warmupSettleMinutes($config),
             'measuredMinutes' => $minutes($config['durationTicks'] ?? null),
+            'outageStartMinutes' => $minutes($outageConfig['powerOutageStartTick'] ?? null),
+            'outageEndMinutes' => $minutes($outageEndTicks),
             'firstSeed' => $seeds?->first_seed,
             'lastSeed' => $seeds?->last_seed,
             'startedAt' => $latest->batch_started_at?->toIso8601String(),

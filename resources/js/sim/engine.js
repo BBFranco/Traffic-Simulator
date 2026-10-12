@@ -3891,7 +3891,8 @@ export class SimulationEngine {
             const targetLanes = this._turnTargetLanes(path);
             const exitBlocked = this._turnExitBlocked(targetLanes, car.lane, path.exitDistanceM, car.lengthM);
             const pathEnd = exitBlocked ? { distanceM: path.lengthM, speedMps: 0, exitLanes: targetLanes, exitDistanceM: path.exitDistanceM } : null;
-            if (path.fromDriveway) this._waitToPullOut(car, path, exitBlocked);
+            // Off a roundabout ring (its own give-way rules), a car stood for room where it comes out is let in.
+            if (!path.ringNodeId) this._waitToJoin(car, path, exitBlocked);
             const ringLeader = path.ringNodeId ? this._ringLeader(car, onRings.get(path.ringNodeId)) : null;
             // Waiting in the box for a gap: held short of the oncoming lanes until there is one - which the oncoming side
             // stopping for its amber/red gives at the latest. Once it goes, it is committed.
@@ -3937,8 +3938,13 @@ export class SimulationEngine {
         return samePath ? leader : null;
     }
 
-    /** A car pulling out of a driveway, stood at the end of its way out for room in the lane: after LET_IN_AFTER_S it is let in. */
-    _waitToPullOut(car, path, exitBlocked) {
+    /**
+     * A car pulling out of a driveway, or one already into its turn at a junction, stood at the end of its way for room in
+     * the lane: after LET_IN_AFTER_S it is let in. A turner that started into a free lane can find it backed up past the
+     * junction by the time it gets there - with nothing letting it in, the lane's own traffic took every gap the crawling
+     * queue opened (a South Street left-turner stood 2,419 s onto Jan Shoba).
+     */
+    _waitToJoin(car, path, exitBlocked) {
         if (!exitBlocked || car.speedMps > 0.5) {
             path.mergeWaitSinceS = null;
             return;
