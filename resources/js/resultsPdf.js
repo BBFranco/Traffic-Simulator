@@ -902,8 +902,6 @@ function drawMethodNotes(report, data) {
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution (median / P95 / max) is recorded for the total scope only. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them.`,
-        'Model assumption - letting cars in: a car that has waited 10 s to join a queued lane (turning at a junction, or pulling out of a driveway) is let in - the cars behind where it joins stop short until it is in. A crawling queue never leaves the gap a merge needs, so without this such a car would wait indefinitely. It is a behavioural choice and applies identically to every controller.',
-        'Inductive loop and magnetometer are modelled identically for now: both only see whether a stopped car is at the stop line, and the first stopped car is always inside both zones, so their rows match to the digit. They are two labels for one detector, not independent evidence - the adaptive average counts that detector twice.',
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
 
