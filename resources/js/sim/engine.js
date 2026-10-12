@@ -2074,7 +2074,7 @@ export class SimulationEngine {
                 const signalAhead = this._signalAheadFor(gates, car);
                 const pickupAhead = this._taxiPickupObstacle(carriageway, car, dt);
                 const joinAhead = i === 0 ? this._joinObstacle(carriageway.id, car) : null;
-                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), this._drivewayHold(car)), this._letInHold(car));
+                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(carriageway.id, state, lane, car));
                 const speedLimitMps = Math.min(this._turnApproachSpeedLimit(gates, car), this._drivewaySpeedLimit(car));
                 if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                 car.steppedTick = this.tickNo;
@@ -2415,7 +2415,7 @@ export class SimulationEngine {
                     const car = lane.cars[i];
                     const realAhead = i > 0 ? lane.cars[i - 1] : null;
                     const joinAhead = i === 0 ? this._joinObstacle(`${connector.id}:${dirKey}`, car) : null;
-                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car));
+                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(`${connector.id}:${dirKey}`, dirState, lane, car));
                     const speedLimitMps = Math.min(this._connectorTurnApproachSpeedLimit(dir, car), this._drivewaySpeedLimit(car));
                     if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                     car.steppedTick = this.tickNo;
@@ -3443,9 +3443,8 @@ export class SimulationEngine {
     _peelOff(key, dirState, lane) {
         const joins = this.divergesFrom.get(key);
         if (!joins) return;
-        const kerbLane = dirState.lanes[dirState.laneLayout.kerbSlots];
         for (const join of joins) {
-            if (join.slip ? !join.gate || !isTurnOnlyLane(join.gate.slotLaneUse?.[dirState.lanes.indexOf(lane)] ?? [], 'left') : lane !== kerbLane) continue;
+            if (!this._peelsFrom(join, dirState, lane)) continue;
             for (const car of [...lane.cars]) {
                 if (car.distanceM < join.fromAtM || car.distanceM > join.fromAtM + 15) continue;
                 if (!join.slip && !car.peelDecisions?.get(join)) continue;
@@ -3453,7 +3452,7 @@ export class SimulationEngine {
                 const tail = lastCarIn(target);
                 const entryM = car.distanceM - join.fromAtM;
                 if (!join.slip) car.peelDecisions.delete(join);
-                if (tail && tail.distanceM - (tail.lengthM + car.lengthM) / 2 - entryM < 0.5) {
+                if (tail && !this._peelEntryClear(car, entryM, tail)) {
                     if (car.trip) this._recordMissedTurn(car, 'peelNoRoom', `${key}@peel`, 'peel');
                     continue; // no room - it misses the turn
                 }
@@ -3468,6 +3467,45 @@ export class SimulationEngine {
                 target.cars.sort((a, b) => b.distanceM - a.distanceM);
             }
         }
+    }
+
+    /** Whether `lane` is the one a peel-off takes cars from: the kerb lane, or a slip road's left-turn lane. */
+    _peelsFrom(join, dirState, lane) {
+        if (!join.slip) return lane === dirState.lanes[dirState.laneLayout.kerbSlots];
+        return Boolean(join.gate) && isTurnOnlyLane(join.gate.slotLaneUse?.[dirState.lanes.indexOf(lane)] ?? [], 'left');
+    }
+
+    /**
+     * Room for `car` to come onto a peel-off road at `entryM` behind its last car: a bumper gap, and - behind one stood
+     * or barely rolling - a gap it can brake for. Without that a car peeling off at 50 km/h 6 m behind the stood tail
+     * drove through it and left it stuck behind for good (the Lunnon slip off Jan Shoba, a 654 s standstill).
+     */
+    _peelEntryClear(car, entryM, tail) {
+        if (tail.distanceM - (tail.lengthM + car.lengthM) / 2 - entryM < 0.5) return false;
+        if (tail.speedMps >= BRAKE_CHECK_BELOW_MPS) return true;
+        const onRoadM = car.distanceM;
+        car.distanceM = entryM;
+        const acc = carAcceleration(car, tail);
+        car.distanceM = onRoadM;
+        return mobilIsSafe(acc, car.mobilParams);
+    }
+
+    /**
+     * The peel-off road's last car, as an obstacle ahead of a car set on taking that peel-off - so it slows for a queue
+     * backed up to the start of the off-ramp on the road it is still on, as a driver who can see it does, instead of
+     * arriving at speed with no room (and missing the turn, or driving into the tail).
+     */
+    _peelHold(key, dirState, lane, car) {
+        let hold = null;
+        for (const join of this.divergesFrom.get(key) ?? []) {
+            const toGoM = join.fromAtM - car.distanceM;
+            if (toGoM > DIVERGE_DECISION_M || toGoM < -15) continue;
+            if (!join.slip && !car.peelDecisions?.get(join)) continue;
+            if (!this._peelsFrom(join, dirState, lane)) continue;
+            const tail = lastCarIn(join.to.lanes()[join.to.laneLayout.kerbSlots]);
+            if (tail) hold = nearestAhead(hold, { distanceM: join.fromAtM + tail.distanceM, speedMps: tail.speedMps, lengthM: tail.lengthM });
+        }
+        return hold;
     }
 
     /**
