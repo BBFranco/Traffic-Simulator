@@ -282,6 +282,9 @@ const MERGE_DROP_BACK_MIN_SPEED_MPS = 3;
  * a queue this close to the stop line, gives up on the change and makes the
  * movement its lane is marked for instead - a driver trapped in a turn-only
  * lane turns. Waiting for a gap here would hold up the whole lane behind it.
+ * Only once the lane it needs is there beside it and it still can't get in
+ * (_chaseTurnLane()): a 20 m pocket only opens 20 m out, so a turner queued
+ * behind its mouth used to give up before it ever had one to move into.
  */
 const MANDATORY_GIVE_UP_M = 40;
 
@@ -2145,14 +2148,7 @@ export class SimulationEngine {
         const lanes = plan ? planLaneTargets(state.laneLayout, nearestNode.slotLaneUse, plan, car.distanceM) : null;
 
         if (lanes?.target.length && !lanes.target.includes(car.lane)) {
-            const toStopM = nearestNode.stopLineDistanceM - car.distanceM;
-            // Already in a lane that allows the movement, just not in the turn lane beside it: move over if there's room, never give up.
-            const isInAllowedLane = lanes.allowed.includes(car.lane);
-            if (!isInAllowedLane && toStopM < MANDATORY_GIVE_UP_M && car.speedMps < MERGE_DROP_BACK_MIN_SPEED_MPS) {
-                car.turnPlan = this._resolvePlanAtStopLine(car, nearestNode.node.id, nearestNode.slotLaneUse, nearestNode.turnOptions, plan);
-            } else if (toStopM > CROSS_DECISION_WINDOW_M) {
-                this._tryMandatoryLaneChange(state, car, lanes.target, !isInAllowedLane);
-            }
+            this._chaseTurnLane(state, car, nearestNode, plan, lanes);
             return;
         }
         if (nearestNode && nearestNode.stopLineDistanceM - car.distanceM < LANE_CHANGE_STOPLINE_EXCLUSION_M) return;
@@ -2311,20 +2307,38 @@ export class SimulationEngine {
      * movement where it is, only moving into a turn lane) just waits for a gap -
      * nobody eases off to make one.
      */
+    /**
+     * A car that must reach `lanes.target` for its plan at `gate`: one lane over if there's room. One in a lane its
+     * movement isn't allowed from at all, crawling within MANDATORY_GIVE_UP_M of the stop line, gives up and makes
+     * its own lane's movement - but only once the lane it needs is open beside it and it still couldn't get in.
+     * Already in a lane that allows the movement, just not the turn lane beside it, it never gives up.
+     */
+    _chaseTurnLane(state, car, gate, plan, lanes) {
+        const toStopM = gate.stopLineDistanceM - car.distanceM;
+        if (toStopM <= CROSS_DECISION_WINDOW_M) return;
+        const isInAllowedLane = lanes.allowed.includes(car.lane);
+        const outcome = this._tryMandatoryLaneChange(state, car, lanes.target, !isInAllowedLane);
+        if (outcome === 'blocked' && !isInAllowedLane && toStopM < MANDATORY_GIVE_UP_M && car.speedMps < MERGE_DROP_BACK_MIN_SPEED_MPS) {
+            car.turnPlan = this._resolvePlanAtStopLine(car, gate.node.id, gate.slotLaneUse, gate.turnOptions, plan);
+        }
+    }
+
+    /** One lane over towards `allowedLanes`: 'moved', 'closed' (that lane hasn't opened yet here) or 'blocked' (no room). */
     _tryMandatoryLaneChange(state, car, allowedLanes, isCourteous = true) {
         const nearestAllowed = allowedLanes.reduce((best, i) => (Math.abs(i - car.lane) < Math.abs(best - car.lane) ? i : best));
         const targetIndex = car.lane + Math.sign(nearestAllowed - car.lane);
-        if (!slotOpenAt(state.laneLayout, targetIndex, car.distanceM)) return;
+        if (!slotOpenAt(state.laneLayout, targetIndex, car.distanceM)) return 'closed';
         const { leader, follower } = neighborsInLane(state.lanes[targetIndex].cars, car);
         if (!hasClearanceAhead(car, leader) || this._inLetInGap(car, targetIndex)) {
             if (isCourteous) car.mergeDropBack = true;
-            return;
+            return 'blocked';
         }
         if (!hasClearanceBehind(car, follower) || (follower && !mobilIsSafe(carAcceleration(follower, car), car.mobilParams))) {
             if (isCourteous) follower.mergeDropBack = true; // the driver behind in that lane lets it in
-            return;
+            return 'blocked';
         }
         this._moveToLane(state, car, targetIndex, MANDATORY_LANE_CHANGE_COOLDOWN_S);
+        return 'moved';
     }
 
     /**
@@ -2486,13 +2500,7 @@ export class SimulationEngine {
                 const lanes = plan ? planLaneTargets(dirState.laneLayout, gate.slotLaneUse, plan, car.distanceM) : null;
 
                 if (lanes?.target.length && !lanes.target.includes(car.lane)) {
-                    const toStopM = gate.stopLineDistanceM - car.distanceM;
-                    const isInAllowedLane = lanes.allowed.includes(car.lane);
-                    if (!isInAllowedLane && toStopM < MANDATORY_GIVE_UP_M && car.speedMps < MERGE_DROP_BACK_MIN_SPEED_MPS) {
-                        car.turnPlan = this._resolvePlanAtStopLine(car, gate.node.id, gate.slotLaneUse, gate.turnOptions, plan);
-                    } else if (toStopM > CROSS_DECISION_WINDOW_M) {
-                        this._tryMandatoryLaneChange(dirState, car, lanes.target, !isInAllowedLane);
-                    }
+                    this._chaseTurnLane(dirState, car, gate, plan, lanes);
                     continue;
                 }
                 if (gate && gate.stopLineDistanceM - car.distanceM < LANE_CHANGE_STOPLINE_EXCLUSION_M) continue;
