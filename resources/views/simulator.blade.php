@@ -299,10 +299,6 @@
                                            class="h-3 w-3 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-500 focus:ring-offset-0 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-500">
                                     {{ $overlay['label'] }}
                                 </label>
-                                <div class="ms-[18px] flex items-center gap-1 text-[9px] text-slate-500">
-                                    <span class="h-1.5 w-8 rounded-sm bg-gradient-to-r {{ $overlay['ramp'] }}"></span>
-                                    {{ $overlay['legend'] }}
-                                </div>
                             @endforeach
                         </div>
                     </div>

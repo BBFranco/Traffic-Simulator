@@ -47,6 +47,6 @@ test('random-turning seed 20270101 runs without a lockup at the Jan Shoba merge'
 
     const { lockup } = summary.diagnostics;
     assert.equal(lockup.isLockup, false, JSON.stringify(lockup));
-    // 167.1/min after the 2026-10-09 merge fix; the starved run cleared 163.0.
-    assert.ok(summary.throughputPerMin > 165, `throughput ${summary.throughputPerMin}`);
+    // 167.1/min after the 2026-10-09 merge fix, 164.6 after the 2026-10-12 brake-check change (165.1 with no check at all); the starved run cleared 163.0.
+    assert.ok(summary.throughputPerMin > 164, `throughput ${summary.throughputPerMin}`);
 });

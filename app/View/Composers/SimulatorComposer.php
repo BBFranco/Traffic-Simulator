@@ -192,8 +192,8 @@ class SimulatorComposer
     private function mapOverlays(): array
     {
         return [
-            'showQueueHeatmap' => ['label' => 'Queue heatmap', 'legend' => '0 to 20+ veh', 'ramp' => 'from-rose-600/20 to-rose-600/85'],
-            'showDensity' => ['label' => 'Density', 'legend' => '0 to 120+ veh/lane-km', 'ramp' => 'from-violet-600/20 to-violet-600/85'],
+            'showQueueHeatmap' => ['label' => 'Queue heatmap'],
+            'showDensity' => ['label' => 'Density'],
         ];
     }
 }

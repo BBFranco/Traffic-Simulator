@@ -32,10 +32,14 @@ export const PROBE_DURATION_TICKS = 72000;
 export const PROBE_REPLICATIONS = 3;
 /** The chosen warm-up never goes below the old constant - the small corridors were checked at it. */
 export const MIN_WARMUP_TICKS = 3600;
-/** plateau.js only searches the first half of a run for its cut, so that's also the most the probe can ever justify. */
-export const MAX_WARMUP_TICKS = PROBE_DURATION_TICKS / 2;
 /** Cushion on the slowest measured levelling-off point - a margin, not itself measured. */
 export const WARMUP_SAFETY_MARGIN = 1.5;
+/**
+ * plateau.js only searches the first half of a run for its cut, so the latest levelling-off the probe can find is
+ * there - and the warm-up is that x the margin (90 min). Capping at the half itself cut the margin off a slow settle
+ * (55 min wanted 82 min and got 60). Also what a batch whose probe never levels off runs.
+ */
+export const MAX_WARMUP_TICKS = (PROBE_DURATION_TICKS / 2) * WARMUP_SAFETY_MARGIN;
 /** Rounded up to whole simulated minutes at dt = 0.1 s. */
 const WARMUP_ROUNDING_TICKS = 600;
 

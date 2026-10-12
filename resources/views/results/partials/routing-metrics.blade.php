@@ -7,7 +7,7 @@
             time beyond free-flow driving along its route, over the trips that reached the destination they set out for.
             Missed driveways are pull-offs that didn't make their driveway first time (wrong lane, or no gap in oncoming
             traffic); diverted trips ended somewhere else altogether. Driveway wait is how long a car leaving a block waited to
-            pull out - it is in neither its trip nor any wait figure above, so read it alongside them. Still in driveways counts
+            pull out - it is in neither its trip nor any wait figure, so it sits next to the runs' average wait. Still in driveways counts
             the cars that hadn't got out when the run ended, and lost arrivals the map-edge demand turned away by a full entry.
         </p>
         <div class="overflow-x-auto {{ $card }}">
@@ -17,13 +17,14 @@
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
                         <th scope="col" class="px-4 py-2 font-semibold">Power state</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Runs</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Driveway wait (s)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Still in driveways</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Mean trip (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Trip delay (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Missed driveways (%)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Missed turns / run</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Diverted (%)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Driveway wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Still in driveways</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Lost arrivals / run</th>
                     </tr>
                 </thead>
@@ -36,13 +37,14 @@
                             </th>
                             <td class="px-4 py-2">{{ $row['power_state'] === 'load_shedding' ? 'Load shedding' : 'Normal' }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
+                            <td class="px-4 py-2 text-right">{{ $row['mean_wait'] === null ? '—' : number_format($row['mean_wait'], 1) }}</td>
+                            <td class="px-4 py-2 text-right">{{ $row['mean_driveway_wait'] === null ? '—' : number_format($row['mean_driveway_wait'], 1) }}</td>
+                            <td class="px-4 py-2 text-right">{{ $row['still_in_driveways'] === null ? '—' : number_format($row['still_in_driveways'], 0) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['mean_trip_time'] === null ? '—' : number_format($row['mean_trip_time'], 1) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['mean_trip_delay'] === null ? '—' : number_format($row['mean_trip_delay'], 1) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['missed_driveways_pct'] === null ? '—' : number_format($row['missed_driveways_pct'], 1) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['missed_turns_per_run'] === null ? '—' : number_format($row['missed_turns_per_run'], 0) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['diversion_pct'] === null ? '—' : number_format($row['diversion_pct'], 1) }}</td>
-                            <td class="px-4 py-2 text-right">{{ $row['mean_driveway_wait'] === null ? '—' : number_format($row['mean_driveway_wait'], 1) }}</td>
-                            <td class="px-4 py-2 text-right">{{ $row['still_in_driveways'] === null ? '—' : number_format($row['still_in_driveways'], 0) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['arrivals_lost_per_run'] === null ? '—' : number_format($row['arrivals_lost_per_run'], 0) }}</td>
                         </tr>
                     @endforeach

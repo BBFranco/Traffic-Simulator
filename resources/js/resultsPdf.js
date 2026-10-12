@@ -31,6 +31,7 @@ import {
 } from './charts/theme.js';
 import { currentTheme } from './theme.js';
 import { buildLayout, corridorCounts } from './sim/corridor.js';
+import { MAX_WARMUP_TICKS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
 import { LayoutRenderer, setRendererTheme } from './sim/renderer.js';
 
 const SCOPES = [
@@ -845,24 +846,25 @@ function drawRoutingTrips(report, rows) {
     const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive' };
     report.heading(
         'Destination routing - trips',
-        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure. Still in driveways: cars that had not got out when the run ended. Lost arrivals: map-edge demand turned away by a full entry.'
+        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Avg wait: the average wait over these runs (total scope). Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure - so it sits next to Avg wait. Still in driveways: cars that had not got out when the run ended. Lost arrivals: map-edge demand turned away by a full entry.'
     );
     report.table({
-        head: [['Controller', 'Power', 'Runs', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Driveway wait (s)', 'Still in driveways', 'Lost arrivals / run']],
+        head: [['Controller', 'Power', 'Runs', 'Avg wait (s)', 'Driveway wait (s)', 'Still in driveways', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Lost arrivals / run']],
         body: rows.map((row) => [
             controllerLabel[row.controller_mode] ?? row.controller_mode,
             POWER_LABELS[row.power_state] ?? row.power_state,
             String(row.runs),
+            fmt(row.mean_wait),
+            fmt(row.mean_driveway_wait),
+            row.still_in_driveways == null ? 'n/a' : Number(row.still_in_driveways).toFixed(0),
             fmt(row.mean_trip_time),
             fmt(row.mean_trip_delay),
             fmt(row.missed_driveways_pct),
             row.missed_turns_per_run == null ? 'n/a' : Number(row.missed_turns_per_run).toFixed(0),
             fmt(row.diversion_pct),
-            fmt(row.mean_driveway_wait),
-            row.still_in_driveways == null ? 'n/a' : Number(row.still_in_driveways).toFixed(0),
             row.arrivals_lost_per_run == null ? 'n/a' : Number(row.arrivals_lost_per_run).toFixed(0),
         ]),
-        columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10].map((column) => [column, { halign: 'right' }])),
+        columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((column) => [column, { halign: 'right' }])),
     });
 }
 
@@ -874,7 +876,7 @@ function warmupSettleNote(settle) {
     const parts = Object.entries(settle).map(
         ([mode, scopes]) => `${labels[mode] ?? mode} ${minutes(scopes.total)} (main arterial ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)})`
     );
-    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x 1.5, capped at 60 min; "never" is a scope still drifting.`;
+    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting.`;
 }
 
 function drawMethodNotes(report, data) {

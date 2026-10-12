@@ -248,6 +248,8 @@ const LANE_CHANGE_MIN_DISTANCE_M = 15;
 const LANE_CHANGE_STOPLINE_EXCLUSION_M = 20;
 /** Minimum physical bumper-to-bumper clearance a lane change may leave, on top of MOBIL's own acceleration-based safety criterion - stops a change from ever visually overlapping two cars. */
 const MIN_LANE_CHANGE_GAP_M = 2;
+/** A lane change in behind a leader slower than this (stood, or barely rolling) must also pass the braking check (hasClearanceAhead()). */
+const BRAKE_CHECK_BELOW_MPS = 1;
 /** Seconds a car commits to a lane after changing before it's allowed to evaluate another one - stops unrealistic tick-by-tick weaving. */
 const LANE_CHANGE_COOLDOWN_S = 4;
 /**
@@ -544,11 +546,15 @@ function turnMovement(arterialHeading, exitHeading) {
 
 /**
  * Physical bumper clearance to both neighbours in a target lane - stops a change from ever visually overlapping two cars.
- * Ahead, the gap must also be one the car can brake for (MOBIL's safety test, on itself): at 50 km/h, 2 m behind a car
- * stood in a turn pocket is no room at all - it would drive through it and leave it stuck behind.
+ * Ahead of a car that is stood, the gap must also be one the mover can brake for (MOBIL's safety test, on
+ * itself): at 50 km/h, 2 m behind a car stood in a turn pocket is no room at all - it would drive through it and leave
+ * it stuck behind. Not for a moving leader: there IDM's gap wants braking a driver happily takes to get in, and testing
+ * it halved the lane changes that make a turn (wrong-lane misses doubled).
  */
 function hasClearanceAhead(car, leader) {
-    return !leader || (leader.distanceM - leader.lengthM - car.distanceM >= MIN_LANE_CHANGE_GAP_M && mobilIsSafe(carAcceleration(car, leader), car.mobilParams));
+    if (!leader) return true;
+    if (leader.distanceM - leader.lengthM - car.distanceM < MIN_LANE_CHANGE_GAP_M) return false;
+    return leader.speedMps >= BRAKE_CHECK_BELOW_MPS || mobilIsSafe(carAcceleration(car, leader), car.mobilParams);
 }
 
 function hasClearanceBehind(car, follower) {
@@ -2460,10 +2466,10 @@ export class SimulationEngine {
                     this._keepToDrivewayLane(dirState, car, driveway);
                     continue;
                 }
-                // A car taking a peel-off ahead heads for the kerb lane first.
-                const peel = this._divergeAhead(dir, car);
-                if (peel && car.lane !== dirState.laneLayout.kerbSlots) {
-                    this._tryMandatoryLaneChange(dirState, car, [dirState.laneLayout.kerbSlots], true);
+                // A car taking a peel-off ahead heads for the kerb lane first, then stays in it - its plan for the
+                // junction past the peel-off would otherwise pull it back out, and it would pass the peel-off in the wrong lane.
+                if (this._divergeAhead(dir, car)) {
+                    if (car.lane !== dirState.laneLayout.kerbSlots) this._tryMandatoryLaneChange(dirState, car, [dirState.laneLayout.kerbSlots], true);
                     continue;
                 }
                 const gate = this._nextGate(dir, car);
@@ -3419,6 +3425,8 @@ export class SimulationEngine {
         for (const join of this.divergesFrom.get(key) ?? []) {
             if (join.slip) continue; // taken from the left-turn lane, not decided by a share
             const toGoM = join.fromAtM - car.distanceM;
+            // Past the peel-off without taking it (_peelOff() takes cars up to 15 m in): decide afresh next time round.
+            if (toGoM < -15) car.peelDecisions?.delete(join);
             if (toGoM < 0 || toGoM > DIVERGE_DECISION_M) continue;
             car.peelDecisions ??= new Map();
             if (!car.peelDecisions.has(join)) car.peelDecisions.set(join, car.trip ? this._routeTakesPeel(car, join) : this.rng.next() < join.share);
