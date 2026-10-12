@@ -92,6 +92,13 @@ const MERGE_GIVE_WAY_S = 2.5;
 const MERGE_WATCH_M = 40;
 /** How far before a peel-off point a car decides whether it takes it, and works its way into the kerb lane if so. */
 const DIVERGE_DECISION_M = 200;
+/**
+ * A turning car's worth in straight-ahead cars for Webster's q (the passenger-car-unit turning adjustment of signal
+ * timing practice): queued turners leave the stop line at ~1000 veh/h a lane against ~1250 going straight, the s every
+ * phase is timed on (scripts/preview/flowcheck.mjs, 2026-10-12: left 995, right 1015, straight 1225). Counting them as
+ * straight cars under-timed every turn-heavy lane - Herold's right turn onto Lynnwood ran at saturation on fixed time.
+ */
+const TURN_PCU = 1.25;
 /** How far before the end of a road that joins a narrower one a car in an ending lane starts merging out of it. */
 const MERGE_OUT_M = 160;
 /** A turning car whose way onto the cross street is blocked holds at the stop line - for at most this long, then it carries straight on so a jammed side street can never lock the arterial. */
@@ -1712,7 +1719,9 @@ export class SimulationEngine {
         if (!gate.slotLaneUse) return 1 / (covered?.length ?? road.lanes);
 
         const slots = gate.slotLaneUse.map((_, slot) => slot).filter((slot) => gate.slotLaneUse[slot].length && (!covered || !mainSlots.includes(slot) || covered.includes(slot)));
-        return criticalLaneShare(gate.slotLaneUse, slots, this._movementShares(gate));
+        const { straight, left, right } = this._movementShares(gate);
+        // In straight-car units, so the busiest lane is the one with the most green time's worth of cars (TURN_PCU).
+        return criticalLaneShare(gate.slotLaneUse, slots, { straight, left: left * TURN_PCU, right: right * TURN_PCU });
     }
 
     /**
@@ -1744,11 +1753,11 @@ export class SimulationEngine {
         return shares;
     }
 
-    /** The flow (veh/min) in each lane of `gate`'s protected turn: its share of the `arrivalPerMin` arriving, over the lanes that only make that turn. */
+    /** The flow in each lane of `gate`'s protected turn, in straight-car units (TURN_PCU): its share of the `arrivalPerMin` arriving, over the lanes that only make that turn. */
     _turnLaneFlow(gate, arrivalPerMin) {
         const { movement } = gate.turnPhase;
         const lanes = gate.slotLaneUse.filter((moves) => isTurnOnlyLane(moves, movement)).length;
-        return lanes ? (arrivalPerMin * this._movementShares(gate)[movement]) / lanes : 0;
+        return lanes ? (arrivalPerMin * this._movementShares(gate)[movement] * TURN_PCU) / lanes : 0;
     }
 
     /**
