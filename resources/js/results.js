@@ -40,6 +40,7 @@ import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
 import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from './sim/batchSchedule.js';
+import { describeLayoutDrift } from './sim/layoutDrift.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
@@ -768,13 +769,39 @@ async function openBatchModal() {
     batchModalBackdrop?.classList.remove('hidden');
     batchModalStreets.innerHTML = '<p class="text-xs text-slate-400">Loading corridor…</p>';
 
+    renderBatchModalDrift([]);
+
     try {
         const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
-        const corridorConfig = await fetchCorridor(corridorId);
+        const [corridorConfig, savedLayout] = await Promise.all([fetchCorridor(corridorId), fetchSavedLayout(corridorId)]);
         renderBatchModalStreets(corridorConfig, corridorId);
+        renderBatchModalDrift(savedLayout ? describeLayoutDrift(savedLayout, corridorConfig) : []);
     } catch (error) {
         batchModalStreets.innerHTML = `<p class="text-xs text-red-600 dark:text-red-400">${error.message}</p>`;
     }
+}
+
+/** The user's own copy of the corridor (Road Editor / Simulator) - null when they have none under that id, or it can't be loaded. */
+async function fetchSavedLayout(id) {
+    try {
+        const response = await fetch(data.savedLayoutUrlTemplate.replace('__ID__', encodeURIComponent(id)), { headers: { Accept: 'application/json' } });
+        return response.ok ? await response.json() : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Warns that the batch runs on the template, not the Road Editor's edits, when the two differ. */
+function renderBatchModalDrift(parts) {
+    const box = document.getElementById('batch-modal-drift');
+    if (!box) return;
+    box.classList.toggle('hidden', parts.length === 0);
+    box.replaceChildren();
+    if (!parts.length) return;
+    const strong = document.createElement('strong');
+    strong.className = 'font-semibold';
+    strong.textContent = 'Your saved layout differs from the template this batch runs on: ';
+    box.append(strong, `${parts.join(', ')}. The batch uses the template file (corridors/*.json), not your Road Editor edits - copy them into the template first if they should count.`);
 }
 
 function closeBatchModal() {

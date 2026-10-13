@@ -47,6 +47,7 @@
 
             <x-control-section id="editor-destinations-section" collapsible title="Destinations" info="Destination routing's blocks - the stretches of road cars drive to and turn into a driveway on. On the whole-corridor map each block is drawn in its tier's colour (how many destinations it holds, 1.5 lower-medium to 5 very high): it sets how many trips end there and how many driveways each side gets (1 up to tier 2, 2 at tier 3, 3 from tier 4). Click a block to change its tier or remove it; click a dashed stretch - an inlet from the map edge, or any stretch with no block yet - to add it as a destination. Changes preview on the map straight away; Save writes them into your layout, and Revert to original puts them back.">
                 <p id="destinations-status" class="text-[11px] text-slate-600 dark:text-slate-300"></p>
+                <p id="destinations-drift" class="hidden rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] leading-snug text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85"></p>
                 <div class="flex flex-wrap gap-1.5">
                     <button type="button" id="destinations-save" class="rounded-md border border-sky-600 bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40">Save destinations</button>
                     <button type="button" id="destinations-discard" title="Put back the tiers as last saved" class="{{ $buttonNeutral }}">Discard</button>

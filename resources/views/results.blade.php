@@ -69,6 +69,8 @@
                 </button>
             </div>
 
+            <div id="batch-modal-drift" class="mb-3 hidden rounded-md border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85"></div>
+
             <div id="batch-modal-streets" class="space-y-3"></div>
 
             <label class="mt-4 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">

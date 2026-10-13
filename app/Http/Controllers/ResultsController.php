@@ -119,6 +119,8 @@ class ResultsController extends Controller
                 'starvedLabel' => $payload['starvedLabel'],
                 'routingMetrics' => $payload['routingMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
+                // The user's own copy, only to warn in the run modal when it differs from the template the batch runs on.
+                'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,

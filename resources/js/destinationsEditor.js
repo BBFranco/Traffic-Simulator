@@ -15,6 +15,7 @@ import { SimulationEngine } from './sim/engine.js';
 import { candidateBlocks } from './sim/routing/candidates.js';
 import { BLOCK_TIERS, BLOCK_TIER_COLOURS } from './sim/routing/config.js';
 import { buildRoutingModel } from './sim/routing/model.js';
+import { describeLayoutDrift } from './sim/layoutDrift.js';
 
 /** How finely a block's line follows its road (m). */
 const OUTLINE_STEP_M = 5;
@@ -32,6 +33,7 @@ export function createDestinationsEditor({ boot, renderer, getCorridorConfig, ge
         discard: document.getElementById('destinations-discard'),
         legend: document.getElementById('editor-tier-legend'),
         picker: document.getElementById('editor-tier-picker'),
+        drift: document.getElementById('destinations-drift'),
     };
 
     /** Unsaved edits: a new tier per existing block id, blocks added (by id), blocks removed. */
@@ -414,6 +416,26 @@ export function createDestinationsEditor({ boot, renderer, getCorridorConfig, ge
         added.clear();
         removed.clear();
         changed();
+        showTemplateDrift();
+    }
+
+    /**
+     * Batches run on the shared template (corridors/*.json), never on this layout - say so when the two differ, so saved
+     * edits aren't mistaken for what a batch uses. Hidden for a layout with no template of the same id.
+     */
+    async function showTemplateDrift() {
+        const corridorId = getCorridorId();
+        const config = getCorridorConfig();
+        let parts = [];
+        try {
+            const response = await fetch(boot.templateUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)), { headers: { Accept: 'application/json' } });
+            if (response.ok) parts = describeLayoutDrift(config, await response.json());
+        } catch {
+            parts = [];
+        }
+        if (getCorridorId() !== corridorId || getCorridorConfig() !== config) return; // another corridor or save landed meanwhile
+        el.drift.classList.toggle('hidden', parts.length === 0);
+        el.drift.textContent = parts.length ? `Batches don't use this: they run on the template file, which differs from your layout in ${parts.join(', ')}.` : '';
     }
 
     /** The block or candidate whose line passes within HIT_RADIUS_PX of screen point `local` - `{ kind, id }` - or null. Blocks win a tie. */
