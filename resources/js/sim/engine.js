@@ -4597,12 +4597,16 @@ export class SimulationEngine {
         const { od, exitFallback, blockStates } = this.routingModel;
         // Already on the block it's heading for: no more choices, it carries on to pull off.
         if (blockStates.get(car.trip.destId)?.has(stateId)) return ON_DESTINATION_BLOCK;
+        // Its driveway still ahead on this road: a look-ahead past the block (a join planned short of the driveway) mustn't re-aim it.
+        const { driveway } = car.trip;
+        if (driveway && car.road === driveway.road && car.distanceM < driveway.atM) return ON_DESTINATION_BLOCK;
         let arc = od.variants[car.trip.variant].get(car.trip.destId)?.get(stateId);
         if (!arc) {
             const fallback = exitFallback.get(stateId);
             if (!fallback || fallback === car.trip.destId) return null;
             car.trip.destId = fallback;
             car.trip.driveway = null;
+            car.trip.drivewayWait = null;
             this.routingStats.rerouted += 1;
             arc = od.variants[car.trip.variant].get(fallback)?.get(stateId);
         }
@@ -4684,7 +4688,7 @@ export class SimulationEngine {
     /** Where a car waiting for an oncoming gap stops: its turn-off point. Null unless it is waiting. */
     _drivewayHold(car) {
         const wait = car.trip?.drivewayWait;
-        return wait ? { distanceM: wait.holdM, speedMps: 0 } : null;
+        return wait && this._drivewayAhead(car) ? { distanceM: wait.holdM, speedMps: 0 } : null;
     }
 
     /** True while oncoming traffic is too close for a car to turn across it into `driveway`. */
