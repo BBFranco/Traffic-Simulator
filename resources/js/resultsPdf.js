@@ -902,9 +902,6 @@ function drawMethodNotes(report, data) {
         ...(settleNote ? [settleNote] : []),
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         `Load-shedding conditions cut power ${data.batchStamp?.outageStartMinutes ?? '-'} min into the measured window and restore it at ${data.batchStamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour.`,
-        ...(data.batchStamp?.routingMode === 'destination'
-            ? ['While the lights are dark, throughput falls about 17-22% under destination routing (batches from 10-13 Oct) against about 40% under random turning (the last random batches, 10-11 Oct), and by about the same for every controller. It is not a counting artefact: driveway pull-offs keep the same share of throughput (about 42%) before, during and after the outage. Why the dark network holds up better in this mode is still open.']
-            : []),
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where both sides recover throughput within 30 s, its delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
@@ -922,38 +919,6 @@ function drawMethodNotes(report, data) {
  * @param {{corridorId: string, corridorName: string, corridorUrl: ?string}} corridor
  *   `corridorUrl` is null for "All corridors" - no single layout to draw then.
  */
-/**
- * Appendix: the latest sensitivity batch (different signal-timing rules) against the main batch
- * on the same seeds. The headline above always stays on the main batch.
- */
-function drawSensitivityAppendix(report, appendix) {
-    report.newPage();
-    report.sectionTitle('Appendix - Webster turn-weight sensitivity', appendix.label);
-    report.paragraph(
-        "The main batch times protected turns on real q; a turn stage's weight only raises its minimum green. This batch also scales the turn q by its weight before Webster, for fixed-time and green wave alike. Fixed-time runs each junction on its own cycle, so only the two weighted junctions lengthen theirs (by about 5 s). Green wave runs a whole arterial on one common cycle and squeezes each junction's minimum greens inside it, where fixed-time adds them on top - on Lynnwood the pure-q common cycle (81 s) is shorter than fixed-time's own cycle at Lynnwood / Duxbury (92 s), and the weight lifts it to 92 s. Read this as a green-wave cycle-length effect, not as green wave against a weaker baseline: weighted fixed-time is no faster than the main batch's."
-    );
-    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive - Inductive loop' };
-    report.table({
-        head: [['Controller', 'Wait', 'Runs', 'Sensitivity (s)', 'Main, same seeds (s)', 'Sensitivity vs main']],
-        body: appendix.rows.map((row) => [
-            `${controllerLabel[row.controller_mode] ?? row.controller_mode} · ${POWER_LABELS[row.power_state] ?? row.power_state}`,
-            row.metric,
-            String(row.runs),
-            fmt(row.sensitivity),
-            fmt(row.main_same_seeds),
-            row.vs_main ? fmtPaired(row.vs_main.delta, row.vs_main.ci95, '%') : 'n/a',
-        ]),
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
-    });
-    const fmtGw = (d) => (d ? `${fmtDelta(d.delta, '%')} ±${d.ci95.toFixed(1)} (${d.pairs} seeds)` : 'n/a');
-    report.table({
-        head: [['Green wave vs fixed-time', 'Main batch (pure q)', 'Sensitivity (q x weight)']],
-        body: appendix.greenWaveVsFixed.map((row) => [row.metric, fmtGw(row.main), fmtGw(row.sensitivity)]),
-        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
-    });
-    report.paragraph('± is the 95% CI on the per-seed differences. An interval that spans zero means no measurable difference at this many seeds.');
-}
-
 /**
  * e.g. results-hatfield-realistic-2026-10-03-2130-794f8bf-dirty.pdf - named for the batch it
  * reports (its start time and code), so two PDFs can't be mistaken for the same dataset.
@@ -990,7 +955,6 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         distributionTable(report, data, variants);
         if (data.routingMetrics?.length) drawRoutingTrips(report, data.routingMetrics);
         drawMethodNotes(report, data);
-        if (data.sensitivityAppendix) drawSensitivityAppendix(report, data.sensitivityAppendix);
 
         report.stampPages();
         report.doc.save(reportFileName(corridorId, data.batchStamp, now));

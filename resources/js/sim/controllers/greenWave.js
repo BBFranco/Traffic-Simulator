@@ -14,6 +14,10 @@
  * startFromRestLagS()) - so a platoon released at one light sees the next
  * turn green just as it arrives (Roess, Prassas & McShane, 2004).
  *
+ * A junction whose own cycle fits in half the common cycle runs that half twice (half-cycling,
+ * standard coordination practice): progression is kept, and its cross street is not held to the
+ * critical junction's long red.
+ *
  * Unlike FixedTimeController, this is stateless: `tick()` derives the phase
  * directly from absolute sim time modulo the cycle, so every node on the
  * arterial stays perfectly in step with no drift, and rebuilding it on a
@@ -129,11 +133,14 @@ export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDem
             const prevDistanceM = info.node.sAlongM - nodeInfos[i - 1].node.sAlongM;
             offsetS += greenWaveOffset(prevDistanceM, targetSpeedMps) + startFromRestLagS(targetSpeedMps);
         }
-        const { stages, ratios } = plans[i];
-        const stageGreens = splitCommonCycle(cycleLengthS, stages, ratios);
+        const { stages, ratios, ownCycleS } = plans[i];
+        // Half-cycling: a junction whose own cycle fits in half the common one runs it twice per common cycle, so its cross
+        // street waits half as long. One of its two arterial greens still opens on the offset, so the platoon is carried.
+        const nodeCycleS = ownCycleS <= cycleLengthS / 2 ? cycleLengthS / 2 : cycleLengthS;
+        const stageGreens = splitCommonCycle(nodeCycleS, stages, ratios);
         // The offset is where the arterial's through green opens, so a lead turn stage in front of it starts earlier.
         const leadS = stages[0].turn ? stageGreens[0] + YELLOW_S + ALL_RED_S : 0;
-        controllers.set(info.node.id, new GreenWaveController({ offsetS: offsetS - leadS, cycleLengthS, stages, stageGreens }));
+        controllers.set(info.node.id, new GreenWaveController({ offsetS: offsetS - leadS, cycleLengthS: nodeCycleS, stages, stageGreens }));
     });
     return controllers;
 }

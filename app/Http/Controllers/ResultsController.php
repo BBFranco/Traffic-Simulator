@@ -11,7 +11,6 @@ use App\Support\ConfidenceInterval;
 use App\Support\CorridorRepository;
 use App\Support\RoutingMetrics;
 use App\Support\SeedPairedDeltas;
-use App\Support\SensitivityAppendix;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -85,7 +84,6 @@ class ResultsController extends Controller
     public function __construct(
         private readonly CorridorRepository $corridors,
         private readonly SeedPairedDeltas $seedPairedDeltas,
-        private readonly SensitivityAppendix $sensitivityAppendix,
         private readonly RoutingMetrics $routingMetrics,
     ) {}
 
@@ -115,7 +113,6 @@ class ResultsController extends Controller
                 'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
                 'batchWarmupLabel' => $payload['batchWarmupLabel'],
                 'batchStamp' => $payload['batchStamp'],
-                'sensitivityAppendix' => $payload['sensitivityAppendix'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
                 'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
                 'lockupLabel' => $payload['lockupLabel'],
@@ -162,7 +159,6 @@ class ResultsController extends Controller
             'pairedComparisons' => $payload['pairedComparisons'],
             'batchWarmupLabel' => $payload['batchWarmupLabel'],
             'batchStamp' => $payload['batchStamp'],
-            'sensitivityAppendix' => $payload['sensitivityAppendix'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
             'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
             'lockupLabel' => $payload['lockupLabel'],
@@ -649,7 +645,6 @@ class ResultsController extends Controller
             'batchTimingLabel' => $this->batchTimingLabel((clone $query)),
             'batchWarmupLabel' => $this->warmupLabel((clone $query)->whereNotNull('warmup_ticks')->distinct()->pluck('warmup_ticks')),
             'batchStamp' => $this->batchStamp((clone $query)),
-            'sensitivityAppendix' => $this->sensitivityAppendix->forCorridor($corridorFilter, $routingMode, $batchIds),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
             'warmupDriftingLabel' => $this->warmupDriftingLabel((clone $query)),
             'lockupLabel' => $this->lockupLabel((clone $query)),
@@ -908,7 +903,7 @@ class ResultsController extends Controller
     /** @param  Builder<SimulationRun>  $query */
     private function aggregates(Builder $query): array
     {
-        $stddevs = $this->computeStddevs((clone $query), ['controller_mode', 'power_state']);
+        $ci95s = $this->conditionCi95s((clone $query), ['controller_mode', 'power_state']);
 
         return $query
             ->selectRaw('controller_mode, power_state, count(*) as runs, '.$this->metricSelectRaw())
@@ -918,7 +913,7 @@ class ResultsController extends Controller
                 'controller_mode' => $row->controller_mode,
                 'power_state' => $row->power_state,
                 'runs' => (int) $row->runs,
-                ...$this->metricRow($row, $stddevs["{$row->controller_mode}|{$row->power_state}"] ?? []),
+                ...$this->metricRow($row, $ci95s["{$row->controller_mode}|{$row->power_state}"] ?? []),
             ])
             ->all();
     }
@@ -966,54 +961,52 @@ class ResultsController extends Controller
     }
 
     /**
-     * Sample stddev per group, across the group's reps - with 30 seeded reps per condition
-     * this is what lets a viewer tell a small delta (e.g. +2.6%) apart from noise. A
-     * per-condition figure, not a paired stddev of the delta itself (that would need
-     * per-seed joins across conditions) - labelled as such in the UI.
+     * 95% CI half-width on each group's own mean - with 30 seeded reps per condition this is
+     * what lets a viewer tell a small delta (e.g. +2.6%) apart from noise. A per-condition
+     * figure, not a CI on the delta itself (that is SeedPairedDeltas).
      *
-     * Computed in PHP rather than pushed into the aggregate SQL (`avg()` above): this app's
-     * dev/test DB is SQLite, which has no STDDEV_SAMP, and hand-rolling it as
-     * sqrt(avg(x*x) - avg(x)^2) would be numerically shakier than just fetching the (at most
-     * a few hundred) raw rows once and computing it directly.
+     * The samples are per-seed means, not runs: the adaptive average row has one run per sensor
+     * on each seed, and those four share the seed's demand, so treating them as 120 independent
+     * runs mixed between-sensor spread into the stddev and divided it by sqrt(120). Every other
+     * group has one run per seed, where this is the plain per-run figure.
      *
-     * @return array<string, array<string, float|null>> group key -> column -> stddev
+     * Computed in PHP rather than SQL: the dev/test DB is SQLite, which has no STDDEV_SAMP.
+     *
+     * @param  Builder<SimulationRun>  $query
+     * @param  array<int, string>  $groupColumns
+     * @return array<string, array<string, float|null>> group key -> column -> ci95
      */
-    /** @param  Builder<SimulationRun>  $query */
-    private function computeStddevs(Builder $query, array $groupColumns): array
+    private function conditionCi95s(Builder $query, array $groupColumns): array
     {
         $metricColumns = $this->scopedMetricColumns();
-        $rows = $query->select(array_merge($groupColumns, $metricColumns))->get();
 
-        $valuesByGroup = [];
-        foreach ($rows as $row) {
-            $key = implode('|', array_map(fn ($c) => (string) ($row->$c ?? ''), $groupColumns));
-            foreach ($metricColumns as $column) {
-                $valuesByGroup[$key][$column][] = $row->$column;
-            }
-        }
-
-        $stddevs = [];
-        foreach ($valuesByGroup as $key => $columns) {
-            foreach ($columns as $column => $values) {
-                $stddevs[$key][$column] = $this->sampleStddev($values);
-            }
-        }
-
-        return $stddevs;
+        return $query->select([...$groupColumns, 'corridor_config', 'seed', ...$metricColumns])
+            ->get()
+            ->toBase()
+            ->groupBy(fn (SimulationRun $run): string => collect($groupColumns)->map(fn (string $column): string => (string) ($run->{$column} ?? ''))->implode('|'))
+            ->map(fn (Collection $groupRuns): array => collect($metricColumns)
+                ->mapWithKeys(fn (string $column): array => [$column => $this->ci95OnSeedMeans($groupRuns, $column)])
+                ->all())
+            ->all();
     }
 
-    private function sampleStddev(array $values): ?float
+    /** @param  Collection<int, SimulationRun>  $runs */
+    private function ci95OnSeedMeans(Collection $runs, string $column): ?float
     {
-        $values = array_values(array_filter($values, fn ($v) => $v !== null));
-        $n = count($values);
-        if ($n < 2) {
+        $seedMeans = $runs->filter(fn (SimulationRun $run): bool => $run->{$column} !== null)
+            ->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->seed}")
+            ->map(fn (Collection $seedRuns): float => (float) $seedRuns->avg($column))
+            ->values();
+
+        $samples = $seedMeans->count();
+        if ($samples < 2) {
             return null;
         }
 
-        $mean = array_sum($values) / $n;
-        $variance = array_sum(array_map(fn ($v) => ($v - $mean) ** 2, $values)) / ($n - 1);
+        $mean = $seedMeans->avg();
+        $variance = $seedMeans->sum(fn (float $value): float => ($value - $mean) ** 2) / ($samples - 1);
 
-        return sqrt($variance);
+        return round(ConfidenceInterval::halfWidth95(sqrt($variance), $samples), 1);
     }
 
     /**
@@ -1026,21 +1019,14 @@ class ResultsController extends Controller
      *
      * @return array<string, float|null>
      */
-    private function metricRow(object $row, array $stddevByColumn = []): array
+    private function metricRow(object $row, array $ci95ByColumn = []): array
     {
         $result = [];
-        $runs = (int) $row->runs;
         foreach (self::SCOPED_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
-
-                $stddev = $stddevByColumn[$column] ?? null;
-                // 95% CI half-width on THIS condition's own mean (mean +/- ci95), not on a
-                // delta - needs >= 2 reps to have a defined stddev at all.
-                $result[$column.'_ci95'] = ($stddev === null || $runs < 2)
-                    ? null
-                    : round(ConfidenceInterval::halfWidth95($stddev, $runs), 1);
+                $result[$column.'_ci95'] = $ci95ByColumn[$column] ?? null;
             }
         }
         foreach (self::TOTAL_ONLY_METRICS as $column) {
@@ -1072,7 +1058,7 @@ class ResultsController extends Controller
     /** @param  Builder<SimulationRun>  $query */
     private function aggregatesBySensor(Builder $query): array
     {
-        $stddevs = $this->computeStddevs((clone $query), ['controller_mode', 'power_state', 'sensor_mode']);
+        $ci95s = $this->conditionCi95s((clone $query), ['controller_mode', 'power_state', 'sensor_mode']);
 
         return $query
             ->selectRaw('controller_mode, power_state, sensor_mode, count(*) as runs, '.$this->metricSelectRaw())
@@ -1083,7 +1069,7 @@ class ResultsController extends Controller
                 'power_state' => $row->power_state,
                 'sensor_mode' => $row->sensor_mode,
                 'runs' => (int) $row->runs,
-                ...$this->metricRow($row, $stddevs["{$row->controller_mode}|{$row->power_state}|{$row->sensor_mode}"] ?? []),
+                ...$this->metricRow($row, $ci95s["{$row->controller_mode}|{$row->power_state}|{$row->sensor_mode}"] ?? []),
             ])
             ->all();
     }
