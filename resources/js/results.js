@@ -598,8 +598,11 @@ async function probeWarmup(pool, corridorConfig, routingMode) {
     return warmup;
 }
 
-/** One worker per core, less one for the page itself; capped so a big machine never holds dozens of runs' rows at once. */
-const MAX_BATCH_WORKERS = 12;
+/**
+ * One worker per logical core, less one for the page itself; capped so a big machine never holds dozens of runs' rows
+ * at once (~210 MB each). On 8 cores / 16 threads, 15 workers clear ~6% more than 12 (2026-10-13 benchmark).
+ */
+const MAX_BATCH_WORKERS = 15;
 function batchWorkerCount() {
     return Math.max(1, Math.min(MAX_BATCH_WORKERS, (navigator.hardwareConcurrency || 2) - 1));
 }

@@ -626,7 +626,11 @@ capped ${Math.round(subjectCapped)} vs ${Math.round(baselineCapped)} s`;
         : [c.recovery_delta_pct, c.recovery_reliable, c.recovery_recovered, c.baseline_recovery_recovered];
     const counts = `${recovered}/${c.runs} vs ${baselineRecovered}/${c.baseline_runs}`;
 
-    return reliable ? `${fmtDelta(delta, '%')}\n${counts}` : `too few runs\n${counts}`;
+    if (!reliable) return `too few runs\n${counts}`;
+    // Both sides back within seconds: the difference in seconds, not a % of a few seconds.
+    if (metric === 'throughput' && c.recovery_delta_seconds != null) return `${fmtDelta(c.recovery_delta_seconds, ' s')}\n${counts}`;
+
+    return `${fmtDelta(delta, '%')}\n${counts}`;
 }
 
 /** Tints a delta cell green/red from the matching `*_improves` flag. */
@@ -679,7 +683,13 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
                   {
                       header: 'Recovery (wait)',
                       value: (c) => fmtRecoveryDelta(c, 'wait', data.batchStamp?.postRestoreWindowS),
-                      improves: (c) => (c.power_state === 'load_shedding' ? c.recovery_wait_recovered / c.runs > c.baseline_recovery_wait_recovered / c.baseline_runs : null),
+                      improves: (c) => {
+                          if (c.power_state !== 'load_shedding') return null;
+                          const share = c.recovery_wait_recovered / c.runs;
+                          const baselineShare = c.baseline_recovery_wait_recovered / c.baseline_runs;
+                          // The same share recovered on both sides is no difference, not a regression.
+                          return share === baselineShare ? null : share > baselineShare;
+                      },
                   },
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
@@ -779,7 +789,7 @@ function drawScope(report, data, variants, scope, index) {
     report.newPage();
     report.sectionTitle(scope.label, scope.description, index + 1);
 
-    report.heading('Every ITS variant vs fixed-time', 'Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression. Recovery: throughput first - wait-recovery is often cut off by the end of the measured window.');
+    report.heading('Every ITS variant vs fixed-time', 'Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). Recovery: throughput first - wait-recovery is often cut off by the end of the measured window.');
     comparisonTable(report, data, variants, scope);
 
     const barAspect = 270 / 760;
@@ -893,11 +903,11 @@ function drawMethodNotes(report, data) {
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         `Load-shedding conditions cut power ${data.batchStamp?.outageStartMinutes ?? '-'} min into the measured window and restore it at ${data.batchStamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour.`,
         ...(data.batchStamp?.routingMode === 'destination'
-            ? ['Under destination routing the network clears more vehicles while the lights are dark than under random turning, and about the same for every controller. It is not a counting artefact: driveway pull-offs keep the same share of throughput (about 42%) before, during and after the outage. Why the dark network clears more in this mode is still open.']
+            ? ['While the lights are dark, throughput falls about 17-22% under destination routing (batches from 10-13 Oct) against about 40% under random turning (the last random batches, 10-11 Oct), and by about the same for every controller. It is not a counting artefact: driveway pull-offs keep the same share of throughput (about 42%) before, during and after the outage. Why the dark network holds up better in this mode is still open.']
             : []),
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
-        'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
+        'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where both sides recover throughput within 30 s, its delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,

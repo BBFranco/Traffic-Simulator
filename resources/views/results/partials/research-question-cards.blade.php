@@ -20,8 +20,10 @@
                 {{ $fmtDelta($comparison['wait_delta_pct'], '%') }}
             </span>
             <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $comparison['wait_figure_tone'] }}">
-                @if ($comparison['wait_improves'] === null)
+                @if ($comparison['wait_delta_pct'] === null)
                     not measured yet
+                @elseif ($comparison['wait_improves'] === null)
+                    no clear difference
                 @else
                     <span aria-hidden="true">{{ $comparison['wait_improves'] ? '▼' : '▲' }}</span>
                     {{ $comparison['wait_improves'] ? 'less waiting' : 'more waiting' }}

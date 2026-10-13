@@ -48,12 +48,19 @@
                                             fixed-time did not recover in window
                                         @elseif (! $card['recoveryReliable'])
                                             too few recovered runs to compare (needs {{ $minRecoveredRuns }} per side)
+                                        @elseif ($card['isWithinNoise'])
+                                            no clear difference from fixed-time
                                         @elseif ($card['improves'] === null)
                                             not measured yet
+                                        @elseif ($card['recoveryDeltaSeconds'] !== null)
+                                            <span aria-hidden="true">{{ $card['recoveryDeltaSeconds'] >= 0 ? '▲' : '▼' }}</span>
+                                            {{ $fmtDelta($card['recoveryDeltaSeconds'], ' s') }} {{ $card['improves'] ? $card['improvedLabel'] : $card['worseLabel'] }} than fixed-time
                                         @else
                                             <span aria-hidden="true">{{ $card['value'] >= 0 ? '▲' : '▼' }}</span>
                                             {{ $fmtDelta($card['value'], '%') }} {{ $card['improves'] ? $card['improvedLabel'] : $card['worseLabel'] }} than fixed-time
                                         @endif
+                                    @elseif ($card['isWithinNoise'])
+                                        no clear difference from fixed-time
                                     @elseif ($card['improves'] === null)
                                         not measured yet
                                     @else

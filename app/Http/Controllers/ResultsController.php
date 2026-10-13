@@ -79,6 +79,9 @@ class ResultsController extends Controller
     /** Fewest recovered runs a side needs before its mean recovery time is compared as a delta. */
     private const MIN_RECOVERED_RUNS = 10;
 
+    /** Both sides recover within this - a % change on a few seconds reads as a big effect, so it's shown in seconds. */
+    private const SHORT_RECOVERY_S = 30;
+
     public function __construct(
         private readonly CorridorRepository $corridors,
         private readonly SeedPairedDeltas $seedPairedDeltas,
@@ -349,6 +352,24 @@ class ResultsController extends Controller
      * yet" (neutral), true/false is an improvement/regression. Shared by the "vs
      * fixed-time" cards and the headline metric cards so both tone the same way.
      */
+    /**
+     * Whether the delta shown is an improvement - null (shown neutral) where there's none to show, or where the
+     * seed-paired difference sits inside its own 95% CI: no winner to colour, e.g. "0.0% ±0.0" or "0.0% ±1.4".
+     *
+     * @param  array{delta: float, ci95: float, pairs: int}|null  $paired
+     */
+    private function improvesBeyondNoise(?float $delta, ?array $paired, bool $isLowerBetter): ?bool
+    {
+        if ($delta === null || $delta == 0.0) {
+            return null;
+        }
+        if ($paired !== null && abs($paired['delta']) <= $paired['ci95']) {
+            return null;
+        }
+
+        return $isLowerBetter ? $delta < 0 : $delta > 0;
+    }
+
     private function toneClasses(?bool $improves): string
     {
         return match (true) {
@@ -450,6 +471,8 @@ class ResultsController extends Controller
             'value' => $comparison[$section['valueKey']],
             'suffix' => $section['suffix'],
             'improves' => $improves,
+            'isWithinNoise' => $improves === null && $comparison[$section['valueKey']] !== null,
+            'recoveryDeltaSeconds' => $recoveryPairMetric === 'throughput' ? $comparison['recovery_delta_seconds'] : null,
             'improvedLabel' => $section['improvedLabel'],
             'worseLabel' => $section['worseLabel'],
             'recoveryPairMetric' => $recoveryPairMetric,
@@ -1176,7 +1199,11 @@ class ResultsController extends Controller
         // pctChange() returns null there, and the improves flag follows so the cell isn't tinted.
         $recoveryDelta = $recoveryKnown ? $this->pctChange($baseline[$recoveryKey], $subject[$recoveryKey]) : null;
         $recoveryWaitDelta = $recoveryWaitKnown ? $this->pctChange($baseline[$recoveryWaitKey], $subject[$recoveryWaitKey]) : null;
-        $waitImproves = $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null;
+        $waitDelta = $paired[$waitKey]['delta'] ?? ($waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null);
+        $throughputDelta = $paired[$throughputKey]['delta'] ?? ($throughputKnown ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey]) : null);
+        $clearedDelta = $paired[$clearedKey]['delta'] ?? ($clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null);
+        $waitImproves = $this->improvesBeyondNoise($waitDelta, $paired[$waitKey] ?? null, isLowerBetter: true);
+        $isShortRecovery = $recoveryKnown && max($subject[$recoveryKey], $baseline[$recoveryKey]) < self::SHORT_RECOVERY_S;
 
         return [
             'mode' => $mode,
@@ -1186,25 +1213,20 @@ class ResultsController extends Controller
             'scope' => $scope,
             // Wait time: lower is better, so a negative delta is an improvement.
             // The exact paired delta where there is one - the condition means are rounded to 0.1 for display.
-            'wait_delta_pct' => $paired[$waitKey]['delta'] ?? ($waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null),
-            'throughput_delta_pct' => $paired[$throughputKey]['delta'] ?? ($throughputKnown
-                ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey])
-                : null),
-            'cleared_delta_pp' => $paired[$clearedKey]['delta'] ?? ($clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null),
+            'wait_delta_pct' => $waitDelta,
+            'throughput_delta_pct' => $throughputDelta,
+            'cleared_delta_pp' => $clearedDelta,
             // Recovery time: only meaningful under load shedding (null otherwise); lower is better.
             'recovery_delta_pct' => $recoveryDelta,
             'recovery_wait_delta_pct' => $recoveryWaitDelta,
             'wait_improves' => $waitImproves,
             'wait_tone' => $this->toneClasses($waitImproves),
             'wait_figure_tone' => $this->figureToneClasses($waitImproves),
-            'throughput_improves' => $throughputKnown ? $subject[$throughputKey] > $baseline[$throughputKey] : null,
-            'cleared_improves' => $clearedKnown ? $subject[$clearedKey] > $baseline[$clearedKey] : null,
-            'recovery_improves' => $recoveryDelta !== null
-                ? $subject[$recoveryKey] < $baseline[$recoveryKey]
-                : null,
-            'recovery_wait_improves' => $recoveryWaitDelta !== null
-                ? $subject[$recoveryWaitKey] < $baseline[$recoveryWaitKey]
-                : null,
+            'throughput_improves' => $this->improvesBeyondNoise($throughputDelta, $paired[$throughputKey] ?? null, isLowerBetter: false),
+            'cleared_improves' => $this->improvesBeyondNoise($clearedDelta, $paired[$clearedKey] ?? null, isLowerBetter: false),
+            'recovery_improves' => $this->improvesBeyondNoise($recoveryDelta, $paired[$recoveryKey] ?? null, isLowerBetter: true),
+            'recovery_wait_improves' => $this->improvesBeyondNoise($recoveryWaitDelta, $paired[$recoveryWaitKey] ?? null, isLowerBetter: true),
+            'recovery_delta_seconds' => $isShortRecovery ? round($subject[$recoveryKey] - $baseline[$recoveryKey], 1) : null,
             // Recovery time on its own only measures how long a metric takes to sustain its way
             // back to baseline - it says nothing about where things settle afterwards. A shorter
             // recovery time next to a worse steady-state (or vice versa) is a real, common
