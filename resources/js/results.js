@@ -952,7 +952,7 @@ async function postRecoveryTicks(payload) {
 async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     const url = params.toString() ? `${data.resultsDataUrl}?${params}` : data.resultsDataUrl;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!response.ok) return;
+    if (!response.ok) throw new Error(`GET ${data.resultsDataUrl} -> ${response.status}`);
 
     const fresh = await response.json();
     Object.assign(data, fresh);
@@ -1022,7 +1022,10 @@ for (const filterId of ['filter-corridor', 'filter-routing']) {
         const params = currentFilterParams();
         const query = params.toString();
         history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
-        refreshAggregatesAndRerender(params);
+        refreshAggregatesAndRerender(params).catch((error) => {
+            // eslint-disable-next-line no-alert
+            alert(`Could not load results for this selection: ${error.message}`);
+        });
     });
 }
 
@@ -1037,6 +1040,9 @@ exportPdfButton?.addEventListener('click', async () => {
     exportPdfLabel.textContent = 'Building PDF…';
 
     try {
+        // The dropdown can disagree with the loaded data (browser-restored select value, or a failed
+        // refresh) - the cover/layout come from the dropdown, the numbers from `data`, so re-sync first.
+        await refreshAggregatesAndRerender();
         // Lazy: jsPDF only loads when someone actually exports.
         const { exportResultsPdf } = await import('./resultsPdf.js');
         const corridorId = corridorSelect?.value ?? '';
