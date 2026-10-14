@@ -234,5 +234,164 @@
         "saturationFlowPerLanePerHour": 1250
       }
     }
-  ]
+  ],
+  "routing": {
+    "mode": "random",
+    "throughShare": {
+      "arterial": 0.6,
+      "side": 0.3
+    },
+    "decayPerSecond": 0.01,
+    "routeVariants": 5,
+    "routeCostNoise": 0.1,
+    "detourLimit": 2.5,
+    "nodePenaltyS": {
+      "signal": 20,
+      "roundabout": 5,
+      "allWayStop": 8,
+      "stop": 8
+    },
+    "turnPenaltyS": {
+      "left": 10,
+      "right": 20
+    },
+    "departures": {
+      "share": 1,
+      "holdTotal": true
+    },
+    "blocks": [
+      {
+        "id": "FRB-0",
+        "from": "francisbaard:start",
+        "to": "fb_1",
+        "tier": 3
+      },
+      {
+        "id": "FRB-1",
+        "from": "fb_1",
+        "to": "fb_2",
+        "tier": 3
+      },
+      {
+        "id": "FRB-2",
+        "from": "fb_2",
+        "to": "fb_3",
+        "tier": 3
+      },
+      {
+        "id": "FRB-3",
+        "from": "fb_3",
+        "to": "fb_4",
+        "tier": 3
+      },
+      {
+        "id": "FRB-4",
+        "from": "fb_4",
+        "to": "francisbaard:end",
+        "tier": 3
+      },
+      {
+        "id": "PRE-0",
+        "from": "pretorius:start",
+        "to": "pt_1",
+        "tier": 3
+      },
+      {
+        "id": "PRE-1",
+        "from": "pt_1",
+        "to": "pt_2",
+        "tier": 3
+      },
+      {
+        "id": "PRE-2",
+        "from": "pt_2",
+        "to": "pt_3",
+        "tier": 3
+      },
+      {
+        "id": "PRE-3",
+        "from": "pt_3",
+        "to": "pt_4",
+        "tier": 3
+      },
+      {
+        "id": "PRE-4",
+        "from": "pt_4",
+        "to": "pretorius:end",
+        "tier": 3
+      },
+      {
+        "id": "JSH-1",
+        "from": "conn_jan_shoba:start",
+        "to": "pt_1",
+        "tier": 2
+      },
+      {
+        "id": "JSH-2",
+        "from": "pt_1",
+        "to": "fb_4",
+        "tier": 2
+      },
+      {
+        "id": "JSH-3",
+        "from": "fb_4",
+        "to": "conn_jan_shoba:end",
+        "tier": 2
+      },
+      {
+        "id": "GRV-1",
+        "from": "conn_grosvenor:start",
+        "to": "pt_2",
+        "tier": 2
+      },
+      {
+        "id": "GRV-2",
+        "from": "pt_2",
+        "to": "fb_3",
+        "tier": 2
+      },
+      {
+        "id": "GRV-3",
+        "from": "fb_3",
+        "to": "conn_grosvenor:end",
+        "tier": 2
+      },
+      {
+        "id": "HLD-1",
+        "from": "conn_hilda:start",
+        "to": "pt_3",
+        "tier": 2
+      },
+      {
+        "id": "HLD-2",
+        "from": "pt_3",
+        "to": "fb_2",
+        "tier": 2
+      },
+      {
+        "id": "HLD-3",
+        "from": "fb_2",
+        "to": "conn_hilda:end",
+        "tier": 2
+      },
+      {
+        "id": "FST-1",
+        "from": "conn_festival:start",
+        "to": "pt_4",
+        "tier": 2
+      },
+      {
+        "id": "FST-2",
+        "from": "pt_4",
+        "to": "fb_1",
+        "tier": 2
+      },
+      {
+        "id": "FST-3",
+        "from": "fb_1",
+        "to": "conn_festival:end",
+        "tier": 2
+      }
+    ]
+  }
 }
