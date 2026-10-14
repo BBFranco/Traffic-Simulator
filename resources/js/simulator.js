@@ -27,6 +27,7 @@ import { LiveStatsPanel } from './sim/metrics/liveStatsPanel.js';
 import { applyChartTheme } from './charts/theme.js';
 import { onThemeChange } from './theme.js';
 import { initTooltips } from './tooltips.js';
+import { initRailAccordion } from './railAccordion.js';
 
 /** Physics timestep - decoupled from render framerate so batch mode (build step 13) reuses the same engine unmodified. */
 const FIXED_DT_S = 0.1;
@@ -155,6 +156,8 @@ const el = {
     seedRandomise: document.getElementById('seed-randomise'),
     arterialModeControls: document.getElementById('arterial-mode-controls'),
     demandControls: document.getElementById('demand-controls'),
+    demandMasterInput: document.getElementById('demand-master-input'),
+    demandMasterValue: document.getElementById('demand-master-value'),
     truckRatioInput: document.getElementById('truck-ratio-input'),
     truckRatioValue: document.getElementById('truck-ratio-value'),
     busRatioInput: document.getElementById('bus-ratio-input'),
@@ -251,6 +254,49 @@ function logChange(control, value) {
     li.append(key, val);
     el.controlLog.prepend(li);
     while (el.controlLog.children.length > 40) el.controlLog.lastElementChild.remove();
+}
+
+/* ------------------------------------------------------ rail section summaries */
+
+/** Set once the rail accordion is built; call `.refresh()` after changing a control from code (the rail only hears real clicks and inputs). */
+let railAccordion = null;
+
+function selectedText(select) {
+    return select.selectedOptions[0]?.textContent.trim() ?? '';
+}
+
+/** One-line text shown in a collapsed section's header, read from the controls so it can never drift from them. */
+function railSummaries() {
+    return {
+        'rail-scenario': () => `${selectedText(el.corridorSelect)} · seed ${el.seedInput.value}`,
+        'rail-replay': () => selectedText(document.getElementById('replay-family-select')),
+        'rail-signal': () => {
+            const counts = new Map();
+            for (const mode of Object.values(state.arterialModes)) counts.set(mode, (counts.get(mode) ?? 0) + 1);
+            if (counts.size === 1) return `All ${MODE_LABELS[[...counts.keys()][0]]}`;
+            return [...counts].map(([mode, count]) => `${count}× ${MODE_LABELS[mode]}`).join(', ');
+        },
+        'rail-sensing': () => SENSOR_LABELS[state.sensorMode] ?? state.sensorMode,
+        'rail-power': () => {
+            const parts = [state.power.loadShedding ? 'Power cut' : 'Normal'];
+            if (state.power.scheduledOutages) parts.push('scheduled outages');
+            return parts.join(' · ');
+        },
+        'rail-demand': () => {
+            const percent = `${el.demandMasterInput.value}%`;
+            const edited = [...el.demandControls.querySelectorAll('input[data-base]')].some((input) => {
+                const expected = Math.min(Number(input.max), Math.round((Number(input.dataset.base) * Number(el.demandMasterInput.value)) / 100));
+                return Number(input.value) !== (Number(el.demandMasterInput.value) === 100 ? Number(input.dataset.base) : expected);
+            });
+            return edited ? `${percent} · edited` : percent;
+        },
+        'rail-vehicles': () => {
+            const parts = [`Trucks ${Math.round(state.truckRatio * 100)}%`, `Buses ${Math.round(state.busRatio * 100)}%`];
+            if (state.randomEvents) parts.push('events');
+            if (state.routingMode === 'destination') parts.push('destinations');
+            return parts.join(' · ');
+        },
+    };
 }
 
 /* -------------------------------------------------------- generic segmented */
@@ -503,6 +549,7 @@ function buildArterialModeControls() {
         segmentedHandlers.set(control, (value) => {
             state.arterialModes[arterial.id] = value;
             engine.setArterialMode(arterial.id, value);
+            syncMasterMode();
             logChange(control, value);
         });
 
@@ -510,7 +557,28 @@ function buildArterialModeControls() {
     });
 
     el.arterialModeControls.replaceChildren(...rows);
+    syncMasterMode();
 }
+
+/** The "All arterials" selector shows a mode only while every arterial is on it; mixed leaves it unlit. */
+function syncMasterMode() {
+    const modes = new Set(Object.values(state.arterialModes));
+    const shared = modes.size === 1 ? [...modes][0] : null;
+    document.querySelectorAll('[data-segmented="arterialMode:all"] button[data-value]').forEach((button) => {
+        const active = button.dataset.value === shared;
+        button.dataset.active = active ? 'true' : 'false';
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+segmentedHandlers.set('arterialMode:all', (value) => {
+    for (const arterial of layout.arterials) {
+        state.arterialModes[arterial.id] = value;
+        engine.setArterialMode(arterial.id, value);
+    }
+    buildArterialModeControls();
+    logChange('arterialMode:all', value);
+});
 
 /**
  * Clones the Blade-rendered `<x-segmented>` in `#segmented-template` and rebinds
@@ -541,7 +609,23 @@ function buildDemandControls() {
     const rows = entries.map((entry) => (entry.demand.fluctuation ? buildFluctuatingDemandRow(entry) : buildFlatDemandRow(entry)));
 
     el.demandControls.replaceChildren(...rows);
+    el.demandMasterInput.value = 100;
+    el.demandMasterValue.textContent = '100';
 }
+
+/** Scales every road's demand to a share of what the corridor configures; each row's own slider takes the new value, so per-road edits still work afterwards. */
+el.demandMasterInput.addEventListener('input', () => {
+    const percent = Number(el.demandMasterInput.value);
+    el.demandMasterValue.textContent = percent;
+    el.demandControls.querySelectorAll('input[data-base]').forEach((input) => {
+        const base = Number(input.dataset.base);
+        input.value = percent === 100 ? base : Math.min(Number(input.max), Math.round((base * percent) / 100));
+        input.dispatchEvent(new Event('input'));
+    });
+});
+el.demandMasterInput.addEventListener('change', () => {
+    logChange('demand:all', `${el.demandMasterInput.value}% of configured`);
+});
 
 function buildFlatDemandRow(entry) {
     const row = cloneTemplate('demand-row-template');
@@ -549,6 +633,7 @@ function buildFlatDemandRow(entry) {
 
     const input = row.querySelector('[data-demand-input]');
     const readout = row.querySelector('[data-demand-value]');
+    input.dataset.base = state.demand[entry.id];
     input.value = state.demand[entry.id];
     readout.textContent = state.demand[entry.id];
 
@@ -575,6 +660,8 @@ function buildFluctuatingDemandRow(entry) {
     const minReadout = row.querySelector('[data-demand-min-value]');
     const maxReadout = row.querySelector('[data-demand-max-value]');
 
+    minInput.dataset.base = entry.demand.fluctuation.minPerLanePerMin;
+    maxInput.dataset.base = entry.demand.fluctuation.maxPerLanePerMin;
     minInput.value = entry.demand.fluctuation.minPerLanePerMin;
     maxInput.value = entry.demand.fluctuation.maxPerLanePerMin;
     minReadout.textContent = entry.demand.fluctuation.minPerLanePerMin;
@@ -1211,6 +1298,7 @@ async function startReplay(run) {
         state.arterialModes[arterial.id] = run.controller_mode;
     }
     buildArterialModeControls();
+    railAccordion?.refresh();
 
     restartEngine(); // real engine.reset() with all of the above now in `state`
     // A fixed-time run is its own baseline; any other replay compares against its fixed-time twin.
@@ -1512,6 +1600,8 @@ function tickEngine() {
         console.error('Corridor failed to load', error);
         showCorridorError(error.message);
     }
+
+    railAccordion = initRailAccordion(document.getElementById('sim-rail'), railSummaries());
 
     renderRunPill();
     rafId = requestAnimationFrame(animate);

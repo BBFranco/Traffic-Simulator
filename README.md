@@ -1,61 +1,93 @@
 # ARTIS: Adaptive Road Traffic Intersection System
 
-This project came out of a written spec, and most of it has now been built out phase by phase against that spec. At its core it's a browser-based traffic simulator that lets you compare three different ways of controlling traffic signals on the same stretch of road, using the same seeded traffic every time, and then cuts the power mid-run to see which of those approaches actually holds up when the lights go dark. It's modelled on a South African context, right down to the left-hand traffic and the load-shedding fallback.
-
-The default scenario is Pretorius Street (inbound) and Francis Baard Street (outbound) into Hatfield, Pretoria: two one-way, four-lane arterials with four signalised intersections each, joined by four signalised two-way cross-streets. That layout is currently a placeholder rather than a fully accurate survey of the real corridor; more arterials are meant to be added later.
+ARTIS at its core is a browser-based traffic simulator that lets you compare three different ways of controlling traffic signals on the same road network, using the same seeded traffic every time, and then cuts the power mid-run to see which of those approaches actually holds up when the lights go dark. It's modelled on a South African context.
 
 ---
 
 ## Screenshots
 
-**Simulator**, where you run, step, or fast-forward the corridor while watching fixed-time, adaptive, and green-wave control side by side.
+**Simulator**, running the Hatfield Grid at 4x with a junction popup open: signal phase, cycle timing including the arterial turn-arrow stage, queue lengths on both roads, and the time to the next change.
 
-![Simulator view of the Hatfield Pretorius / Francis Baard corridor](public/images/screenshots/simulator.png)
+![Simulator view of the Hatfield Grid, realistic network](public/images/screenshots/simulator.png)
 
-**Results**, aggregated across hundreds of seeded batch runs, each compared against the fixed-time baseline.
+**Results**, aggregated over 360 seeded batch runs (12 conditions x 30 seeds), each paired against the Webster fixed-time baseline. The header records the warm-up found by probe, the commit the batch ran on, and the timing rules used.
 
 ![Results dashboard summary cards](public/images/screenshots/results-summary.png)
 
-**Recovery after a power cut**, showing how fast each controller mode gets wait time and throughput back to where they were before the cut.
+**Recovery after a power cut**, showing how fast each controller gets wait time and throughput back to where they were before the cut. Both are tracked because they recover on different timescales.
 
 ![Recovery charts after a simulated power cut](public/images/screenshots/results-recovery.png)
+
+**Road Editor, destinations**, where each block of road gets a destination tier. In destination routing, cars draw a trip to a block and drive to it, instead of turning at random.
+
+![Road Editor destination tiers](public/images/screenshots/road-editor-destinations.png)
+
+**Road Editor, turn lanes**, where a junction's turn pockets and lane arrows are edited per approach and saved into the user's own layout.
+
+![Road Editor turn lane editor at South and Jan Shoba](public/images/screenshots/road-editor-turn-lanes.png)
+
+**Traffic Counter**, for comparing the simulator's assumed demand against real footage.
+
+![Traffic Counter](public/images/screenshots/traffic-counter.png)
 
 ---
 
 ## What the app actually does
 
-The `/simulator` page draws a road layout straight from a `corridors/*.json` file: surfaces, lane markings, stop lines, junction boxes, signal heads, all pannable and zoomable. On top of that road, cars move according to the Intelligent Driver Model for car following, with MOBIL-based lane changing on top, and a mix of three truck sizes that each have their own slider so you can dial the truck share up or down (`resources/js/sim/car.js` and `engine.js`).
+The `/simulator` page draws a corridor straight from a JSON file: surfaces, lane markings, stop lines, turn pockets, junction boxes, signal heads, roundabout islands and driveways, in 2D or 3D, pannable and zoomable. Cars follow the Intelligent Driver Model, change lane with MOBIL, and come in a car plus three truck sizes, each with a slider. Click a car and the camera follows it, with a card showing its route, trip time and delay.
 
-Signals are handled by one of four controllers, all under `resources/js/sim/controllers/`: `fixedTime.js` implements Webster's method for a real, defensible baseline rather than a strawman; `adaptive.js` is sensor-driven and can run at four different sensor fidelity levels; `greenWave.js` coordinates a progression band along the arterial; and `allWayStop.js` is what every intersection falls back to during load shedding. Sensor fidelity itself (`sensors.js`) ranges from inductive loop and magnetometer down to degraded radar and camera modes, feeding into `shouldExtendGreen()`.
+**Junction control is set per junction** (`control` in the layout): `signal`, `roundabout`, `allWayStop` or `stop` (a minor-road stop street, supported by the engine but not used in the main layout). Roundabouts are 36 m across by default; every movement circulates the island and enters by gap acceptance. All-way stops release one approach at a time, first come first served, and hold the box until it is empty. A signalised junction can also carry a protected lead turn stage (`turnPhases`), shown with the South African two-column head. Right-turners on a green ball may pull into the junction (at most two per approach) and clear on the oncoming amber. Left-turn slip lanes and long turn pockets are modelled as real roads and lane slots.
 
-While a run is going, a stats footer and charts pull live numbers out of `engine.js` snapshots, split three ways: Total, Arterial, and Side Streets. Everything is driven by a seeded PRNG (`rng.js`), so a run is byte-for-byte reproducible whether it's played in the browser or driven headlessly (`runHeadless.js`), which matters because the batch runner (`batch/runBatch.mjs`) uses that same headless path to sweep the full 12-condition experimental matrix (`experimentalMatrix.js`) and post results via `POST /api/simulation-runs` and `/api/recovery-ticks`.
+**Signal control** is one of four controllers in `resources/js/sim/controllers/`:
 
-The `/results` page then turns those stored runs into real charts, querying `simulation_runs` and `simulation_run_recovery_ticks` through `ResultsController`, again split by Total, Arterial, and Side Streets, with paired fixed-time comparisons and recovery-time metrics on both a throughput basis and a wait-time basis.
+- `fixedTime.js`: Webster's method. The formula is untouched; only its inputs are corrected: s = 1250 veh/h/lane (measured on the engine's own cars), the busiest lane of each approach, and a 1.25 factor on turning cars.
+- `adaptive.js`: sensor-driven gap-out, at four sensor fidelity levels. Radar and camera also switch a waiting call after 10 s, and radar averages its count over 3 s.
+- `greenWave.js`: a common cycle along each arterial with offsets measured along the road, allowing for starting from rest. A junction whose own cycle fits half the common cycle runs that half twice.
+- `allWayStop.js`: what every signal becomes during load shedding. `roundabout.js` and `minorStop.js` handle the other junction controls.
 
-Beyond the core simulation there's also: lane changing and trucks, the Total/Arterial/Side-Streets scope split, wait-based recovery metrics sitting alongside the original throughput-based ones, and per-scope pre/during/post-outage segment stats. A plateau detector (`resources/js/sim/plateau.js`, `batch/warmupDiagnostics.mjs`) confirmed that the 360 second warm-up window is enough for every scope, so that number hasn't needed to move.
+Sensor fidelity (`sensors.js`) runs from inductive loop and magnetometer through radar to camera.
+**Routing.** From 12 Oct 2026 batches and reports use **destination routing**. Each origin draws a trip to a block and direction, weighted by the block's tier (1.5, 2, 3, 4 or 5, edited in the Road Editor). Routes come from a graph built out of the engine's own gates, lane use and joins, so a route only uses movements the engine can drive. The car then pulls into one of that block's driveways, with a gap wait where it crosses oncoming traffic, or falls back to a later driveway if it misses. Random turning is still in the engine and its pinned seeds are still tested, but it is no longer batched.
 
-`tests/Feature/NavigationTest.php` guards navigation, layout, and every control against regressions: log in, land on `/simulator`, check the layout and every control are there, switch to `/results`, check the charts and their table twins, log out.
+**Warm-up is measured, not assumed.** Before every batch a probe runs each controller for two hours from empty. A settling detector (MSER cut plus a drift check, `plateau.js`) finds when each scope levels off, and the batch warms up for the slowest controller times 1.5, between 6 and 90 minutes. A controller that never settles flags the batch as not stationary. The measured window is 90 minutes with a 15-minute power cut starting at minute 15, so 60 minutes remain after power returns.
+
+**Everything is seeded** (`rng.js`), so a run is reproducible to the byte whether played in the browser or headless. The batch runner (`batch/runBatch.mjs`, or the "Generate dataset" button on Results, which uses a worker pool) runs 12 conditions x 30 seeds and posts to `/api/simulation-runs` and `/api/recovery-ticks`. Every run stores the commit, tree state, wait accounting, signal rules, routing mode, tier hash and seeds.
+
+**Live statistics** (`resources/js/sim/metrics/`) use one definition per metric, shared by the live panel, the batch summary, the settling detector and the report. A stopped car is under 0.3 m/s and a stranded one has stood for 300 s. A read-only **lockup watch** flags a whole waits-on chain standing for 300 s as a lockup (which fails the batch) and a standstill behind a queue that still moved as starvation.
+
+**Results** (`/results`) show each corridor's latest batch only, split Total / Arterial / Side Streets, with:
+
+- paired comparisons against fixed-time on the same seeds, with Student's-t 95% intervals on the paired differences, and median and P95 beside the mean;
+- a delta coloured only when it clears its interval, otherwise "no clear difference";
+- recovery after the power cut on both a throughput basis and a wait basis;
+- a destination routing table (trips, trip delay, missed turns and driveways, diversion);
+- a lockup or not-stationary banner when a batch has one;
+- a PDF export that carries the same numbers and the batch stamp.
+
+Wait is counted trip-carried: the total counts each vehicle once with its whole trip, and the arterial and side-street scopes count each vehicle that used them with the wait built up there, so the scopes do not add to the total.
+
+**Also in the Simulator:** a replay of any representative batch run, a per-user layout list, a random-events mode (a fun-only toggle, off in batches and replays), a "Routes & driveways" layer, queue heatmap and density layers, and a collapsible control rail.
+
+`tests/Feature/NavigationTest.php` guards navigation, layout and every control against regressions. `npm run test:sim` runs the pinned-seed trajectory hashes, the summary baselines, the live-versus-report identity tests and the lockup tests; any intended dynamics change has to recapture them (`node tests/js/fixtures/captureBaselines.mjs`).
 
 ---
 
 ## The traffic counter
 
-There's a third tab, sitting to the right of Results, for grounding all of this synthetic simulation in real footage. You upload a video of actual traffic, draw a line across the road in it, and the app counts vehicles crossing that line. It then fits a sinusoid to the observed flow so you can sanity check, or via the Results page's batch modal actually calibrate, the simulator's assumed synthetic demand against something real.
+The `/traffic-counter` tab compares the simulator's assumed demand against real footage. Upload a video, draw a line across the road, and the app counts vehicles crossing it (car, truck, unclassified), then fits a sinusoid to the observed flow with its R². The sidebar lists recent counts; "View master table" shows every count, paginated, with delete.
 
-The sidebar shows your 10 most recent counts, but there's also a "View master table" button that switches to a full paginated table of every count ever made (20 per page), with every column the sidebar leaves out: corridor, street, status, upload time, duration, detected and counted totals, the car/truck/unclassified breakdown, mean flow, peak five-minute flow, and the fit's R². Each row also has a delete button, which removes the database row and cleans up both the raw and annotated video files on disk.
+Video processing is a queued job (`ProcessTrafficCount`), so a worker has to be running:
 
-Two things this tab needs that the rest of the app doesn't:
+```
+php artisan queue:work
+```
 
-- **A queue worker.** Video processing takes real time, so it runs as a queued job (`ProcessTrafficCount`) instead of synchronously:
-  ```
-  php artisan queue:work
-  ```
-  (`QUEUE_CONNECTION=database` is already set in `.env`.) There's also `scripts/queue-worker.ps1`, a small loop script meant to be registered as a Windows scheduled task (`TrafficSimQueueWorker`, on logon) so the worker just stays running without anyone having to remember to start it by hand.
-- **Python and ffmpeg** on PATH, for the detection pipeline the job shells out to (`scripts/traffic_counter/count_vehicles.py`, using YOLOv8 via Ultralytics):
-  ```
-  pip install -r scripts/traffic_counter/requirements.txt
-  ```
-  Set `PYTHON_BIN` in `.env` if `python` on PATH isn't the right interpreter.
+`QUEUE_CONNECTION=database` is already set, and `scripts/queue-worker.ps1` can be registered as a Windows scheduled task to keep it alive. Detection runs in `scripts/traffic_counter/count_vehicles.py` (YOLOv8 and ByteTrack), which needs Python and ffmpeg on PATH:
+
+```
+pip install -r scripts/traffic_counter/requirements.txt
+```
+
+Set `PYTHON_BIN` in `.env` if `python` on PATH isn't the right interpreter.
 
 ---
 
@@ -85,7 +117,7 @@ Sign in with `demo@traffic-simulator.test` / `password` (seeded by `DatabaseSeed
 
 ### Database
 
-Runs on **MySQL** (`traffic_simulator` database on `127.0.0.1:3306`), per the spec. `.env` is configured with:
+Runs on **MySQL** (`traffic_simulator` on `127.0.0.1:3306`). `.env` is configured with:
 
 ```
 DB_CONNECTION=mysql
@@ -96,119 +128,113 @@ DB_USERNAME=root
 DB_PASSWORD=...
 ```
 
-SQLite (`database/database.sqlite`) still works as a fallback if MySQL isn't available, just set `DB_CONNECTION=sqlite`.
+SQLite (`database/database.sqlite`) still works as a fallback, just set `DB_CONNECTION=sqlite`.
+
+### Batches from the command line
+
+```
+node batch/runBatch.mjs --corridor=hatfield-realistic --routing=destination
+node batch/runBatch.mjs --corridor=hatfield-realistic --routing=destination --probe-only
+```
+
+`--warmup-ticks=auto` is the default. The CLI runs one at a time; the Results button runs a worker pool.
 
 ### Tests
 
 ```
 php artisan test
+npm run test:sim
 ```
 
-`tests/Feature/NavigationTest.php` covers the full navigation path: log in, land on `/simulator`, see the layout and every control, switch to `/results`, see the charts and their table twins, log out. `tests/Feature/TrafficCounterListTest.php` covers the master table pagination, the sidebar's 10-item limit, and both delete paths (with and without stored video files).
+`NavigationTest` covers the navigation path. The other feature tests cover corridor layouts, lane use, routing tiers, the Road Editor page, run storage, the per-seed confidence interval on the sensor average, the lockup banner and the Traffic Counter list and delete paths.
 
 ---
 
 ## Layout is data, not code
 
-Nothing about the road network is hardcoded. `corridors/*.json` drives it:
+Nothing about the road network is hardcoded. `corridors/*.json` are **read-only templates**, shared by the browser, the headless batch runner, Results and the Traffic Counter. Each account gets its own editable copy in the `corridor_layouts` table; the Road Editor writes lane arrows, turn pockets and destination tiers there, and "Revert to original" restores the layout as imported. Because batches run on the template, the Results "Generate dataset" dialog and the Road Editor warn when a user's layout has drifted from it.
 
 | File | Purpose |
 |---|---|
-| `hatfield-pretorius-francisbaard.json` | The default scenario: 2 arterials x 4 intersections + 4 connectors |
+| `hatfield-realistic.json` | The main scenario: the full Hatfield Grid |
+| `hatfield-turn-lanes.json` | The earlier 2-arterial layout with realistic turn lanes |
+| `hatfield-pretorius-francisbaard.json` | The original placeholder corridor: 2 arterials x 4 intersections |
 | `two-intersection-test.json` | Smallest config that still exercises the loader |
-| `single-intersection.json` | One 4-way junction, far easier to debug controllers on |
-
-`SimulatorController` serves them at `GET /corridors/{id}`; the scenario picker fetches on change. They live at the project root rather than in `public/` or the JS bundle because the headless batch runner has to read the same files from disk, so there's one source of truth for both the browser and Node.
+| `single-intersection.json` | One 4-way junction, easiest to debug controllers on |
 
 **Geometry conventions** (see `resources/js/sim/corridor.js`):
 
 - metres; x increases east, y increases **south**, matching canvas axes
-- each arterial has an `origin` and a `direction`; intersection positions are
-  derived by walking the `distanceToNextM` chain, so the distances that drive the
-  green-wave offsets are the same numbers that place the drawing
-- **left-hand traffic** (South Africa): for a heading, the lanes carrying it and
-  its signal head are on the left of the centreline
-
-**Default scenario geometry.** Cross-streets west to east along Pretorius (inbound/eastbound) are **Jan Shoba, Grosvenor, Hilda, Festival**, a uniform **245 m** apart; Francis Baard runs the same block sequence in reverse, being outbound/westbound. Because every block is the same length, the green-wave offset chain works out to a constant step, roughly **17.6 s per intersection** (245 m divided by 13.89 m/s) at the 50 km/h target speed, which makes the progression band unusually easy to verify by hand.
+- an arterial has an `origin` and a `direction` (or `headingDeg`); junction positions come from walking the `distanceToNextM` chain, so the distances that drive green-wave offsets are the same numbers that place the drawing
+- **left-hand traffic** (South Africa): the lanes carrying a heading, and its signal head, are on the left of the centreline
+- connectors (cross streets) carry a `scope` of `"arterial"` or `"side"`, which decides which metric bucket their traffic is counted in; only the five main roads are arterials
+- `joins` hand one road over to the next (plain, merge or peel-off, or a slip), so lanes, queues and sensors carry across
+- per-junction fields: `control`, `turnPhases`, `slipLanes`, `laneUse` and `turnLanes` (pockets, 10 m by default)
+- a `routing` block holds the destination blocks and their tiers
 
 ---
 
 ## Where things live
 
 ```
-routes/web.php                        # /, /simulator, /corridors/{id}, /results, /api/*
-app/Support/CorridorRepository.php    # reads corridors/*.json
+routes/web.php                              # pages, /corridors/*, /results/data, /api/*
 app/Http/Controllers/
-  SimulatorController.php             # simulator page + corridor JSON endpoint
-  ResultsController.php               # real simulation_runs / recovery_ticks queries, scoped metrics
-  SimulationRunController.php         # POST /api/simulation-runs
-  RecoveryTickController.php          # POST /api/recovery-ticks
-  TrafficCounterController.php        # upload, status, data, video, master table list, delete
-app/Models/SimulationRun.php
-app/Models/TrafficCount.php
-database/migrations/                  # simulation_runs + simulation_run_recovery_ticks, scoped columns
-corridors/*.json                      # layout configs
-resources/views/
-  simulator.blade.php                 # canvas, control rail, stats footer
-  results.blade.php                   # charts, paired comparisons, scoped table twins
-  traffic-counter.blade.php           # upload form, sidebar, master table
+  SimulatorController.php                   # simulator page, corridor JSON, sample runs for replay
+  RoadEditorController.php                  # Road Editor page
+  CorridorLayoutController.php              # create/delete a user's layout
+  CorridorTemplateController.php            # read-only template, for "Revert to original"
+  CorridorLaneUseController.php             # saves lane arrows and turn pockets
+  CorridorRoutingTierController.php         # PUT /corridors/{id}/routing-tiers
+  ResultsController.php                     # latest batch, scoped metrics, paired CIs
+  SimulationRunController.php               # POST /api/simulation-runs
+  RecoveryTickController.php                # POST /api/recovery-ticks
+  TrafficCounterController.php              # upload, status, data, video, list, delete
+app/Support/                                # CorridorRepository, UserCorridorLayouts, lane-use and tier editors,
+                                            #   ConfidenceInterval, SeedPairedDeltas, RoutingMetrics
+app/Models/                                 # SimulationRun, SimulationRunRecoveryTick, CorridorLayout,
+                                            #   TrafficCount, TrafficCountBucket
+corridors/*.json                            # read-only layout templates
+resources/views/                            # simulator, results (+ partials), road-editor, traffic-counter
 resources/js/
-  sim/corridor.js                     # config -> geometry graph
-  sim/equations.js                    # IDM, Webster's, green-wave offset, MOBIL, Poisson arrivals, all cited
-  sim/car.js                          # vehicle types (car + 3 truck sizes), IDM stepping
-  sim/engine.js                       # tick loop, lane changes, sensors, load shedding
-  sim/controllers/                    # fixedTime.js, adaptive.js, greenWave.js, allWayStop.js
-  sim/sensors.js                      # sensor fidelity modes
-  sim/rng.js                          # seeded PRNG
-  sim/runHeadless.js                  # headless engine driver shared by browser + batch runner
-  sim/plateau.js                      # convergence/plateau detector (warm-up verification)
-  sim/experimentalMatrix.js           # the 12-condition controller x power x sensor matrix
-  sim/renderer.js                     # canvas draw + pan/zoom camera
-  simulator.js                        # page wiring, control state, logging
-  charts/theme.js                     # shared Chart.js theme + palettes
-  results.js                          # dashboard charts, scope/target filters
-  traffic-counter.js                  # upload flow, sidebar, master table + pagination, delete
-batch/
-  runBatch.mjs                        # CLI sweep of the experimental matrix -> POST /api/simulation-runs
-  warmupDiagnostics.mjs               # plateau-detector CLI, confirms WARMUP_TICKS
-  verify.mjs
+  simulator.js                              # Simulator page wiring
+  roadEditor.js  laneEditor.js              # Road Editor: map, lane arrows, turn pockets
+  destinationsEditor.js                     # destination tiers
+  results.js  resultsPdf.js                 # dashboard, batch dialog, PDF export
+  traffic-counter.js  railAccordion.js  theme.js  tooltips.js
+  renderers/                                # 2D and 3D renderers, turn-lane and car shapes
+  charts/theme.js                           # shared Chart.js theme
+  sim/
+    corridor.js  intersectionLayout.js      # config -> geometry graph
+    equations.js                            # IDM, Webster, green-wave offset, MOBIL, Poisson arrivals
+    car.js  engine.js  rng.js               # vehicles, tick loop, seeded PRNG
+    controllers/                            # fixedTime, adaptive, greenWave, allWayStop, minorStop,
+                                            #   roundabout, phasePlan
+    sensors.js                              # sensor fidelity modes
+    routing/                                # graph, blocks, driveways, OD table, candidates, config
+    metrics/                                # definitions, live collector, live stats panel
+    plateau.js  warmupProbe.js              # settling detector and pre-batch probe
+    lockupWatch.js  layoutDrift.js
+    runHeadless.js  experimentalMatrix.js   # headless driver and the 12-condition matrix
+    batchSchedule.js  batchWorker.js        # one source for the schedule; worker pool
+    apiPayload.js  recoveryTickPayload.js
+batch/                                      # runBatch, fingerprint, trajectoryHash, warmupDiagnostics, verify
 scripts/
-  queue-worker.ps1                    # keeps `queue:work` alive as a scheduled task, for video processing
-  traffic_counter/count_vehicles.py   # YOLOv8-based vehicle detection pipeline
-public/cars/                          # car sprites
-results/                              # batch run CSV/JSON output, populated per condition x power state
+  slip-lanes.mjs  add-herold.mjs  fix-dyer-herold.mjs   # layout generators
+  routing-validate.mjs  routing-validation.mjs          # destination routing checks
+  preview/                                  # headless probes (queue, ring, let-in, drift, flow, ...)
+  traffic_counter/count_vehicles.py         # YOLOv8 vehicle detection
+  queue-worker.ps1                          # keeps queue:work alive
+tests/Feature/  tests/js/                   # PHP feature tests; pinned-seed simulation tests and baselines
+results/                                    # batch CSV/JSON output
 ```
 
 ## Models behind the simulation
 
 Each behaviour model has a citation rather than being an ad hoc rule someone made up:
 
-- **Car following**: Intelligent Driver Model (Treiber, Hennig & Helbing, 2000)
+- **Car following**: Intelligent Driver Model (Treiber, Hennecke & Helbing, 2000)
 - **Lane changing**: MOBIL (Kesting, Treiber & Helbing, 2007), with politeness and threshold tuned per vehicle type so trucks change lanes less readily than cars
-- **Fixed-time timing**: Webster's method (Webster, 1958) for cycle length and phase splits, so the baseline is a legitimate implementation rather than a strawman
+- **Fixed-time timing**: Webster's method (Webster, 1958) for cycle length and phase splits, so the baseline is a legitimate implementation rather than a strawman. Webster's formula is never altered; only the flows it is given are corrected (busiest lane, turning cars at 1.25, s = 1250)
 - **Adaptive control**: a threshold/gap-extension heuristic mirroring the sense, decide, execute ATSC loop of SCATS/SCOOT
-- **Green wave**: standard progression-band coordination, offset equals distance divided by target speed, per arterial and one directional
-
-## Theming
-
-**Light is the default.** Night mode is opt-in via the toggle in the header, next to the signed-in user; the choice is remembered in `localStorage`.
-
-`prefers-color-scheme` is deliberately **not** consulted, so a visitor with a dark OS still gets the white UI until they ask for night mode. `NavigationTest` asserts this, so it can't regress by accident.
-
-Three layers have to agree, and only the first is pure CSS:
-
-| Layer | How it switches |
-|---|---|
-| Page chrome | Tailwind `dark:` variants, `darkMode: 'class'`, class on `<html>` |
-| Canvas map | `PALETTES.light` / `PALETTES.dark` in `resources/js/sim/renderer.js`, repainted on toggle |
-| Charts | ink swapped by `applyChartTheme()`, then every chart rebuilt |
-
-`resources/js/theme.js` owns the state and fires `theme:change`; the simulator and results pages subscribe via `onThemeChange`. A small inline script (`resources/views/partials/theme-boot.blade.php`) applies the class before first paint so the wrong theme never flashes.
-
-The light map isn't just an inversion of the dark one: on a pale carriageway the lane markings go **dark**, because white lines would be invisible there.
-
-### Chart palettes
-
-Series colours are **identical in both themes**, and that's a checked result rather than a shortcut: every slot was validated against a white surface and against the dark surface, inside the lightness band for each mode, over the chroma floor, at least 3:1 contrast on the surface, with the worst adjacent pair separated by a colour difference of at least 10 under simulated colour-vision deficiency. Holding them steady means an entity doesn't change colour just because you flipped the theme. Only the ink (text, grid, axis, surface) switches.
-
-Controller modes are orange, violet, and emerald; arterials are blue and orange. Colour follows the entity, never its rank, and text never wears a series colour; a coloured dot beside it carries identity instead. Re-run the validator before shifting any of these values. See `resources/js/charts/theme.js` and `resources/js/sim/renderer.js`.
+- **Green wave**: standard progression-band coordination, offset equals distance divided by target speed, per arterial and one directional, on the critical junction's cycle
+- **Warm-up**: MSER truncation (White, 1997) with a drift check on what remains

@@ -7,9 +7,9 @@
     <div class="flex flex-1 min-h-0 flex-col lg:flex-row">
 
         {{-- ============================================================ RAIL --}}
-        <aside class="w-full lg:w-[336px] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r dark:border-slate-800 dark:bg-slate-900">
+        <aside id="sim-rail" class="w-full lg:w-[336px] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r dark:border-slate-800 dark:bg-slate-900">
 
-            <x-control-section title="Scenario" info="Pick the road network and the random seed the run starts from.">
+            <x-control-section id="rail-scenario" collapsible title="Scenario" info="Pick the road network and the random seed the run starts from.">
                 <div>
                     <div class="mb-1 flex items-center gap-1.5">
                         <label for="corridor-select" class="text-xs font-medium text-slate-700 dark:text-slate-300">Corridor layout</label>
@@ -52,7 +52,7 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Replay a batch run" info="Plays back a run from the results dataset with its exact seed, controller, sensor and outage timing.">
+            <x-control-section id="rail-replay" collapsible title="Replay a batch run" info="Plays back a run from the results dataset with its exact seed, controller, sensor and outage timing.">
                 <div id="replay-empty-state" class="hidden text-[11px] leading-relaxed text-slate-500">
                     No batch runs found yet. Generate a dataset on the
                     <a href="{{ route('results') }}" class="font-medium text-sky-600 hover:underline dark:text-sky-400">Results page</a>
@@ -76,12 +76,22 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Signal control" info="Each arterial has its own controller. Its cross-streets follow the same mode, and the stats below compare the arterials live.">
-                {{-- Populated from the loaded corridor: one row per arterial. --}}
-                <div id="arterial-mode-controls" class="space-y-3"></div>
+            <x-control-section id="rail-signal" collapsible title="Signal control" info="Each arterial has its own controller. Its cross-streets follow the same mode, and the stats below compare the arterials live.">
+                <div>
+                    <span class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">All arterials</span>
+                    <x-segmented control="arterialMode:all" size="sm" value="" :options="$controllerModeOptions" />
+                </div>
+
+                <details id="arterial-mode-details" class="{{ $inset }}">
+                    <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                        Individual arterials
+                    </summary>
+                    {{-- Populated from the loaded corridor: one row per arterial. --}}
+                    <div id="arterial-mode-controls" class="space-y-3 border-t border-slate-200 p-3 dark:border-slate-800"></div>
+                </details>
             </x-control-section>
 
-            <x-control-section title="Sensing" info="What the signal controller can detect. Hover an option for details.">
+            <x-control-section id="rail-sensing" collapsible title="Sensing" info="What the signal controller can detect. Hover an option for details.">
                 <div class="space-y-1.5" id="sensor-mode-group">
                     @foreach ($sensorModes as $key => $mode)
                         <label data-tip="{{ $mode['sees'] }}" class="group flex cursor-pointer items-center gap-2.5 {{ $inset }} px-2.5 py-2 transition hover:border-slate-300 has-[:checked]:border-sky-500/60 has-[:checked]:bg-sky-50 dark:hover:border-slate-700 dark:has-[:checked]:bg-sky-500/5">
@@ -100,7 +110,7 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Power" info="During a power cut the lights go dark and intersections become all-way stops. Traffic keeps moving.">
+            <x-control-section id="rail-power" collapsible title="Power" info="During a power cut the lights go dark and intersections become all-way stops. Traffic keeps moving.">
                 <button type="button" id="load-shedding-toggle" data-active="false"
                         class="w-full rounded-md border px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition
                                border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100
@@ -138,11 +148,25 @@
                 </label>
             </x-control-section>
 
-            <x-control-section title="Demand" info="How many vehicles enter each road per lane per minute. Demand swings between min and max over time.">
-                <div id="demand-controls" class="space-y-3"></div>
+            <x-control-section id="rail-demand" collapsible title="Demand" info="How many vehicles enter each road per lane per minute. Demand swings between min and max over time.">
+                <div>
+                    <div class="mb-1 flex items-baseline justify-between gap-2">
+                        <label for="demand-master-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">All roads</label>
+                        <span class="font-mono text-[11px] text-slate-600 dark:text-slate-400"><span id="demand-master-value">100</span>% of configured</span>
+                    </div>
+                    <input type="range" id="demand-master-input" min="0" max="200" step="5" value="100"
+                           class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500">
+                </div>
+
+                <details id="demand-details" class="{{ $inset }}">
+                    <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                        Individual roads
+                    </summary>
+                    <div id="demand-controls" class="space-y-3 border-t border-slate-200 p-3 dark:border-slate-800"></div>
+                </details>
             </x-control-section>
 
-            <x-control-section title="Vehicles">
+            <x-control-section id="rail-vehicles" collapsible title="Vehicles">
                 <div>
                     <div class="mb-1 flex items-baseline justify-between gap-2">
                         <span class="flex items-center gap-1.5">
