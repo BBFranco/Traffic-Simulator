@@ -20,27 +20,45 @@
                 {{ $fmtDelta($comparison['wait_delta_pct'], '%') }}
             </span>
             <span class="inline-flex items-center gap-1 text-[11px] font-medium {{ $comparison['wait_figure_tone'] }}">
-                @if ($comparison['wait_improves'] === null)
+                @if ($comparison['wait_delta_pct'] === null)
                     not measured yet
+                @elseif ($comparison['wait_improves'] === null)
+                    no clear difference
                 @else
                     <span aria-hidden="true">{{ $comparison['wait_improves'] ? '▼' : '▲' }}</span>
                     {{ $comparison['wait_improves'] ? 'less waiting' : 'more waiting' }}
                 @endif
             </span>
         </div>
-        <p class="mt-0.5 text-[10px] text-slate-500">average wait per vehicle</p>
+        <p class="mt-0.5 text-[10px] text-slate-500">
+            average wait per vehicle{{ $comparison['wait_delta_ci95_pct'] !== null ? ' · ±'.number_format($comparison['wait_delta_ci95_pct'], 1).' (95% CI, '.$comparison['paired_seeds'].' paired seeds)' : '' }}
+        </p>
 
         <dl class="mt-3 space-y-1 border-t border-slate-200 pt-2.5 text-[11px] dark:border-slate-800">
+            @if ($comparison['median_wait_delta_pct'] !== null)
+                <div class="flex justify-between gap-2">
+                    <dt class="text-slate-500">Median wait</dt>
+                    <dd class="font-medium text-slate-800 dark:text-slate-200">
+                        {{ $fmtDelta($comparison['median_wait_delta_pct'], '%') }} <span class="text-slate-400">±{{ number_format($comparison['median_wait_delta_ci95_pct'], 1) }}</span>
+                    </dd>
+                </div>
+                <div class="flex justify-between gap-2">
+                    <dt class="text-slate-500">P95 wait</dt>
+                    <dd class="font-medium text-slate-800 dark:text-slate-200">
+                        {{ $fmtDelta($comparison['p95_wait_delta_pct'], '%') }} <span class="text-slate-400">±{{ number_format($comparison['p95_wait_delta_ci95_pct'], 1) }}</span>
+                    </dd>
+                </div>
+            @endif
             <div class="flex justify-between gap-2">
                 <dt class="text-slate-500">Throughput</dt>
                 <dd class="font-medium text-slate-800 dark:text-slate-200">
-                    {{ $fmtDelta($comparison['throughput_delta_pct'], '%') }}
+                    {{ $fmtDelta($comparison['throughput_delta_pct'], '%') }}@if ($comparison['throughput_delta_ci95_pct'] !== null) <span class="text-slate-400">±{{ number_format($comparison['throughput_delta_ci95_pct'], 1) }}</span>@endif
                 </dd>
             </div>
             <div class="flex justify-between gap-2">
                 <dt class="text-slate-500">Cleared w/o stopping</dt>
                 <dd class="font-medium text-slate-800 dark:text-slate-200">
-                    {{ $fmtDelta($comparison['cleared_delta_pp'], ' pp') }}
+                    {{ $fmtDelta($comparison['cleared_delta_pp'], ' pp') }}@if ($comparison['cleared_delta_ci95_pp'] !== null) <span class="text-slate-400">±{{ number_format($comparison['cleared_delta_ci95_pp'], 1) }}</span>@endif
                 </dd>
             </div>
         </dl>

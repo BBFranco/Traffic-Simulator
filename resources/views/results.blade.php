@@ -69,7 +69,20 @@
                 </button>
             </div>
 
+            <div id="batch-modal-drift" class="mb-3 hidden rounded-md border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85"></div>
+
             <div id="batch-modal-streets" class="space-y-3"></div>
+
+            <label class="mt-4 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
+                <input type="checkbox" id="batch-modal-destination" class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
+                <span>
+                    <span class="font-semibold">Destination routing</span>
+                    <span class="block text-slate-500 dark:text-slate-400">
+                        Each car drives a route to a destination - out of the map, or into a block - instead of turning at random.
+                        Needs a corridor with a <code>routing</code> section; stored as its own dataset (pick it under Routing below).
+                    </span>
+                </span>
+            </label>
 
             <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
                 <button type="button" id="batch-modal-cancel" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
@@ -95,6 +108,21 @@
         <strong class="font-semibold">Baseline not stationary.</strong>
         The warm-up probe found at least one controller whose waits were still growing after its longest warm-up,
         so these runs measure a network that is still loading up - read them as trends, not a steady-state comparison.
+        <span id="non-stationary-culprit" class="{{ $warmupDriftingLabel ? '' : 'hidden' }}">Still drifting: <span id="non-stationary-culprit-label">{{ $warmupDriftingLabel }}</span>.</span>
+    </div>
+
+    <div id="lockup-banner" class="mb-6 rounded-lg border border-rose-300 bg-rose-50 p-4 text-[12px] leading-relaxed text-rose-900 dark:border-rose-500/25 dark:bg-rose-500/5 dark:text-rose-200/85 {{ $lockupLabel ? '' : 'hidden' }}">
+        <strong class="font-semibold">Lockup in this batch.</strong>
+        The lockup watch found a vehicle that stood still for 5 minutes or more with the whole queue ahead of it stuck too, or vehicles waiting on each other in a cycle for a minute - a simulation fault,
+        not traffic. Fix it and rerun before reading these results.
+        Locked runs: <span id="lockup-label">{{ $lockupLabel }}</span>.
+    </div>
+
+    <div id="starved-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85 {{ $starvedLabel ? '' : 'hidden' }}">
+        <strong class="font-semibold">Starved approaches.</strong>
+        In these runs a vehicle stood still for 5 minutes or more while the queue ahead of it still moved - an approach that
+        couldn't get into traffic backed up past it. That is saturation, not a fault, and it is in the results.
+        Runs: <span id="starved-label">{{ $starvedLabel }}</span>.
     </div>
 
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
@@ -124,6 +152,14 @@
                 <option value="" {{ request('corridor') ? '' : 'selected' }}>All corridors</option>
                 @foreach ($corridors as $corridor)
                     <option value="{{ $corridor['id'] }}" {{ request('corridor') === $corridor['id'] ? 'selected' : '' }}>{{ $corridor['name'] }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label for="filter-routing" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Routing</label>
+            <select id="filter-routing" class="{{ $select }}">
+                @foreach ($routingModes as $mode)
+                    <option value="{{ $mode->value }}" {{ $routingMode === $mode ? 'selected' : '' }}>{{ $mode->label() }}</option>
                 @endforeach
             </select>
         </div>
@@ -237,6 +273,10 @@
         </details>
     </section>
 
+    <div id="routing-metrics">
+        @include('results.partials.routing-metrics')
+    </div>
+
     {{-- ============================================ segmented + distribution --}}
     <section class="mb-8">
         <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Load shedding, segmented</h2>
@@ -244,9 +284,9 @@
             Pre-outage / during-outage / post-recovery averages, computed from cumulative
             counters rather than a rolling window - this is what shows the real Adaptive-vs-
             Fixed-time gap on either side of the outage, instead of a snapshot near the end of
-            the run. During the outage every controller mode falls back to the same all-way-stop
-            control, so near-identical numbers there are expected, not a sign adaptive handles
-            outages well. The wait distribution columns (median/p95/max) are always Total scope
+            the run. During the outage every controller mode runs the same all-way-stop control,
+            but each carries in the queue it had when the power went, so the during-outage figures
+            still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
             regardless of the selector above - a single mean can't tell "everyone waits a bit
             longer" apart from "most people are fine, a few are stranded", but that distribution
             isn't split by arterial/side-street.
@@ -259,7 +299,8 @@
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait (s, Total)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, run mean (s, Total)</th>
+                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, worst run (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage wait (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage wait (s)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery wait (s)</th>

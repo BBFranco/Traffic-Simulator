@@ -7,9 +7,9 @@
     <div class="flex flex-1 min-h-0 flex-col lg:flex-row">
 
         {{-- ============================================================ RAIL --}}
-        <aside class="w-full lg:w-[336px] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r dark:border-slate-800 dark:bg-slate-900">
+        <aside id="sim-rail" class="w-full lg:w-[336px] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 lg:border-b-0 lg:border-r dark:border-slate-800 dark:bg-slate-900">
 
-            <x-control-section title="Scenario" info="Pick the road network and the random seed the run starts from.">
+            <x-control-section id="rail-scenario" collapsible title="Scenario" info="Pick the road network and the random seed the run starts from.">
                 <div>
                     <div class="mb-1 flex items-center gap-1.5">
                         <label for="corridor-select" class="text-xs font-medium text-slate-700 dark:text-slate-300">Corridor layout</label>
@@ -52,7 +52,7 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Replay a batch run" info="Plays back a run from the results dataset with its exact seed, controller, sensor and outage timing.">
+            <x-control-section id="rail-replay" collapsible title="Replay a batch run" info="Plays back a run from the results dataset with its exact seed, controller, sensor and outage timing.">
                 <div id="replay-empty-state" class="hidden text-[11px] leading-relaxed text-slate-500">
                     No batch runs found yet. Generate a dataset on the
                     <a href="{{ route('results') }}" class="font-medium text-sky-600 hover:underline dark:text-sky-400">Results page</a>
@@ -76,12 +76,22 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Signal control" info="Each arterial has its own controller. Its cross-streets follow the same mode, and the stats below compare the arterials live.">
-                {{-- Populated from the loaded corridor: one row per arterial. --}}
-                <div id="arterial-mode-controls" class="space-y-3"></div>
+            <x-control-section id="rail-signal" collapsible title="Signal control" info="Each arterial has its own controller. Its cross-streets follow the same mode, and the stats below compare the arterials live.">
+                <div>
+                    <span class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">All arterials</span>
+                    <x-segmented control="arterialMode:all" size="sm" value="" :options="$controllerModeOptions" />
+                </div>
+
+                <details id="arterial-mode-details" class="{{ $inset }}">
+                    <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                        Individual arterials
+                    </summary>
+                    {{-- Populated from the loaded corridor: one row per arterial. --}}
+                    <div id="arterial-mode-controls" class="space-y-3 border-t border-slate-200 p-3 dark:border-slate-800"></div>
+                </details>
             </x-control-section>
 
-            <x-control-section title="Sensing" info="What the signal controller can detect. Hover an option for details.">
+            <x-control-section id="rail-sensing" collapsible title="Sensing" info="What the signal controller can detect. Hover an option for details.">
                 <div class="space-y-1.5" id="sensor-mode-group">
                     @foreach ($sensorModes as $key => $mode)
                         <label data-tip="{{ $mode['sees'] }}" class="group flex cursor-pointer items-center gap-2.5 {{ $inset }} px-2.5 py-2 transition hover:border-slate-300 has-[:checked]:border-sky-500/60 has-[:checked]:bg-sky-50 dark:hover:border-slate-700 dark:has-[:checked]:bg-sky-500/5">
@@ -100,7 +110,7 @@
                 </div>
             </x-control-section>
 
-            <x-control-section title="Power" info="During a power cut the lights go dark and intersections become all-way stops. Traffic keeps moving.">
+            <x-control-section id="rail-power" collapsible title="Power" info="During a power cut the lights go dark and intersections become all-way stops. Traffic keeps moving.">
                 <button type="button" id="load-shedding-toggle" data-active="false"
                         class="w-full rounded-md border px-3 py-2.5 text-xs font-semibold uppercase tracking-wider transition
                                border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100
@@ -138,11 +148,25 @@
                 </label>
             </x-control-section>
 
-            <x-control-section title="Demand" info="How many vehicles enter each road per lane per minute. Demand swings between min and max over time.">
-                <div id="demand-controls" class="space-y-3"></div>
+            <x-control-section id="rail-demand" collapsible title="Demand" info="How many vehicles enter each road per lane per minute. Demand swings between min and max over time.">
+                <div>
+                    <div class="mb-1 flex items-baseline justify-between gap-2">
+                        <label for="demand-master-input" class="text-xs font-medium text-slate-700 dark:text-slate-300">All roads</label>
+                        <span class="font-mono text-[11px] text-slate-600 dark:text-slate-400"><span id="demand-master-value">100</span>% of configured</span>
+                    </div>
+                    <input type="range" id="demand-master-input" min="0" max="200" step="5" value="100"
+                           class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-300 accent-sky-600 dark:bg-slate-700 dark:accent-sky-500">
+                </div>
+
+                <details id="demand-details" class="{{ $inset }}">
+                    <summary class="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                        Individual roads
+                    </summary>
+                    <div id="demand-controls" class="space-y-3 border-t border-slate-200 p-3 dark:border-slate-800"></div>
+                </details>
             </x-control-section>
 
-            <x-control-section title="Vehicles">
+            <x-control-section id="rail-vehicles" collapsible title="Vehicles">
                 <div>
                     <div class="mb-1 flex items-baseline justify-between gap-2">
                         <span class="flex items-center gap-1.5">
@@ -173,6 +197,16 @@
                         <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
                             Random events
                             <x-info-tip text="Just for fun, never used in batch runs or replays. Adds a rare purple BMW that drives 20 km/h over the limit and keeps weaving between lanes, Ford Ranger double cabs that sit in the fastest lane tailgating, and makes the minibus taxis keep to the left lane and stop to pick up passengers, holding up traffic behind them." />
+                        </span>
+                    </span>
+                </label>
+
+                <label class="flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                    <input type="checkbox" id="destination-routing" class="mt-0.5 {{ $checkbox }}">
+                    <span class="min-w-0 flex-1">
+                        <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                            Destination routing
+                            <x-info-tip text="Every car gets a destination when it spawns - a driveway on a block, or a way out of the map - and follows a route there instead of turning at random. Cars heading for a driveway keep to the lane beside it, slow down and turn in, waiting for a gap when they have to cross oncoming traffic. Only available on a corridor with a routing section; switching it restarts the run." />
                         </span>
                     </span>
                 </label>
@@ -275,11 +309,19 @@
                                 'showLaneMarkings' => 'Lane markings',
                                 'showDistances' => 'Block distances',
                                 'showSignalHeads' => 'Signal heads',
+                                'showRouting' => 'Routes & driveways',
                             ] as $key => $label)
                                 <label class="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200">
                                     <input type="checkbox" data-layer="{{ $key }}" checked
                                            class="h-3 w-3 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-500 focus:ring-offset-0 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-500">
                                     {{ $label }}
+                                </label>
+                            @endforeach
+                            @foreach ($mapOverlays as $key => $overlay)
+                                <label class="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200">
+                                    <input type="checkbox" data-layer="{{ $key }}"
+                                           class="h-3 w-3 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-500 focus:ring-offset-0 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-500">
+                                    {{ $overlay['label'] }}
                                 </label>
                             @endforeach
                         </div>
@@ -298,8 +340,8 @@
                 </div>
 
                 <div class="pointer-events-none absolute bottom-3 right-3 rounded-md border border-slate-200 bg-white/85 px-2.5 py-1.5 text-[10px] text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85">
-                    <span data-view-only="2d">Drag to pan · scroll to zoom · double-click an intersection to centre it</span>
-                    <span data-view-only="3d" class="hidden">Drag to orbit · right-drag to pan · scroll to zoom</span>
+                    <span data-view-only="2d">Drag to pan · scroll to zoom · click a car to follow it · double-click an intersection to centre it</span>
+                    <span data-view-only="3d" class="hidden">Drag to orbit · right-drag to pan · scroll to zoom · click a car to follow it</span>
                 </div>
 
                 {{-- 3D view outage indicator (the 2D map shows the same state via the power pill) --}}
@@ -309,38 +351,107 @@
                     All-way stop · power out
                 </div>
 
+                {{-- The car clicked on the map: followed by the camera, its live stats here (simulator.js's selectCar()). --}}
+                <div id="car-card"
+                     class="absolute right-3 top-14 z-10 hidden w-[260px] space-y-0.5 rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
+
                 {{-- Hover readout --}}
                 <div id="node-tooltip"
-                     class="pointer-events-none absolute hidden max-w-[240px] rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
+                     class="pointer-events-none absolute hidden w-[280px] rounded-md border border-slate-300 bg-white/95 px-3 py-2 text-[11px] shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95"></div>
             </div>
 
             {{-- ======================================================= FOOTER --}}
-            <footer class="shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
-                    <h2 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Live statistics</h2>
-                    <span class="text-[10px] text-slate-500">One column per arterial</span>
+            {{-- Live statistics: a slim KPI bar, expandable into the full panel. It sits in the
+                 #sim-stage column under #canvas-wrap, so expanding it shrinks the map (whose
+                 ResizeObserver redraws it) rather than covering it. Every value is filled by
+                 simulator.js from metrics/liveMetrics.js, once a simulated second. --}}
+            <footer id="live-stats" data-expanded="false" class="group/live flex min-h-0 flex-col border-t lg:max-h-[60%] group-data-[fullscreen=true]/stage:max-h-[60%] border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <div class="flex shrink-0 items-center gap-2 px-3 py-2">
+                    <div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+                    @foreach ($liveKpis as $key => $kpi)
+                        <div data-kpi="{{ $key }}"
+                             class="{{ $loop->index >= 4 ? 'hidden sm:flex' : 'flex' }} min-w-[124px] shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-950/50">
+                            <div class="min-w-0">
+                                <div class="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{{ $kpi['label'] }}</div>
+                                <div class="flex items-baseline gap-1">
+                                    <span data-kpi-value class="font-mono text-sm tabular-nums leading-tight text-slate-900 dark:text-slate-100">—</span>
+                                    <span class="text-[9px] text-slate-500">{{ $kpi['unit'] }}</span>
+                                </div>
+                            </div>
+                            <canvas data-spark class="ms-auto h-[22px] w-[44px]" aria-hidden="true"></canvas>
+                        </div>
+                    @endforeach
+
+                    <div class="flex shrink-0 items-center gap-1.5">
+                        <span id="live-chip-power" class="{{ $pillNeutral }}">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" data-chip-dot></span>
+                            <span data-chip-text class="tabular-nums">Power on</span>
+                        </span>
+                        <span id="live-chip-drift" class="{{ $pillNeutral }}" title="Trend of the rolling avg wait over the last 10 min, tested like the warm-up probe">
+                            <span class="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" data-chip-dot></span>
+                            <span data-chip-text>Settling</span>
+                        </span>
+                        <span id="live-chip-spillback" class="{{ $pillNeutral }}" title="Approaches whose queue reaches back into the junction upstream">
+                            <span class="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" data-chip-dot></span>
+                            <span data-chip-text class="tabular-nums">0 spillbacks</span>
+                        </span>
+                    </div>
+                    </div>
+
+                    <button type="button" id="live-stats-toggle" aria-expanded="false" aria-controls="live-stats-details" title="Show or hide the full statistics (S)"
+                            class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+                        <span class="group-data-[expanded=true]/live:hidden">Details</span>
+                        <span class="hidden group-data-[expanded=true]/live:inline">Hide</span>
+                        <span aria-hidden="true" class="transition group-data-[expanded=true]/live:rotate-180">▴</span>
+                    </button>
                 </div>
 
-                {{-- A fixed max-height + internal scroll on the arterial-column grid, not the
-                     whole footer - a corridor with many arterials (metro-interchange has 6,
-                     Hatfield has 2) must not keep growing the footer until it eats the map
-                     canvas's space. The chart lives in its own fixed-width sidebar outside
-                     that grid so it always keeps a stable width/position regardless of how
-                     many stats-column rows are scrolled underneath it. --}}
-                <div class="flex max-h-[280px] items-stretch">
-                    {{-- One stats column per arterial, built from the loaded corridor. --}}
-                    <div id="stats-columns" class="grid min-w-0 flex-1 auto-rows-min grid-cols-1 gap-0 overflow-y-auto sm:grid-cols-2"></div>
+                <div id="live-stats-details" class="hidden min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 group-data-[expanded=true]/live:block dark:border-slate-800">
+                    <div class="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2 xl:grid-flow-col xl:auto-cols-fr xl:grid-cols-none dark:bg-slate-800">
+                        @foreach ($livePanels as $panelKey => $panel)
+                            <section data-live-panel="{{ $panelKey }}" @class(['bg-white px-4 py-3 dark:bg-slate-900', 'hidden' => $panel['routingOnly']])>
+                                <h3 class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{{ $panel['title'] }}</h3>
+                                <dl class="mt-2 space-y-1">
+                                    @foreach ($panel['rows'] as $rowKey => $rowLabel)
+                                        <div data-live-row="{{ $rowKey }}" class="flex items-baseline justify-between gap-3 text-[11px]">
+                                            <dt class="min-w-0 text-slate-500">{{ $rowLabel }}</dt>
+                                            <dd data-live="{{ $rowKey }}" class="min-w-0 break-words text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">—</dd>
+                                        </div>
+                                    @endforeach
+                                </dl>
+                            </section>
+                        @endforeach
+                    </div>
 
-                    <div class="w-[280px] shrink-0 overflow-y-auto border-slate-200 px-4 py-3 lg:border-l dark:border-slate-800">
-                        <div class="flex items-baseline justify-between">
-                            <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Vehicles cleared over time</span>
-                            <span class="text-[10px] text-slate-500">cumulative count</span>
+                    <div class="flex flex-col border-t border-slate-200 lg:flex-row dark:border-slate-800">
+                        <div class="min-w-0 flex-1 overflow-x-auto px-4 py-3">
+                            <table class="w-full text-[11px]">
+                                <thead>
+                                    <tr class="border-b border-slate-200 text-slate-500 dark:border-slate-800">
+                                        @foreach ($liveRoadColumns as $columnKey => $columnLabel)
+                                            <th scope="col" @class(['py-1 font-medium', 'text-left' => $loop->first, 'text-right' => ! $loop->first])>
+                                                <button type="button" data-sort="{{ $columnKey }}" class="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-slate-200">
+                                                    {{ $columnLabel }}<span data-sort-mark aria-hidden="true"></span>
+                                                </button>
+                                            </th>
+                                        @endforeach
+                                    </tr>
+                                </thead>
+                                <tbody id="live-road-rows"></tbody>
+                            </table>
                         </div>
-                        <div class="relative mt-2 h-[200px]">
-                            <canvas id="stats-chart"></canvas>
-                            <div id="stats-chart-empty"
-                                 class="absolute inset-0 flex items-center justify-center rounded bg-slate-50/60 text-[10px] text-slate-500 dark:bg-slate-950/40">
-                                Awaiting simulation data
+
+                        <div class="w-full shrink-0 border-slate-200 px-4 py-3 lg:w-[340px] lg:border-l dark:border-slate-800">
+                            <div class="flex items-baseline justify-between">
+                                <span class="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Throughput over time</span>
+                                <span class="text-[10px] text-slate-500">veh/min, 60 s rolling</span>
+                            </div>
+                            <div class="relative mt-2 h-[160px]">
+                                <canvas id="stats-chart"></canvas>
+                                <div id="stats-chart-empty"
+                                     class="absolute inset-0 flex items-center justify-center rounded bg-slate-50/60 text-[10px] text-slate-500 dark:bg-slate-950/40">
+                                    Awaiting simulation data
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -357,46 +468,6 @@
          written directly into the page above. --}}
     <template id="segmented-template">
         <x-segmented control="__CONTROL__" size="sm" :options="$controllerModeOptions" />
-    </template>
-
-    <template id="stats-column-template">
-        <div class="border-b border-slate-200 px-4 py-3 [&:nth-child(even)]:sm:border-l dark:border-slate-800" data-stats-column>
-            <div class="flex items-center gap-2">
-                <span class="h-2.5 w-2.5 shrink-0 rounded-full" data-accent-dot></span>
-                <span class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100" data-arterial-name></span>
-                <span class="ms-auto shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                      data-stat="mode"></span>
-            </div>
-
-            <dl class="mt-2 grid grid-cols-3 gap-x-4 gap-y-2">
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Avg wait now</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="avgWaitNow">—</dd>
-                </div>
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Avg wait rolling</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="avgWaitRolling">—</dd>
-                </div>
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Cleared / min</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="throughput">—</dd>
-                </div>
-                <div>
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">Cars on road</dt>
-                    <dd class="font-mono text-base leading-tight text-slate-900 dark:text-slate-100" data-stat="onRoad">—</dd>
-                </div>
-                <div class="col-span-2">
-                    <dt class="text-[10px] uppercase tracking-wide text-slate-500">
-                        Cleared all lights without stopping
-                    </dt>
-                    <dd class="font-mono text-base leading-tight text-sky-700 dark:text-sky-300" data-stat="clearedWithoutStop">—</dd>
-                </div>
-                <div class="col-span-3">
-                    <dt class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Vehicles cleared by road section</dt>
-                    <dd class="flex flex-wrap gap-1" data-cleared-chips></dd>
-                </div>
-            </dl>
-        </div>
     </template>
 
     <template id="cleared-chip-template">

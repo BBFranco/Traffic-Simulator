@@ -15,23 +15,29 @@
  *
  * Usage:
  *   node batch/runBatch.mjs [--corridor=hatfield-pretorius-francisbaard]
- *     [--reps=30] [--duration=24000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
+ *     [--reps=30] [--duration=54000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
  *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
- *     [--post=http://traffic-simulator.test/api/simulation-runs]
+ *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
+ *     [--controllers=fixed,green_wave] [--power=normal] [--webster-turn-weight]
+ *     [--demand-scale=0.9] [--end-to-end-share=0.2]
  *
- * --duration is in MEASURED ticks at dt=0.1s (24000 ticks = 40 simulated minutes
- * per run by default). --warmup-ticks run BEFORE that and are discarded from
+ * --webster-turn-weight runs the Webster sensitivity: a protected turn's q scaled by its weight.
+ * --demand-scale / --end-to-end-share run a volume or through-trip sweep point (see withSweepSettings()).
+ * --probe-only with --demand-scale is the volume acceptance test: does every controller settle inside the cap.
+ * It is stored as a 'sensitivity' batch, so it never replaces the baseline on /results.
+ *
+ * --duration is in MEASURED ticks at dt=0.1s (54000 ticks = 90 simulated minutes
+ * per run by default, sim/batchSchedule.js). --warmup-ticks run BEFORE that and are discarded from
  * every stat (engine.js's resetStats(), runHeadless.js's warmupTicks doc).
  * By default ('auto') they're measured for this corridor first by
  * sim/warmupProbe.js - one long from-empty run per controller - exactly as the
  * /results batch button does; pass a number to skip the probe. --probe-only
  * prints the probe's verdict and stops.
  *
- * A load-shedding condition's outage starts a quarter of the way into the
- * MEASURED window (i.e. warm-up doesn't count) and power is restored at the
- * halfway mark, by default (25%/50% of --duration) - override either tick
- * explicitly if a different schedule is needed. Both must fall strictly
- * before --duration.
+ * A load-shedding condition's outage starts 15 min into the MEASURED window
+ * (i.e. warm-up doesn't count) and power is restored at 30 min, by default
+ * (sim/batchSchedule.js) - override either tick explicitly if a different
+ * schedule is needed. Both must fall strictly before --duration.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,6 +48,8 @@ import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experim
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from '../resources/js/sim/batchSchedule.js';
+import { buildStamp } from './buildStamp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -53,7 +61,7 @@ function parseArgs(argv) {
     const args = {
         corridor: 'hatfield-pretorius-francisbaard',
         reps: 30,
-        duration: 24000,
+        duration: MEASURED_TICKS,
         warmupTicks: 'auto',
         probeOnly: false,
         baseSeed: 20260101,
@@ -61,6 +69,12 @@ function parseArgs(argv) {
         powerOutageEndTick: null,
         dt: 0.1,
         post: null,
+        routing: null,
+        controllers: null,
+        power: null,
+        websterTurnWeight: false,
+        demandScale: 1,
+        endToEndShare: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -74,12 +88,16 @@ function parseArgs(argv) {
         else if (key === 'power-outage-end-tick') args.powerOutageEndTick = Number(value);
         else if (key === 'dt') args.dt = Number(value);
         else if (key === 'post') args.post = value;
+        else if (key === 'routing') args.routing = value;
+        else if (key === 'controllers') args.controllers = value.split(',');
+        else if (key === 'power') args.power = value.split(',');
+        else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
+        else if (key === 'demand-scale') args.demandScale = Number(value);
+        else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
     }
-    // Default outage schedule: starts a quarter of the way in, power restored at the
-    // halfway mark - only filled in once `duration` is known, so a custom --duration
-    // still gets a proportionally-placed outage.
-    if (args.powerOutageStartTick == null) args.powerOutageStartTick = Math.round(args.duration * 0.25);
-    if (args.powerOutageEndTick == null) args.powerOutageEndTick = Math.round(args.duration * 0.5);
+    // Default outage schedule: 15-30 min into the measured window, whatever its length.
+    if (args.powerOutageStartTick == null) args.powerOutageStartTick = POWER_OUTAGE_START_TICK;
+    if (args.powerOutageEndTick == null) args.powerOutageEndTick = POWER_OUTAGE_END_TICK;
     return args;
 }
 
@@ -129,7 +147,7 @@ function probeWarmup(corridorConfig, args) {
     const probes = [];
     for (const condition of probeConditions()) {
         console.log(`Warm-up probe: ${condition.controllerMode}, normal power, from empty, ${PROBE_REPLICATIONS} seeds averaged...`);
-        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration });
+        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration, routingMode: args.routing });
         for (const [scope, v] of Object.entries(probe.scopes)) {
             if (v.truncationTick == null) continue;
             const at = `${((v.truncationTick * args.dt) / 60).toFixed(0)} min`;
@@ -145,22 +163,56 @@ function probeWarmup(corridorConfig, args) {
     return warmup;
 }
 
+/**
+ * Sensitivity sweeps: --demand-scale multiplies every road's spawn rate (driveway departures follow their roads), and
+ * --end-to-end-share sets routing.endToEndShare. Both are recorded on the config, so every run's raw_config_json says
+ * what it ran with.
+ */
+function withSweepSettings(config, args) {
+    if (args.demandScale !== 1) {
+        for (const road of [...(config.arterials ?? []), ...(config.connectors ?? [])]) {
+            for (const key of Object.keys(road.demand ?? {})) {
+                if (key.startsWith('spawnRatePerLanePerMin')) road.demand[key] *= args.demandScale;
+            }
+        }
+        config.demandScale = args.demandScale;
+    }
+    if (args.endToEndShare != null) {
+        if (!config.routing) throw new Error('--end-to-end-share needs a corridor with a routing section.');
+        config.routing.endToEndShare = args.endToEndShare;
+    }
+    return config;
+}
+
+/** The junction(s) a lockup is at: the waits-on cycle's, else where the stuck queue was. */
+function lockupJunctions(lockup) {
+    return lockup.firstCycle ? lockup.firstCycle.nodeIds.join(', ') : lockup.locked?.nodeId ?? 'unknown junction';
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
-    const corridorConfig = JSON.parse(fs.readFileSync(corridorPath, 'utf8'));
+    const corridorConfig = withSweepSettings(JSON.parse(fs.readFileSync(corridorPath, 'utf8')), args);
 
     // Taken before the probe, so a batch's duration includes finding its warm-up.
     const batchStartedAt = new Date().toISOString();
+    const build = buildStamp(ROOT, 'cli');
+    console.log(`Code: ${build.commit ?? 'not a git checkout'}${build.dirty ? ' (uncommitted changes - not a baseline batch)' : ''}`);
     // A fixed --warmup-ticks is the caller's own choice - nothing measured says whether it's stationary.
     const warmup = args.warmupTicks === 'auto' ? probeWarmup(corridorConfig, args) : { warmupTicks: args.warmupTicks, stationary: null };
     if (args.probeOnly) return;
 
-    const matrix = buildExperimentalMatrix();
+    const matrix = buildExperimentalMatrix()
+        .filter((c) => !args.controllers || args.controllers.includes(c.controllerMode))
+        .filter((c) => !args.power || args.power.includes(c.powerState));
+    // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
+    const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null ? 'sensitivity' : 'main';
     const batchId = randomUUID();
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
     let mismatches = 0;
+    const lockups = [];
+    const starved = [];
     const pendingPosts = [];
 
     console.log(`Running ${matrix.length} conditions x ${args.reps} reps = ${totalRuns} runs against "${args.corridor}"...`);
@@ -174,7 +226,7 @@ async function main() {
 
         for (let rep = 0; rep < args.reps; rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
-            const { rows, sideStreetRows, summary } = runHeadless({
+            const { rows, sideStreetRows, totalRows, arterialScopeRows, summary } = runHeadless({
                 seed,
                 controllerMode: condition.controllerMode,
                 sensorMode: condition.sensorMode,
@@ -184,6 +236,8 @@ async function main() {
                 corridorConfig,
                 durationTicks: args.duration,
                 dt: args.dt,
+                routingMode: args.routing,
+                websterTurnWeight: args.websterTurnWeight,
             });
 
             fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
@@ -194,15 +248,24 @@ async function main() {
                 console.warn(`  ! car accounting mismatch on ${condition.key}/${seed}: ${JSON.stringify(summary.carAccounting)}`);
             }
 
+            const lockup = summary.diagnostics.lockup;
+            if (lockup.isLockup) {
+                lockups.push(`${condition.key}/${seed} at ${lockupJunctions(lockup)}`);
+                console.warn(`  !!! LOCKUP on ${condition.key}, seed ${seed}, at ${lockupJunctions(lockup)}: ${JSON.stringify(lockup)}`);
+            } else if (lockup.starved) {
+                // Saturation, not a fault: something ahead still moved. Listed at the end, doesn't fail the batch.
+                starved.push(`${condition.key}/${seed} at ${lockup.starved.nodeId} (${lockup.starved.seconds} s)`);
+            }
+
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build, batchKind }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to
                 // recovery" stat card does - posted once after the last rep, not batched like
                 // the rest.
                 if (condition.powerState === 'load_shedding') {
-                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { rows, sideStreetRows });
+                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { totalRows, arterialScopeRows, sideStreetRows });
                 }
             }
 
@@ -216,7 +279,8 @@ async function main() {
             }
         }
 
-        if (args.post && recoveryAcc) {
+        // A sensitivity batch's recovery curves would replace the main batch's - keep them out.
+        if (args.post && recoveryAcc && batchKind === 'main') {
             await postRecoveryTicks(
                 args.post.replace(/\/[^/]+$/, '/recovery-ticks'),
                 finalizeRecoveryTickPayload(recoveryAcc, {
@@ -226,6 +290,7 @@ async function main() {
                     dt: args.dt,
                     powerOutageStartTick: args.powerOutageStartTick,
                     powerOutageEndTick: args.powerOutageEndTick,
+                    routingMode: args.routing ?? 'random',
                 })
             );
         }
@@ -235,6 +300,13 @@ async function main() {
         await postBatch(args.post, pendingPosts);
     }
 
+    if (starved.length) {
+        console.log(`\n${starved.length}/${totalRuns} runs had a starved approach (stood 5+ min behind a queue that still moved - saturation):\n  ${starved.join('\n  ')}`);
+    }
+    if (lockups.length) {
+        console.warn(`\n!!! ${lockups.length}/${totalRuns} runs locked up - do not read this batch until they are fixed:\n  ${lockups.join('\n  ')}`);
+        process.exitCode = 1;
+    }
     if (mismatches) {
         console.warn(`Done, but ${mismatches}/${totalRuns} runs failed the car-conservation check - see warnings above.`);
         process.exitCode = 1;

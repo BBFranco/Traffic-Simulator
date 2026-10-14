@@ -29,24 +29,10 @@
  *    (|t| < 2). A cut at the very end of the search range also means no
  *    settled stretch was found - unless the best interior cut keeps the same
  *    mean within noise (interiorCutIfUnbiased()), in which case it stands.
+ *    The trend test itself is metrics/definitions.js's trendSettled(), shared
+ *    with the live panel's drift indicator.
  */
-
-/** Least-squares slope of `values` against their index, with its t statistic. */
-function trend(values) {
-    const n = values.length;
-    const meanX = (n - 1) / 2;
-    const meanY = values.reduce((a, b) => a + b, 0) / n;
-    let sxx = 0;
-    let sxy = 0;
-    values.forEach((y, x) => {
-        sxx += (x - meanX) ** 2;
-        sxy += (x - meanX) * (y - meanY);
-    });
-    const slope = sxy / sxx;
-    const residual = values.reduce((sum, y, x) => sum + (y - meanY - slope * (x - meanX)) ** 2, 0);
-    const slopeSe = n > 2 ? Math.sqrt(residual / (n - 2) / sxx) : Infinity;
-    return { slope, meanY, t: slopeSe > 0 ? slope / slopeSe : slope === 0 ? 0 : Infinity };
-}
+import { trend, trendSettled } from './metrics/definitions.js';
 
 /**
  * MSER's minimum on the edge of its search range is ambiguous: either the ramp really lasts the
@@ -123,10 +109,9 @@ export function detectPlateau(samples, { windowSeconds = 300, driftTolerance = 0
     let bestCut = scores.indexOf(Math.min(...scores));
     if (bestCut === maxCut) bestCut = interiorCutIfUnbiased(scores, keptMeans, maxCut);
 
-    const { slope, meanY, t } = trend(values.slice(bestCut));
     const horizonWindows = horizonSeconds == null ? n - bestCut : horizonSeconds / windowSeconds;
-    const driftRatio = meanY === 0 ? (slope === 0 ? 0 : Infinity) : Math.abs(slope * horizonWindows) / Math.abs(meanY);
-    const stationary = bestCut < maxCut && (driftRatio <= driftTolerance || Math.abs(t) < 2);
+    const { driftRatio, settled } = trendSettled(trend(values.slice(bestCut)), horizonWindows, driftTolerance);
+    const stationary = bestCut < maxCut && settled;
     const truncationTick = windowMeans[bestCut].tick;
     return { convergedAtTick: stationary ? truncationTick : null, truncationTick, stationary, driftRatio, windowMeans };
 }

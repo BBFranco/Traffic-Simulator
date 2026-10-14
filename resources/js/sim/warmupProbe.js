@@ -32,10 +32,14 @@ export const PROBE_DURATION_TICKS = 72000;
 export const PROBE_REPLICATIONS = 3;
 /** The chosen warm-up never goes below the old constant - the small corridors were checked at it. */
 export const MIN_WARMUP_TICKS = 3600;
-/** plateau.js only searches the first half of a run for its cut, so that's also the most the probe can ever justify. */
-export const MAX_WARMUP_TICKS = PROBE_DURATION_TICKS / 2;
 /** Cushion on the slowest measured levelling-off point - a margin, not itself measured. */
 export const WARMUP_SAFETY_MARGIN = 1.5;
+/**
+ * plateau.js only searches the first half of a run for its cut, so the latest levelling-off the probe can find is
+ * there - and the warm-up is that x the margin (90 min). Capping at the half itself cut the margin off a slow settle
+ * (55 min wanted 82 min and got 60). Also what a batch whose probe never levels off runs.
+ */
+export const MAX_WARMUP_TICKS = (PROBE_DURATION_TICKS / 2) * WARMUP_SAFETY_MARGIN;
 /** Rounded up to whole simulated minutes at dt = 0.1 s. */
 const WARMUP_ROUNDING_TICKS = 600;
 
@@ -67,8 +71,8 @@ function averageSeries(seriesList) {
  * `Map(tick -> value)`. A task of its own so a worker pool can run a probe's
  * seeds side by side (results.js); probeVerdict() combines them.
  */
-export function probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks = PROBE_DURATION_TICKS }) {
-    const { rows, sideStreetRows } = runHeadless({
+export function probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks = PROBE_DURATION_TICKS, routingMode = null }) {
+    const { sideStreetRows, totalRows, arterialScopeRows } = runHeadless({
         seed,
         controllerMode,
         sensorMode,
@@ -78,10 +82,11 @@ export function probeSeries({ corridorConfig, controllerMode, sensorMode, seed, 
         corridorConfig,
         durationTicks,
         dt,
+        routingMode,
     });
     return {
-        total: buildByTickWeightedAvgWait([rows, sideStreetRows]),
-        arterial: buildByTickWeightedAvgWait([rows]),
+        total: buildByTickWeightedAvgWait([totalRows]),
+        arterial: buildByTickWeightedAvgWait([arterialScopeRows]),
         sideStreet: buildByTickWeightedAvgWait([sideStreetRows]),
     };
 }
@@ -104,8 +109,8 @@ export function probeVerdict({ controllerMode, sensorMode, runs, dt, measuredTic
 }
 
 /** One controller's whole probe, one seed after another (the CLI batch). */
-export function probeCondition({ corridorConfig, controllerMode, sensorMode, seeds, dt, measuredTicks, durationTicks = PROBE_DURATION_TICKS }) {
-    const runs = seeds.map((seed) => probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks }));
+export function probeCondition({ corridorConfig, controllerMode, sensorMode, seeds, dt, measuredTicks, durationTicks = PROBE_DURATION_TICKS, routingMode = null }) {
+    const runs = seeds.map((seed) => probeSeries({ corridorConfig, controllerMode, sensorMode, seed, dt, durationTicks, routingMode }));
     return probeVerdict({ controllerMode, sensorMode, runs, dt, measuredTicks });
 }
 
@@ -117,9 +122,34 @@ export function probeCondition({ corridorConfig, controllerMode, sensorMode, see
 export function chooseWarmup(probes) {
     const verdicts = probes.flatMap((probe) => Object.values(probe.scopes)).filter((scope) => scope.truncationTick != null);
     const stationary = verdicts.length > 0 && verdicts.every((scope) => scope.stationary);
-    if (!stationary) return { warmupTicks: MAX_WARMUP_TICKS, stationary: false, probes };
+    const settle = settleTicks(probes);
+    if (!stationary) return { warmupTicks: MAX_WARMUP_TICKS, stationary: false, drifting: driftingControllers(probes), settle, probes };
 
     const slowest = Math.max(...verdicts.map((scope) => scope.convergedAtTick));
     const padded = Math.ceil((slowest * WARMUP_SAFETY_MARGIN) / WARMUP_ROUNDING_TICKS) * WARMUP_ROUNDING_TICKS;
-    return { warmupTicks: Math.min(MAX_WARMUP_TICKS, Math.max(MIN_WARMUP_TICKS, padded)), stationary: true, probes };
+    return { warmupTicks: Math.min(MAX_WARMUP_TICKS, Math.max(MIN_WARMUP_TICKS, padded)), stationary: true, drifting: [], settle, probes };
+}
+
+/** Per controller, the tick each scope's wait levelled off at - null where it never did, or the scope carries no traffic. */
+function settleTicks(probes) {
+    return Object.fromEntries(
+        probes.map((probe) => [
+            probe.controllerMode,
+            Object.fromEntries(Object.entries(probe.scopes).map(([name, scope]) => [name, scope.truncationTick == null ? null : scope.convergedAtTick])),
+        ])
+    );
+}
+
+/** The controllers whose waits never levelled off, with how far (%) each such scope was still drifting - what the "not stationary" flag is about. */
+function driftingControllers(probes) {
+    return probes
+        .map((probe) => ({
+            controllerMode: probe.controllerMode,
+            scopes: Object.fromEntries(
+                Object.entries(probe.scopes)
+                    .filter(([, scope]) => scope.truncationTick != null && !scope.stationary)
+                    .map(([name, scope]) => [name, Math.round(scope.driftRatio * 100)])
+            ),
+        }))
+        .filter((probe) => Object.keys(probe.scopes).length);
 }

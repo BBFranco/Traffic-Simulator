@@ -23,6 +23,23 @@ export const FALLBACK_CYCLE_S = 120;
 /** A turn stage's green in that fallback cycle, before its weight. */
 export const FALLBACK_TURN_GREEN_S = 12;
 
+/**
+ * The signal-timing rules a run used - stamped on every run (runHeadless.js's rawConfig) so a
+ * sensitivity batch with different rules can never be read as the baseline. The baseline is real
+ * q, the turn `weight` only on the minimum green; `websterTurnWeight` (a sensitivity run only)
+ * also scales a protected turn's q by its weight before Webster (engine.js's _turnStagesAt()).
+ */
+export function controllerConfigFor({ websterTurnWeight = false } = {}) {
+    return {
+        websterTurnInput: websterTurnWeight ? 'q-x-weight' : 'real-q',
+        turnWeightActsOn: websterTurnWeight ? 'min-green+webster-q' : 'min-green',
+        minGreenS: MIN_GREEN_S,
+        minTurnGreenS: MIN_TURN_GREEN_S,
+        lostTimePerPhaseS: LOST_TIME_PER_PHASE_S,
+        fallbackCycleS: FALLBACK_CYCLE_S,
+    };
+}
+
 export function flowRatio(demand) {
     if (!demand) return 0;
     const qPerHour = demand.spawnRatePerLanePerMin * 60;
@@ -66,6 +83,24 @@ export function fallbackGreens(stages, turn, cycleLengthS = FALLBACK_CYCLE_S) {
     const throughCount = stages.filter((s) => !s.turn).length;
     const throughGreen = (effective - turnGreens.reduce((sum, g) => sum + g, 0)) / throughCount;
     return stages.map((s, i) => (s.turn ? turnGreens[i] : throughGreen));
+}
+
+/**
+ * A junction's own fixed-time plan: Webster's cycle and split on real q, every stage then lifted to
+ * its minimum green - the lift adds to the cycle. Oversaturated (Webster undefined): the fallback
+ * greens, lifted the same way. Fixed-time runs exactly this; green wave takes its arterial's longest
+ * such cycle as the common one, so no junction is squeezed below what it would run on its own.
+ */
+export function fixedTimeGreens(stages, arterialDemand, crossDemand, turn) {
+    let greens;
+    try {
+        const ratios = stageRatios(stages, arterialDemand, crossDemand, turn);
+        greens = websterGreens(stages, ratios, websterCycleFor(stages, ratios));
+    } catch {
+        greens = fallbackGreens(stages, turn);
+    }
+    const lifted = greens.map((g, i) => Math.max(minGreenOf(stages[i]), g));
+    return { greens: lifted, cycleLengthS: lifted.reduce((sum, g) => sum + g, 0) + lostTimeS(stages) };
 }
 
 /** Webster's green split of a cycle of `cycleLengthS` over `stages`, no floors applied. */

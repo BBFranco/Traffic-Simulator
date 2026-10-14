@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BatchKind;
+use App\Enums\RoutingMode;
 use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
 use App\Models\TrafficCount;
+use App\Support\ConfidenceInterval;
 use App\Support\CorridorRepository;
+use App\Support\RoutingMetrics;
+use App\Support\SeedPairedDeltas;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -73,11 +78,19 @@ class ResultsController extends Controller
     /** Fewest recovered runs a side needs before its mean recovery time is compared as a delta. */
     private const MIN_RECOVERED_RUNS = 10;
 
-    public function __construct(private readonly CorridorRepository $corridors) {}
+    /** Both sides recover within this - a % change on a few seconds reads as a big effect, so it's shown in seconds. */
+    private const SHORT_RECOVERY_S = 30;
+
+    public function __construct(
+        private readonly CorridorRepository $corridors,
+        private readonly SeedPairedDeltas $seedPairedDeltas,
+        private readonly RoutingMetrics $routingMetrics,
+    ) {}
 
     public function index(): View
     {
-        $payload = $this->buildPayload(request()->query('corridor'));
+        $routingMode = $this->routingModeFilter();
+        $payload = $this->buildPayload(request()->query('corridor'), $routingMode);
 
         $corridors = $this->corridors->index();
         $trafficCounts = $this->trafficCountsForImport();
@@ -88,6 +101,8 @@ class ResultsController extends Controller
             'controllerModes' => self::CONTROLLER_MODES,
             'powerStates' => self::POWER_STATES,
             'trafficCounts' => $trafficCounts,
+            'routingModes' => RoutingMode::cases(),
+            'routingMode' => $routingMode,
             'chartPayload' => [
                 'aggregates' => $payload['aggregates'],
                 'aggregatesBySensor' => $payload['aggregatesBySensor'],
@@ -97,8 +112,15 @@ class ResultsController extends Controller
                 'pairedComparisons' => $payload['pairedComparisons'],
                 'minRecoveredRuns' => self::MIN_RECOVERED_RUNS,
                 'batchWarmupLabel' => $payload['batchWarmupLabel'],
+                'batchStamp' => $payload['batchStamp'],
                 'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
+                'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
+                'lockupLabel' => $payload['lockupLabel'],
+                'starvedLabel' => $payload['starvedLabel'],
+                'routingMetrics' => $payload['routingMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
+                // The user's own copy, only to warn in the run modal when it differs from the template the batch runs on.
+                'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,
@@ -122,7 +144,7 @@ class ResultsController extends Controller
      */
     public function data(): JsonResponse
     {
-        $payload = $this->buildPayload(request()->query('corridor'));
+        $payload = $this->buildPayload(request()->query('corridor'), $this->routingModeFilter());
         $viewData = [
             ...$payload,
             ...$this->viewModel($payload),
@@ -138,7 +160,12 @@ class ResultsController extends Controller
             'recoveryTimeline' => $payload['recoveryTimeline'],
             'pairedComparisons' => $payload['pairedComparisons'],
             'batchWarmupLabel' => $payload['batchWarmupLabel'],
+            'batchStamp' => $payload['batchStamp'],
             'hasNonStationaryBatch' => $payload['hasNonStationaryBatch'],
+            'warmupDriftingLabel' => $payload['warmupDriftingLabel'],
+            'lockupLabel' => $payload['lockupLabel'],
+            'starvedLabel' => $payload['starvedLabel'],
+            'routingMetrics' => $payload['routingMetrics'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
                 'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
@@ -147,6 +174,7 @@ class ResultsController extends Controller
                 'segmentedRows' => view('results.partials.segmented-rows', $viewData)->render(),
                 'recentRunsRows' => view('results.partials.recent-runs-rows', $viewData)->render(),
                 'itsTargetOptions' => view('results.partials.its-target-options', $viewData)->render(),
+                'routingMetrics' => view('results.partials.routing-metrics', $viewData)->render(),
             ],
         ]);
     }
@@ -322,6 +350,24 @@ class ResultsController extends Controller
      * yet" (neutral), true/false is an improvement/regression. Shared by the "vs
      * fixed-time" cards and the headline metric cards so both tone the same way.
      */
+    /**
+     * Whether the delta shown is an improvement - null (shown neutral) where there's none to show, or where the
+     * seed-paired difference sits inside its own 95% CI: no winner to colour, e.g. "0.0% ±0.0" or "0.0% ±1.4".
+     *
+     * @param  array{delta: float, ci95: float, pairs: int}|null  $paired
+     */
+    private function improvesBeyondNoise(?float $delta, ?array $paired, bool $isLowerBetter): ?bool
+    {
+        if ($delta === null || $delta == 0.0) {
+            return null;
+        }
+        if ($paired !== null && abs($paired['delta']) <= $paired['ci95']) {
+            return null;
+        }
+
+        return $isLowerBetter ? $delta < 0 : $delta > 0;
+    }
+
     private function toneClasses(?bool $improves): string
     {
         return match (true) {
@@ -423,6 +469,8 @@ class ResultsController extends Controller
             'value' => $comparison[$section['valueKey']],
             'suffix' => $section['suffix'],
             'improves' => $improves,
+            'isWithinNoise' => $improves === null && $comparison[$section['valueKey']] !== null,
+            'recoveryDeltaSeconds' => $recoveryPairMetric === 'throughput' ? $comparison['recovery_delta_seconds'] : null,
             'improvedLabel' => $section['improvedLabel'],
             'worseLabel' => $section['worseLabel'],
             'recoveryPairMetric' => $recoveryPairMetric,
@@ -551,9 +599,16 @@ class ResultsController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function buildPayload(?string $corridorFilter): array
+    /** Random turning and destination routing are separate datasets - the page shows one at a time. */
+    private function routingModeFilter(): RoutingMode
     {
-        $query = SimulationRun::query()->whereIn('batch_id', $this->latestBatchIds($corridorFilter));
+        return RoutingMode::tryFrom((string) request()->query('routing')) ?? RoutingMode::Random;
+    }
+
+    private function buildPayload(?string $corridorFilter, RoutingMode $routingMode): array
+    {
+        $batchIds = $this->latestBatchIds($corridorFilter, $routingMode);
+        $query = SimulationRun::query()->whereIn('batch_id', $batchIds);
 
         $aggregates = $this->aggregates((clone $query));
         $aggregatesBySensor = $this->aggregatesBySensor((clone $query));
@@ -585,13 +640,18 @@ class ResultsController extends Controller
         return [
             'aggregates' => $aggregates,
             'aggregatesBySensor' => $aggregatesBySensor,
-            'pairedComparisons' => $this->pairedComparisons($aggregates, $aggregatesBySensor),
-            'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter),
+            'pairedComparisons' => $this->pairedComparisons($aggregates, $aggregatesBySensor, $this->seedPairedDeltas->forBatches($batchIds)),
+            'recoveryTimeline' => $this->dbRecoveryTimeline($corridorFilter, $routingMode),
             'recentRuns' => $recentRuns,
             'totalRuns' => (clone $query)->count(),
             'batchTimingLabel' => $this->batchTimingLabel((clone $query)),
             'batchWarmupLabel' => $this->warmupLabel((clone $query)->whereNotNull('warmup_ticks')->distinct()->pluck('warmup_ticks')),
+            'batchStamp' => $this->batchStamp((clone $query)),
             'hasNonStationaryBatch' => (clone $query)->where('warmup_stationary', false)->exists(),
+            'warmupDriftingLabel' => $this->warmupDriftingLabel((clone $query)),
+            'lockupLabel' => $this->lockupLabel((clone $query)),
+            'starvedLabel' => $this->starvedLabel((clone $query)),
+            'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
         ];
     }
 
@@ -642,6 +702,174 @@ class ResultsController extends Controller
         return "last batch ({$latest->corridor_config}) {$this->displayTime($latest->started_at)} → {$finishedLocal} ({$minutes} min)";
     }
 
+    /**
+     * What the newest batch shown ran: code (commit, dirty tree), wait accounting, routing, timing
+     * and seeds - from the run config every run stores. Null fields for batches from before stamping.
+     *
+     * @param  Builder<SimulationRun>  $query
+     * @return array<string, mixed>|null
+     */
+    /**
+     * The runs the lockup watch (sim/lockupWatch.js) flagged, e.g. "Adaptive (camera), load shedding, seed 20270104 at
+     * south_hilda" - null when none did, or the batch predates the watch.
+     *
+     * @param  Builder<SimulationRun>  $query
+     */
+    private function lockupLabel(Builder $query): ?string
+    {
+        $lockedRuns = $query->where('diagnostics->lockup->isLockup', true)->orderBy('id')->get(['controller_mode', 'sensor_mode', 'power_state', 'seed', 'diagnostics']);
+
+        return $this->flaggedRunsLabel($lockedRuns, function (array $lockup): string {
+            if (isset($lockup['firstCycle'])) {
+                return implode(', ', $lockup['firstCycle']['nodeIds']);
+            }
+
+            // Batches from before the watch split locked from starved only have the longest standstill.
+            return $lockup['locked']['nodeId'] ?? $lockup['longestStill']['nodeId'] ?? 'unknown junction';
+        });
+    }
+
+    /**
+     * The runs where a vehicle stood for minutes behind a queue that still moved - saturation the lockup watch reports
+     * but doesn't fail the batch on, e.g. "Green wave, load shedding, seed 20270129 at lynnwood_herold (518 s)".
+     *
+     * @param  Builder<SimulationRun>  $query
+     */
+    private function starvedLabel(Builder $query): ?string
+    {
+        $starvedRuns = $query->where('diagnostics->lockup->isLockup', false)
+            ->whereNotNull('diagnostics->lockup->starved')
+            ->orderBy('id')
+            ->get(['controller_mode', 'sensor_mode', 'power_state', 'seed', 'diagnostics']);
+
+        return $this->flaggedRunsLabel($starvedRuns, fn (array $lockup): string => "{$lockup['starved']['nodeId']} ({$lockup['starved']['seconds']} s)");
+    }
+
+    /**
+     * @param  Collection<int, SimulationRun>  $runs
+     * @param  callable(array): string  $where  the junction(s) a run's lockup record points at
+     */
+    private function flaggedRunsLabel(Collection $runs, callable $where): ?string
+    {
+        if ($runs->isEmpty()) {
+            return null;
+        }
+
+        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $shown = 5;
+        $label = $runs->take($shown)->map(function (SimulationRun $run) use ($modeLabels, $where): string {
+            $sensor = $run->controller_mode === 'adaptive' ? " ({$run->sensor_mode})" : '';
+
+            return sprintf('%s%s, %s, seed %d at %s', $modeLabels[$run->controller_mode] ?? $run->controller_mode, $sensor, str_replace('_', ' ', $run->power_state), $run->seed, $where($run->diagnostics['lockup']));
+        })->join('; ');
+
+        return $runs->count() > $shown ? "{$label}; and ".($runs->count() - $shown).' more' : $label;
+    }
+
+    /**
+     * Which controller kept a batch from settling, from its warm-up probe, e.g. "Green wave (total +63%, side streets +82%)".
+     * Null when every controller levelled off, or the batch predates the probe recording it.
+     */
+    private function warmupDriftingLabel(Builder $query): ?string
+    {
+        $drifting = $query->whereNotNull('warmup_drifting')->latest('id')->value('warmup_drifting');
+        if (empty($drifting)) {
+            return null;
+        }
+
+        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $scopeLabels = ['total' => 'total', 'arterial' => 'main arterial', 'sideStreet' => 'side streets'];
+
+        return collect($drifting)
+            ->map(fn (array $probe) => sprintf(
+                '%s (%s)',
+                $modeLabels[$probe['controllerMode']] ?? $probe['controllerMode'],
+                collect($probe['scopes'])->map(fn (int $driftPct, string $scope) => sprintf('%s +%d%%', $scopeLabels[$scope] ?? $scope, $driftPct))->join(', '),
+            ))
+            ->join('; ');
+    }
+
+    private function batchStamp(Builder $query): ?array
+    {
+        $latest = (clone $query)->latest('id')->first();
+        if ($latest === null) {
+            return null;
+        }
+
+        $config = $latest->raw_config_json ?? [];
+        $build = $config['build'] ?? [];
+        $seeds = SimulationRun::query()
+            ->where('batch_id', $latest->batch_id)
+            ->selectRaw('min(seed) as first_seed, max(seed) as last_seed')
+            ->first();
+        $minutes = fn (?int $ticks): ?int => $ticks === null ? null : (int) round($ticks * ($config['dt'] ?? 0.1) / 60);
+
+        $commit = match (true) {
+            ! isset($build['commit']) => 'commit not recorded',
+            (bool) ($build['dirty'] ?? true) => "{$build['commit']} (uncommitted changes)",
+            default => "{$build['commit']} (clean tree)",
+        };
+        $controllers = $config['controllerConfig'] ?? null;
+        $controllerLabel = $controllers === null
+            ? 'signal rules not recorded'
+            : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s";
+        // Normal-power runs store no outage, so read the schedule off one of the batch's load-shedding runs.
+        $outageConfig = SimulationRun::query()
+            ->where('batch_id', $latest->batch_id)
+            ->where('power_state', 'load_shedding')
+            ->first(['raw_config_json'])?->raw_config_json ?? [];
+        $outageEndTicks = $outageConfig['powerOutageEndTick'] ?? null;
+        $waitAccounting = $config['waitAccounting'] ?? 'turn-reset (pre-2026-10-04)';
+
+        return [
+            'label' => collect([
+                "code {$commit}",
+                "wait accounting {$waitAccounting}",
+                $controllerLabel,
+                RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
+                isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,
+                $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,
+            ])->filter()->implode(' · '),
+            'commit' => $build['commit'] ?? null,
+            'dirty' => $build['dirty'] ?? null,
+            'source' => $build['source'] ?? null,
+            'waitAccounting' => $waitAccounting,
+            'routingMode' => $latest->routing_mode,
+            'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
+            'warmupSettleMinutes' => $this->warmupSettleMinutes($config),
+            'measuredMinutes' => $minutes($config['durationTicks'] ?? null),
+            'outageStartMinutes' => $minutes($outageConfig['powerOutageStartTick'] ?? null),
+            'outageEndMinutes' => $minutes($outageEndTicks),
+            'firstSeed' => $seeds?->first_seed,
+            'lastSeed' => $seeds?->last_seed,
+            'startedAt' => $latest->batch_started_at?->toIso8601String(),
+            // Seconds from power back on to the end of the measured window - a wait recovery that never happened is capped at this.
+            'postRestoreWindowS' => $outageEndTicks === null || ! isset($config['durationTicks'])
+                ? null
+                : round(($config['durationTicks'] - $outageEndTicks) * ($config['dt'] ?? 0.1)),
+            'controllerConfig' => $controllers,
+            'routingTiersHash' => $config['routingTiersHash'] ?? null,
+        ];
+    }
+
+    /**
+     * Per probed controller, when each scope's wait levelled off in the warm-up probe, in minutes from empty - null
+     * where it never did. Null for a batch from before the probe recorded it.
+     *
+     * @return array<string, array<string, float|null>>|null
+     */
+    private function warmupSettleMinutes(array $config): ?array
+    {
+        if (! isset($config['warmupSettle'])) {
+            return null;
+        }
+        $dt = $config['dt'] ?? 0.1;
+
+        return collect($config['warmupSettle'])
+            ->map(fn (array $scopes): array => collect($scopes)->map(fn (?int $tick): ?float => $tick === null ? null : round($tick * $dt / 60, 1))->all())
+            ->all();
+    }
+
     /** A stored (UTC) timestamp in the zone people read it in, e.g. "25 Sep 2026, 11:42". */
     private function displayTime(?string $utcTimestamp): ?string
     {
@@ -656,9 +884,11 @@ class ResultsController extends Controller
      *
      * @return Collection<int, string>
      */
-    private function latestBatchIds(?string $corridorFilter): Collection
+    private function latestBatchIds(?string $corridorFilter, RoutingMode $routingMode): Collection
     {
         $latestRunIds = SimulationRun::query()
+            ->where('routing_mode', $routingMode->value)
+            ->where('batch_kind', BatchKind::Main->value)
             ->when($corridorFilter, fn (Builder $query) => $query->where('corridor_config', $corridorFilter))
             ->selectRaw('max(id)')
             ->groupBy('corridor_config');
@@ -675,7 +905,7 @@ class ResultsController extends Controller
     /** @param  Builder<SimulationRun>  $query */
     private function aggregates(Builder $query): array
     {
-        $stddevs = $this->computeStddevs((clone $query), ['controller_mode', 'power_state']);
+        $ci95s = $this->conditionCi95s((clone $query), ['controller_mode', 'power_state']);
 
         return $query
             ->selectRaw('controller_mode, power_state, count(*) as runs, '.$this->metricSelectRaw())
@@ -685,7 +915,7 @@ class ResultsController extends Controller
                 'controller_mode' => $row->controller_mode,
                 'power_state' => $row->power_state,
                 'runs' => (int) $row->runs,
-                ...$this->metricRow($row, $stddevs["{$row->controller_mode}|{$row->power_state}"] ?? []),
+                ...$this->metricRow($row, $ci95s["{$row->controller_mode}|{$row->power_state}"] ?? []),
             ])
             ->all();
     }
@@ -707,6 +937,8 @@ class ResultsController extends Controller
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $clauses[] = "avg({$column}) as {$column}";
         }
+        // max_wait_time above is the mean of each run's own max - this is the single worst wait in any run.
+        $clauses[] = 'max(max_wait_time) as worst_wait_time';
         foreach (self::RECOVERY_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
@@ -731,54 +963,52 @@ class ResultsController extends Controller
     }
 
     /**
-     * Sample stddev per group, across the group's reps - with 30 seeded reps per condition
-     * this is what lets a viewer tell a small delta (e.g. +2.6%) apart from noise. A
-     * per-condition figure, not a paired stddev of the delta itself (that would need
-     * per-seed joins across conditions) - labelled as such in the UI.
+     * 95% CI half-width on each group's own mean - with 30 seeded reps per condition this is
+     * what lets a viewer tell a small delta (e.g. +2.6%) apart from noise. A per-condition
+     * figure, not a CI on the delta itself (that is SeedPairedDeltas).
      *
-     * Computed in PHP rather than pushed into the aggregate SQL (`avg()` above): this app's
-     * dev/test DB is SQLite, which has no STDDEV_SAMP, and hand-rolling it as
-     * sqrt(avg(x*x) - avg(x)^2) would be numerically shakier than just fetching the (at most
-     * a few hundred) raw rows once and computing it directly.
+     * The samples are per-seed means, not runs: the adaptive average row has one run per sensor
+     * on each seed, and those four share the seed's demand, so treating them as 120 independent
+     * runs mixed between-sensor spread into the stddev and divided it by sqrt(120). Every other
+     * group has one run per seed, where this is the plain per-run figure.
      *
-     * @return array<string, array<string, float|null>> group key -> column -> stddev
+     * Computed in PHP rather than SQL: the dev/test DB is SQLite, which has no STDDEV_SAMP.
+     *
+     * @param  Builder<SimulationRun>  $query
+     * @param  array<int, string>  $groupColumns
+     * @return array<string, array<string, float|null>> group key -> column -> ci95
      */
-    /** @param  Builder<SimulationRun>  $query */
-    private function computeStddevs(Builder $query, array $groupColumns): array
+    private function conditionCi95s(Builder $query, array $groupColumns): array
     {
         $metricColumns = $this->scopedMetricColumns();
-        $rows = $query->select(array_merge($groupColumns, $metricColumns))->get();
 
-        $valuesByGroup = [];
-        foreach ($rows as $row) {
-            $key = implode('|', array_map(fn ($c) => (string) ($row->$c ?? ''), $groupColumns));
-            foreach ($metricColumns as $column) {
-                $valuesByGroup[$key][$column][] = $row->$column;
-            }
-        }
-
-        $stddevs = [];
-        foreach ($valuesByGroup as $key => $columns) {
-            foreach ($columns as $column => $values) {
-                $stddevs[$key][$column] = $this->sampleStddev($values);
-            }
-        }
-
-        return $stddevs;
+        return $query->select([...$groupColumns, 'corridor_config', 'seed', ...$metricColumns])
+            ->get()
+            ->toBase()
+            ->groupBy(fn (SimulationRun $run): string => collect($groupColumns)->map(fn (string $column): string => (string) ($run->{$column} ?? ''))->implode('|'))
+            ->map(fn (Collection $groupRuns): array => collect($metricColumns)
+                ->mapWithKeys(fn (string $column): array => [$column => $this->ci95OnSeedMeans($groupRuns, $column)])
+                ->all())
+            ->all();
     }
 
-    private function sampleStddev(array $values): ?float
+    /** @param  Collection<int, SimulationRun>  $runs */
+    private function ci95OnSeedMeans(Collection $runs, string $column): ?float
     {
-        $values = array_values(array_filter($values, fn ($v) => $v !== null));
-        $n = count($values);
-        if ($n < 2) {
+        $seedMeans = $runs->filter(fn (SimulationRun $run): bool => $run->{$column} !== null)
+            ->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->seed}")
+            ->map(fn (Collection $seedRuns): float => (float) $seedRuns->avg($column))
+            ->values();
+
+        $samples = $seedMeans->count();
+        if ($samples < 2) {
             return null;
         }
 
-        $mean = array_sum($values) / $n;
-        $variance = array_sum(array_map(fn ($v) => ($v - $mean) ** 2, $values)) / ($n - 1);
+        $mean = $seedMeans->avg();
+        $variance = $seedMeans->sum(fn (float $value): float => ($value - $mean) ** 2) / ($samples - 1);
 
-        return sqrt($variance);
+        return round(ConfidenceInterval::halfWidth95(sqrt($variance), $samples), 1);
     }
 
     /**
@@ -791,26 +1021,20 @@ class ResultsController extends Controller
      *
      * @return array<string, float|null>
      */
-    private function metricRow(object $row, array $stddevByColumn = []): array
+    private function metricRow(object $row, array $ci95ByColumn = []): array
     {
         $result = [];
-        $runs = (int) $row->runs;
         foreach (self::SCOPED_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
                 $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
-
-                $stddev = $stddevByColumn[$column] ?? null;
-                // 95% CI half-width on THIS condition's own mean (mean +/- ci95), not on a
-                // delta - needs >= 2 reps to have a defined stddev at all.
-                $result[$column.'_ci95'] = ($stddev === null || $runs < 2)
-                    ? null
-                    : round(1.96 * $stddev / sqrt($runs), 1);
+                $result[$column.'_ci95'] = $ci95ByColumn[$column] ?? null;
             }
         }
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
         }
+        $result['worst_wait_time'] = $row->worst_wait_time === null ? null : round((float) $row->worst_wait_time, 1);
         // avg() skips runs that never recovered, so the mean alone hides how many it's built on.
         foreach (self::RECOVERY_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
@@ -836,7 +1060,7 @@ class ResultsController extends Controller
     /** @param  Builder<SimulationRun>  $query */
     private function aggregatesBySensor(Builder $query): array
     {
-        $stddevs = $this->computeStddevs((clone $query), ['controller_mode', 'power_state', 'sensor_mode']);
+        $ci95s = $this->conditionCi95s((clone $query), ['controller_mode', 'power_state', 'sensor_mode']);
 
         return $query
             ->selectRaw('controller_mode, power_state, sensor_mode, count(*) as runs, '.$this->metricSelectRaw())
@@ -847,7 +1071,7 @@ class ResultsController extends Controller
                 'power_state' => $row->power_state,
                 'sensor_mode' => $row->sensor_mode,
                 'runs' => (int) $row->runs,
-                ...$this->metricRow($row, $stddevs["{$row->controller_mode}|{$row->power_state}|{$row->sensor_mode}"] ?? []),
+                ...$this->metricRow($row, $ci95s["{$row->controller_mode}|{$row->power_state}|{$row->sensor_mode}"] ?? []),
             ])
             ->all();
     }
@@ -868,7 +1092,7 @@ class ResultsController extends Controller
      * @param  array<int, array<string, mixed>>  $aggregatesBySensor
      * @return array<int, array<string, mixed>>
      */
-    private function pairedComparisons(array $aggregates, array $aggregatesBySensor): array
+    private function pairedComparisons(array $aggregates, array $aggregatesBySensor, array $seedDeltas): array
     {
         $lookup = [];
         foreach ($aggregates as $row) {
@@ -893,7 +1117,8 @@ class ResultsController extends Controller
                         $scope,
                         $suffix,
                         $subject,
-                        $baseline
+                        $baseline,
+                        $seedDeltas[$mode === 'adaptive' ? "adaptive|average|{$power}" : "{$mode}||{$power}"] ?? []
                     );
                 }
             }
@@ -913,7 +1138,7 @@ class ResultsController extends Controller
                     continue;
                 }
 
-                $comparisons[] = $this->buildComparison('adaptive', $sensor, $power, $scope, $suffix, $subject, $baseline);
+                $comparisons[] = $this->buildComparison('adaptive', $sensor, $power, $scope, $suffix, $subject, $baseline, $seedDeltas["adaptive|{$sensor}|{$power}"] ?? []);
             }
         }
 
@@ -923,6 +1148,7 @@ class ResultsController extends Controller
     /**
      * @param  array<string, mixed>  $subject
      * @param  array<string, mixed>  $baseline
+     * @param  array<string, array{delta: float, ci95: float, pairs: int}>  $paired  SeedPairedDeltas for this condition
      * @return array<string, mixed>
      */
     private function buildComparison(
@@ -932,7 +1158,8 @@ class ResultsController extends Controller
         string $scope,
         string $suffix,
         array $subject,
-        array $baseline
+        array $baseline,
+        array $paired
     ): array {
         $waitKey = 'avg_wait_time'.$suffix;
         $throughputKey = 'throughput_per_min'.$suffix;
@@ -960,7 +1187,11 @@ class ResultsController extends Controller
         // pctChange() returns null there, and the improves flag follows so the cell isn't tinted.
         $recoveryDelta = $recoveryKnown ? $this->pctChange($baseline[$recoveryKey], $subject[$recoveryKey]) : null;
         $recoveryWaitDelta = $recoveryWaitKnown ? $this->pctChange($baseline[$recoveryWaitKey], $subject[$recoveryWaitKey]) : null;
-        $waitImproves = $waitKnown ? $subject[$waitKey] < $baseline[$waitKey] : null;
+        $waitDelta = $paired[$waitKey]['delta'] ?? ($waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null);
+        $throughputDelta = $paired[$throughputKey]['delta'] ?? ($throughputKnown ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey]) : null);
+        $clearedDelta = $paired[$clearedKey]['delta'] ?? ($clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null);
+        $waitImproves = $this->improvesBeyondNoise($waitDelta, $paired[$waitKey] ?? null, isLowerBetter: true);
+        $isShortRecovery = $recoveryKnown && max($subject[$recoveryKey], $baseline[$recoveryKey]) < self::SHORT_RECOVERY_S;
 
         return [
             'mode' => $mode,
@@ -969,25 +1200,21 @@ class ResultsController extends Controller
             'power_state' => $power,
             'scope' => $scope,
             // Wait time: lower is better, so a negative delta is an improvement.
-            'wait_delta_pct' => $waitKnown ? $this->pctChange($baseline[$waitKey], $subject[$waitKey]) : null,
-            'throughput_delta_pct' => $throughputKnown
-                ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey])
-                : null,
-            'cleared_delta_pp' => $clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null,
+            // The exact paired delta where there is one - the condition means are rounded to 0.1 for display.
+            'wait_delta_pct' => $waitDelta,
+            'throughput_delta_pct' => $throughputDelta,
+            'cleared_delta_pp' => $clearedDelta,
             // Recovery time: only meaningful under load shedding (null otherwise); lower is better.
             'recovery_delta_pct' => $recoveryDelta,
             'recovery_wait_delta_pct' => $recoveryWaitDelta,
             'wait_improves' => $waitImproves,
             'wait_tone' => $this->toneClasses($waitImproves),
             'wait_figure_tone' => $this->figureToneClasses($waitImproves),
-            'throughput_improves' => $throughputKnown ? $subject[$throughputKey] > $baseline[$throughputKey] : null,
-            'cleared_improves' => $clearedKnown ? $subject[$clearedKey] > $baseline[$clearedKey] : null,
-            'recovery_improves' => $recoveryDelta !== null
-                ? $subject[$recoveryKey] < $baseline[$recoveryKey]
-                : null,
-            'recovery_wait_improves' => $recoveryWaitDelta !== null
-                ? $subject[$recoveryWaitKey] < $baseline[$recoveryWaitKey]
-                : null,
+            'throughput_improves' => $this->improvesBeyondNoise($throughputDelta, $paired[$throughputKey] ?? null, isLowerBetter: false),
+            'cleared_improves' => $this->improvesBeyondNoise($clearedDelta, $paired[$clearedKey] ?? null, isLowerBetter: false),
+            'recovery_improves' => $this->improvesBeyondNoise($recoveryDelta, $paired[$recoveryKey] ?? null, isLowerBetter: true),
+            'recovery_wait_improves' => $this->improvesBeyondNoise($recoveryWaitDelta, $paired[$recoveryWaitKey] ?? null, isLowerBetter: true),
+            'recovery_delta_seconds' => $isShortRecovery ? round($subject[$recoveryKey] - $baseline[$recoveryKey], 1) : null,
             // Recovery time on its own only measures how long a metric takes to sustain its way
             // back to baseline - it says nothing about where things settle afterwards. A shorter
             // recovery time next to a worse steady-state (or vice versa) is a real, common
@@ -1026,6 +1253,18 @@ class ResultsController extends Controller
             'baseline_throughput_ci95' => $baseline[$throughputKey.'_ci95'] ?? null,
             'cleared_ci95' => $subject[$clearedKey.'_ci95'] ?? null,
             'baseline_cleared_ci95' => $baseline[$clearedKey.'_ci95'] ?? null,
+            // 95% CI half-width on the delta itself, from the per-seed differences (SeedPairedDeltas).
+            'paired_seeds' => $paired[$waitKey]['pairs'] ?? null,
+            'wait_delta_ci95_pct' => $paired[$waitKey]['ci95'] ?? null,
+            'throughput_delta_ci95_pct' => $paired[$throughputKey]['ci95'] ?? null,
+            'cleared_delta_ci95_pp' => $paired[$clearedKey]['ci95'] ?? null,
+            'recovery_delta_ci95_pct' => $paired[$recoveryKey]['ci95'] ?? null,
+            'recovery_wait_delta_ci95_pct' => $paired[$recoveryWaitKey]['ci95'] ?? null,
+            // The tail next to the mean - stored for the total scope only.
+            'median_wait_delta_pct' => $suffix === '' ? ($paired['median_wait_time']['delta'] ?? null) : null,
+            'median_wait_delta_ci95_pct' => $suffix === '' ? ($paired['median_wait_time']['ci95'] ?? null) : null,
+            'p95_wait_delta_pct' => $suffix === '' ? ($paired['p95_wait_time']['delta'] ?? null) : null,
+            'p95_wait_delta_ci95_pct' => $suffix === '' ? ($paired['p95_wait_time']['ci95'] ?? null) : null,
         ];
     }
 
@@ -1055,9 +1294,10 @@ class ResultsController extends Controller
      *
      * @return array{seconds: array<int, float>, series: array<string, array<string, array<int, ?float>>>, sheddingStart: ?float, sheddingEnd: ?float}|null
      */
-    private function dbRecoveryTimeline(?string $corridorFilter): ?array
+    private function dbRecoveryTimeline(?string $corridorFilter, RoutingMode $routingMode): ?array
     {
         $rows = SimulationRunRecoveryTick::query()
+            ->where('routing_mode', $routingMode->value)
             ->when($corridorFilter, fn (Builder $q) => $q->where('corridor_config', $corridorFilter))
             ->orderBy('tick')
             ->get();

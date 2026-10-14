@@ -42,13 +42,16 @@ import {
     MeshBasicMaterial,
     MeshLambertMaterial,
     PerspectiveCamera,
+    Plane,
     PlaneGeometry,
+    Raycaster,
     Scene,
     Shape,
     Sphere,
     SphereGeometry,
     SRGBColorSpace,
     CanvasTexture,
+    Vector2,
     Vector3,
     WebGLRenderer,
 } from 'three';
@@ -59,6 +62,7 @@ import { SnapshotBuffer } from './SnapshotBuffer.js';
 import { laneArrowShapes } from './laneArrows.js';
 import { turnLaneShapes, alignedDashes, medianTurnLaneReachM } from './turnLaneShapes.js';
 import { SHAPE_KEYS, buildVehicleGeometries, shapeFor } from './vehicleModels.js';
+import { DRIVEWAY_DEPTH_M, DRIVEWAY_WIDTH_M } from '../sim/routing/driveways.js';
 
 const PALETTES = {
     light: {
@@ -73,6 +77,8 @@ const PALETTES = {
         pole: '#475569',
         housing: '#1f2937',
         median: '#b8bfc7',
+        driveway: '#8b939f',
+        drivewayWall: '#e2e8f0',
         trim: '#1e293b',
         lensOff: ['#4a1d22', '#4a3a14', '#163d2a'],
     },
@@ -88,6 +94,8 @@ const PALETTES = {
         pole: '#64748b',
         housing: '#0b1220',
         median: '#4b5563',
+        driveway: '#3a4352',
+        drivewayWall: '#64748b',
         trim: '#0b1220',
         lensOff: ['#3a1519', '#3a2e0f', '#11301f'],
     },
@@ -155,7 +163,7 @@ const ARROW_THICKNESS_M = 0.06 * SIGNAL_SCALE;
 /** Light levels under normal power vs. during a load-shedding outage. */
 const LIGHTING = { normal: { hemi: 1.15, sun: 1.5 }, outage: { hemi: 0.38, sun: 0.45 } };
 /** Road layers are unlit (MeshBasicMaterial), so they are dimmed by colour instead of by the lights. */
-const FLAT_KEYS = ['asphalt', 'junction', 'laneDash', 'edgeLine', 'centreLine', 'stopLine'];
+const FLAT_KEYS = ['asphalt', 'junction', 'laneDash', 'edgeLine', 'centreLine', 'stopLine', 'driveway'];
 const OUTAGE_FLAT_DIM = 0.5;
 
 /** Draw order for the flat road layers - they skip the depth test, so this alone decides what paints over what. */
@@ -175,6 +183,11 @@ const ROAD_NAME_OPACITY = 0.8;
 const ROAD_NAME_HEIGHT_M = { arterial: 3, cross: 2.4 };
 const ROAD_NAME_SPACING_M = 70;
 const MEDIAN_HEIGHT_M = 0.18;
+/** How close (m, beyond its half length) a click on the ground must land to a car to pick it. */
+const PICK_RADIUS_M = 3;
+
+/** The low garden wall either side of a driveway's mouth: its length along the kerb, height, thickness, and how far back from the kerb it stands (m). */
+const DRIVEWAY_WALL = { lengthM: 2.5, heightM: 0.7, thicknessM: 0.25, setbackM: 2.5 };
 /** Sides of a roundabout's circle and island. */
 const CIRCLE_SEGMENTS = 64;
 /** Median islands stop this far outside the junction box. */
@@ -250,6 +263,12 @@ export class Renderer3D {
         this.signalMeshes = [];
         this.labels = [];
         this.roadNameMeshes = [];
+        /** Destination routing's driveway pads and walls (setDriveways()) - empty when it isn't running. */
+        this.drivewayMeshes = [];
+        /** The car the camera follows (setFollowCar()) - its interpolated position is kept at the orbit target. */
+        this.followCarId = null;
+        this.raycaster = new Raycaster();
+        this.groundPlane = new Plane(new Vector3(0, 1, 0), 0);
         this.stopLineMesh = null;
         this.stopLineKey = null;
         this.approaches = [];
@@ -286,14 +305,93 @@ export class Renderer3D {
         // Camera first: vehicle culling and LOD read this frame's view.
         this.controls.update();
         this.updateClipPlanes();
+        const cars = this.buffer.interpolatedCars(alpha, this.dtS);
+        this.followCar(cars);
         this.camera.updateMatrixWorld();
-        this.updateVehicles(this.buffer.interpolatedCars(alpha, this.dtS));
+        this.updateVehicles(cars);
 
         this.updateLabelFade();
         this.updateRoadNameFacing();
         this.renderer.render(this.scene, this.camera);
         // Pills are fully faded out up close - skip repositioning their DOM nodes then.
         if (this.pillsVisible) this.labelRenderer.render(this.scene, this.camera);
+    }
+
+    /** Keep car `id` at the centre of the orbit (null stops following) - the user can still orbit and zoom round it. */
+    setFollowCar(id) {
+        this.followCarId = id;
+    }
+
+    /** Moves the orbit target - and the camera with it, so the view angle and distance stay - onto the followed car. */
+    followCar(cars) {
+        if (this.followCarId === null) return;
+        const car = cars.find((c) => c.id === this.followCarId);
+        if (!car) return;
+        const dx = car.x - this.controls.target.x;
+        const dz = car.y - this.controls.target.z;
+        this.controls.target.x += dx;
+        this.controls.target.z += dz;
+        this.camera.position.x += dx;
+        this.camera.position.z += dz;
+    }
+
+    /** The id of the car under client point (clientX, clientY) - where the click's ray meets the ground - or null. */
+    pickCar(clientX, clientY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+        this.raycaster.setFromCamera(ndc, this.camera);
+        const hit = this.raycaster.ray.intersectPlane(this.groundPlane, new Vector3());
+        if (!hit) return null;
+        let best = null;
+        for (const car of this.buffer.newer?.cars ?? []) {
+            const d = Math.hypot(car.point.x - hit.x, car.point.y - hit.z);
+            if (d <= (car.lengthM ?? 4.5) / 2 + PICK_RADIUS_M && (!best || d < best.d)) best = { id: car.id, d };
+        }
+        return best?.id ?? null;
+    }
+
+    /** Driveway pads plus a low wall either side of each mouth - one InstancedMesh for each, whatever the count. */
+    setDriveways(driveways) {
+        for (const mesh of this.drivewayMeshes) {
+            this.scene.remove(mesh);
+            mesh.dispose();
+            mesh.geometry.dispose();
+        }
+        this.drivewayMeshes = [];
+        if (!driveways?.length) return;
+
+        const pad = new PlaneGeometry(DRIVEWAY_WIDTH_M, DRIVEWAY_DEPTH_M);
+        pad.rotateX(-Math.PI / 2);
+        const pads = new InstancedMesh(pad, this.materials.driveway, driveways.length);
+        pads.renderOrder = LAYER_ORDER.asphalt + 0.1;
+        const walls = new InstancedMesh(new BoxGeometry(1, 1, 1), this.materials.drivewayWall, driveways.length * 2);
+        walls.renderOrder = 10; // after the depth-test-free flat layers, like the medians
+        const matrix = new Matrix4();
+        const along = new Vector3();
+        const up = new Vector3(0, 1, 0);
+        const outward = new Vector3();
+        const size = new Vector3(DRIVEWAY_WALL.lengthM, DRIVEWAY_WALL.heightM, DRIVEWAY_WALL.thicknessM);
+        driveways.forEach((driveway, i) => {
+            const { x, y, outward: o } = driveway;
+            // Local x runs along the kerb, local z out from it: the sim's (x, y) plane is three's (x, z).
+            along.set(o.y, 0, -o.x);
+            outward.set(o.x, 0, o.y);
+            matrix.makeBasis(along, up, outward).setPosition(x + (o.x * DRIVEWAY_DEPTH_M) / 2, 0, y + (o.y * DRIVEWAY_DEPTH_M) / 2);
+            pads.setMatrixAt(i, matrix);
+            for (const [k, side] of [-1, 1].entries()) {
+                const offM = side * (DRIVEWAY_WIDTH_M / 2 + DRIVEWAY_WALL.lengthM / 2);
+                matrix
+                    .makeBasis(along, up, outward)
+                    .scale(size)
+                    .setPosition(x + along.x * offM + o.x * DRIVEWAY_WALL.setbackM, DRIVEWAY_WALL.heightM / 2, y + along.z * offM + o.y * DRIVEWAY_WALL.setbackM);
+                walls.setMatrixAt(i * 2 + k, matrix);
+            }
+        });
+        for (const mesh of [pads, walls]) {
+            mesh.frustumCulled = false;
+            this.scene.add(mesh);
+            this.drivewayMeshes.push(mesh);
+        }
     }
 
     resize() {
@@ -378,6 +476,8 @@ export class Renderer3D {
             pole: new MeshLambertMaterial(),
             housing: new MeshLambertMaterial(),
             median: new MeshLambertMaterial({ side: DoubleSide }),
+            driveway: flat(LAYER_ORDER.asphalt + 0.1),
+            drivewayWall: new MeshLambertMaterial(),
             lens: new MeshBasicMaterial(),
             stopSign: new MeshLambertMaterial({ color: STOP_SIGN_RED }),
             halo: new MeshBasicMaterial({ transparent: true, opacity: 0.32, blending: AdditiveBlending, depthWrite: false }),
@@ -387,7 +487,7 @@ export class Renderer3D {
     applyTheme() {
         const p = PALETTES[this.theme];
         const m = this.materials;
-        for (const key of ['ground', 'pole', 'housing', 'median']) m[key].color.set(p[key]);
+        for (const key of ['ground', 'pole', 'housing', 'median', 'drivewayWall']) m[key].color.set(p[key]);
         m.vehicleTrim.color.set(p.trim);
         m.vehicleSimple.userData.trimColour.value.set(p.trim);
         this.applyFlatColours();
@@ -1211,18 +1311,20 @@ export class Renderer3D {
 /**
  * Column-major Ry(yaw) * S(length, 1, width) with translation, written straight
  * into an instance buffer. Local +x must point along the sim heading (hx, hy),
- * which in three's (x, z) plane means cos = hx, -sin = hy.
+ * which in three's (x, z) plane means cos = hx, -sin = hy. A car fading into a
+ * driveway (`opacity` < 1) shrinks away instead - instances share one material.
  */
 function writeVehicleMatrix(array, index, car) {
     const o = index * 16;
-    const length = car.lengthM ?? 4.5;
-    const width = car.widthM ?? 1.9;
+    const fade = car.opacity ?? 1;
+    const length = (car.lengthM ?? 4.5) * fade;
+    const width = (car.widthM ?? 1.9) * fade;
     array[o] = car.hx * length;
     array[o + 1] = 0;
     array[o + 2] = car.hy * length;
     array[o + 3] = 0;
     array[o + 4] = 0;
-    array[o + 5] = 1;
+    array[o + 5] = fade;
     array[o + 6] = 0;
     array[o + 7] = 0;
     array[o + 8] = -car.hy * width;

@@ -2,8 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\BatchKind;
+use App\Enums\RoutingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Accepts a batch of run summaries in one request - `{ "runs": [ {...}, ... ] }`
@@ -26,6 +29,8 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.batch_started_at' => ['nullable', 'date'],
             'runs.*.seed' => ['required', 'integer'],
             'runs.*.controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
+            'runs.*.routing_mode' => ['sometimes', Rule::enum(RoutingMode::class)],
+            'runs.*.batch_kind' => ['sometimes', Rule::enum(BatchKind::class)],
             'runs.*.power_state' => ['required', 'in:normal,load_shedding'],
             // Null (fixed-time never reads sensors) or one of the four real modes -
             // 'none' is a UI-only option and never a valid stored run.
@@ -69,9 +74,19 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.median_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.p95_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.max_wait_time' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.trips' => ['nullable', 'integer', 'min:0'],
+            'runs.*.mean_trip_time' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.mean_trip_delay' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.pulled_off' => ['nullable', 'integer', 'min:0'],
+            'runs.*.missed_turns' => ['nullable', 'integer', 'min:0'],
+            'runs.*.missed_driveways' => ['nullable', 'integer', 'min:0'],
+            'runs.*.diversion_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'runs.*.routing_stats' => ['nullable', 'array'],
             'runs.*.raw_config_json' => ['required', 'array'],
             'runs.*.warmup_ticks' => ['nullable', 'integer', 'min:0'],
             'runs.*.warmup_stationary' => ['nullable', 'boolean'],
+            'runs.*.warmup_drifting' => ['nullable', 'array'],
+            'runs.*.diagnostics' => ['nullable', 'array'],
         ];
     }
 }

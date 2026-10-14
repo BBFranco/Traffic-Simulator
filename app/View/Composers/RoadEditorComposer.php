@@ -22,7 +22,10 @@ class RoadEditorComposer
                 'corridors' => $data['corridors'] ?? null,
                 'defaultCorridorId' => $data['defaultCorridorId'] ?? null,
                 'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
+                // The shared template batches run on - Destinations warns when the user's layout differs from it.
+                'templateUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'laneUseUrlTemplate' => route('corridors.lane-use.update', ['corridor' => '__ID__']),
+                'routingTiersUrlTemplate' => route('corridors.routing-tiers.update', ['corridor' => '__ID__']),
                 'importUrl' => route('corridors.store'),
                 'deleteUrlTemplate' => route('corridors.destroy', ['corridor' => '__ID__']),
             ],

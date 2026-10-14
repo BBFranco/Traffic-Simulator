@@ -241,7 +241,7 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
 
     async function revert() {
         // eslint-disable-next-line no-alert
-        if (!window.confirm('Put this layout back as it was imported? Every saved lane arrow and turn lane edit on it is lost, and the simulation restarts.')) return;
+        if (!window.confirm('Put this layout back as it was imported? Every saved lane arrow, turn lane and block tier edit on it is lost, and the simulation restarts.')) return;
         isBusy = true;
         render('Reverting…');
         try {

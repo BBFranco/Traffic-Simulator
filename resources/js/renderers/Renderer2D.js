@@ -26,6 +26,10 @@ export class Renderer2D {
         this.inner.resize();
     }
 
+    setDriveways(driveways) {
+        this.inner.setDriveways(driveways);
+    }
+
     setTheme(theme) {
         this.inner.setTheme(theme);
     }

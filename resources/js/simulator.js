@@ -17,20 +17,23 @@
  * it rather than rewrite it.
  */
 
-import { buildLayout } from './sim/corridor.js';
+import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { ARTERIAL_ACCENTS } from './sim/renderer.js';
 import { Renderer2D } from './renderers/Renderer2D.js';
 import { VIEW_2D, VIEW_3D } from './renderers/RendererInterface.js';
-import { SimulationEngine, CHART_SAMPLE_INTERVAL_S } from './sim/engine.js';
-import { Chart, INK, applyChartTheme, baseOptions, lineDataset } from './charts/theme.js';
+import { SimulationEngine } from './sim/engine.js';
+import { LiveMetrics } from './sim/metrics/liveMetrics.js';
+import { LiveStatsPanel } from './sim/metrics/liveStatsPanel.js';
+import { applyChartTheme } from './charts/theme.js';
 import { onThemeChange } from './theme.js';
 import { initTooltips } from './tooltips.js';
+import { initRailAccordion } from './railAccordion.js';
 
 /** Physics timestep - decoupled from render framerate so batch mode (build step 13) reuses the same engine unmodified. */
 const FIXED_DT_S = 0.1;
 
-/** Sentinel node id for the arterial-wide "Total" chip appended to the per-intersection cleared-by-road-section chips. */
-const ARTERIAL_TOTAL_CHIP_ID = 'arterial-total';
+/** Live statistics refresh once a simulated second: every this many fixed ticks. */
+const LIVE_SAMPLE_EVERY_TICKS = Math.round(1 / FIXED_DT_S);
 
 const boot = JSON.parse(document.getElementById('sim-boot').textContent);
 
@@ -93,12 +96,19 @@ const state = {
     busRatio: 0,
     /** Just-for-fun traffic characters - see engine.js's setRandomEvents(). Always off in replays and batch runs. */
     randomEvents: false,
+    /** 'random' (turn dice) or 'destination' (routed trips into driveways) - only offered when the corridor has a `routing` section. */
+    routingMode: 'random',
 };
 
 let layout = null;
 let engine = null;
-let footerChart = null;
-let lastChartSampleCount = 0;
+/** The live statistics collector for the current engine (metrics/liveMetrics.js), and its footer panel. */
+let liveMetrics = null;
+let livePanel = null;
+/** Ticks since the last reset - the 1 Hz live sample counts these, not the float sim clock. */
+let liveTicks = 0;
+/** The newest live sample not yet shown - catch-up can take several per frame, only the last is drawn. */
+let pendingLiveSample = null;
 let accumulatorS = 0;
 let lastFrameMs = null;
 let rafId = null;
@@ -133,10 +143,10 @@ let replay = null;
 const el = {
     canvasWrap: document.getElementById('canvas-wrap'),
     simClock: document.getElementById('sim-clock'),
-    statsChartEmpty: document.getElementById('stats-chart-empty'),
     canvas: document.getElementById('sim-canvas'),
     tooltip: document.getElementById('node-tooltip'),
     outageOverlay: document.getElementById('outage-overlay'),
+    carCard: document.getElementById('car-card'),
     corridorSelect: document.getElementById('corridor-select'),
     corridorDescription: document.getElementById('corridor-description'),
     corridorFacts: document.getElementById('corridor-facts'),
@@ -146,12 +156,15 @@ const el = {
     seedRandomise: document.getElementById('seed-randomise'),
     arterialModeControls: document.getElementById('arterial-mode-controls'),
     demandControls: document.getElementById('demand-controls'),
+    demandMasterInput: document.getElementById('demand-master-input'),
+    demandMasterValue: document.getElementById('demand-master-value'),
     truckRatioInput: document.getElementById('truck-ratio-input'),
     truckRatioValue: document.getElementById('truck-ratio-value'),
     busRatioInput: document.getElementById('bus-ratio-input'),
     busRatioValue: document.getElementById('bus-ratio-value'),
     randomEventsInput: document.getElementById('random-events'),
-    statsColumns: document.getElementById('stats-columns'),
+    destinationRoutingInput: document.getElementById('destination-routing'),
+    liveStats: document.getElementById('live-stats'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
     runToTimeButton: document.getElementById('run-to-time-button'),
@@ -175,6 +188,8 @@ initTooltips();
 const renderer2d = new Renderer2D(el.canvas);
 /** The 2D map's LayoutRenderer - the pan/zoom/hover/layer handlers below drive its camera directly, exactly as before. */
 const renderer = renderer2d.inner;
+
+livePanel = new LiveStatsPanel(el.liveStats, { onSelectCar: (id) => selectCar(id), shortNodeLabel });
 
 /**
  * View switching. Renderers only ever READ engine.snapshot() - switching never
@@ -201,6 +216,9 @@ async function setView(view) {
         renderer3d = new Renderer3D(el.canvasWrap, el.outageOverlay, FIXED_DT_S);
         renderer3d.setTheme(currentTheme);
         if (layout) renderer3d.init(layout);
+        syncDriveways();
+        renderer3d.setFollowCar(followSelected ? selectedCarId : null);
+        watch3dClicks(renderer3d.canvas);
         el.canvas.classList.add('hidden');
         el.tooltip.classList.add('hidden');
         renderer.hoverNodeId = null;
@@ -236,6 +254,49 @@ function logChange(control, value) {
     li.append(key, val);
     el.controlLog.prepend(li);
     while (el.controlLog.children.length > 40) el.controlLog.lastElementChild.remove();
+}
+
+/* ------------------------------------------------------ rail section summaries */
+
+/** Set once the rail accordion is built; call `.refresh()` after changing a control from code (the rail only hears real clicks and inputs). */
+let railAccordion = null;
+
+function selectedText(select) {
+    return select.selectedOptions[0]?.textContent.trim() ?? '';
+}
+
+/** One-line text shown in a collapsed section's header, read from the controls so it can never drift from them. */
+function railSummaries() {
+    return {
+        'rail-scenario': () => `${selectedText(el.corridorSelect)} · seed ${el.seedInput.value}`,
+        'rail-replay': () => selectedText(document.getElementById('replay-family-select')),
+        'rail-signal': () => {
+            const counts = new Map();
+            for (const mode of Object.values(state.arterialModes)) counts.set(mode, (counts.get(mode) ?? 0) + 1);
+            if (counts.size === 1) return `All ${MODE_LABELS[[...counts.keys()][0]]}`;
+            return [...counts].map(([mode, count]) => `${count}× ${MODE_LABELS[mode]}`).join(', ');
+        },
+        'rail-sensing': () => SENSOR_LABELS[state.sensorMode] ?? state.sensorMode,
+        'rail-power': () => {
+            const parts = [state.power.loadShedding ? 'Power cut' : 'Normal'];
+            if (state.power.scheduledOutages) parts.push('scheduled outages');
+            return parts.join(' · ');
+        },
+        'rail-demand': () => {
+            const percent = `${el.demandMasterInput.value}%`;
+            const edited = [...el.demandControls.querySelectorAll('input[data-base]')].some((input) => {
+                const expected = Math.min(Number(input.max), Math.round((Number(input.dataset.base) * Number(el.demandMasterInput.value)) / 100));
+                return Number(input.value) !== (Number(el.demandMasterInput.value) === 100 ? Number(input.dataset.base) : expected);
+            });
+            return edited ? `${percent} · edited` : percent;
+        },
+        'rail-vehicles': () => {
+            const parts = [`Trucks ${Math.round(state.truckRatio * 100)}%`, `Buses ${Math.round(state.busRatio * 100)}%`];
+            if (state.randomEvents) parts.push('events');
+            if (state.routingMode === 'destination') parts.push('destinations');
+            return parts.join(' · ');
+        },
+    };
 }
 
 /* -------------------------------------------------------- generic segmented */
@@ -302,19 +363,26 @@ async function loadCorridor(id, { config = null } = {}) {
     clearCorridorError();
     renderer2d.init(layout);
     renderer3d?.init(layout);
+    syncRoutingControl();
     renderCorridorSummary();
     buildArterialModeControls();
     buildDemandControls();
-    buildStatsColumns();
-    buildFooterChart();
 
     // A different corridor means different nodes/arterials, so the engine
     // (which precomputes stop-line distances per node at construction time)
     // has to be rebuilt from scratch, not just reset.
     engine = new SimulationEngine(layout);
+    engine.setNodeStatsTracking(true); // the hover tooltip's per-junction wait and throughput
     engine.reset(engineResetOptions());
+    // Built after reset(): the collector reads the engine's per-road state for its road table.
+    liveMetrics = new LiveMetrics(engine, { dt: FIXED_DT_S });
+    liveMetrics.wantOverlays = overlaysWanted();
+    engine.setLiveMetrics(liveMetrics);
+    syncDriveways();
     accumulatorS = 0;
 
+    resetLiveStats();
+    livePanel.setContext({ routingActive: engine.routingActive });
     resetRunState();
     await fetchSampleRuns(id);
 
@@ -333,7 +401,23 @@ function engineResetOptions() {
         truckRatio: state.truckRatio,
         busRatio: state.busRatio,
         randomEvents: state.randomEvents,
+        routingMode: state.routingMode,
     };
+}
+
+/** Destination routing is only offered on a corridor that has a `routing` section - anywhere else it falls back to random turning. */
+function syncRoutingControl() {
+    const available = Boolean(layout.routing);
+    if (!available) state.routingMode = 'random';
+    el.destinationRoutingInput.disabled = !available;
+    el.destinationRoutingInput.checked = state.routingMode === 'destination';
+}
+
+/** The driveways cars pull into, drawn only while destination routing is running. */
+function syncDriveways() {
+    const driveways = engine?.routingActive ? engine.routingModel.driveways : null;
+    renderer2d.setDriveways(driveways);
+    renderer3d?.setDriveways(driveways);
 }
 
 async function fetchCorridor(id) {
@@ -347,15 +431,16 @@ async function fetchCorridor(id) {
 
 /**
  * Loads the "replay a batch run" picker's options for the given corridor - one representative
- * run per (controller_mode, power_state, sensor_mode) condition. Called every time a corridor
- * finishes loading (see loadCorridor()) so the picker never offers a run for a corridor that
- * isn't the one currently on screen.
+ * run per (controller_mode, power_state, sensor_mode) condition, from that corridor's latest batch
+ * in the current routing mode. Called every time a corridor finishes loading (see loadCorridor())
+ * or Destination routing is toggled, so the picker never offers a run for a corridor or routing
+ * mode that isn't the one on screen.
  */
 async function fetchSampleRuns(corridorId) {
     if (!el.replayPicker) return; // picker markup not present (should always exist, defensive only)
 
     try {
-        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}`;
+        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}&routing=${state.routingMode}`;
         const response = await fetch(url, { headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const body = await response.json();
@@ -410,11 +495,15 @@ function renderCorridorSummary() {
     el.corridorDescription.setAttribute('aria-label', layout.description || '');
     el.corridorDescription.classList.toggle('hidden', !layout.description);
 
-    const intersections = layout.arterials.reduce((sum, a) => sum + a.intersections.length, 0);
+    // Real roads and junctions by kind (shared with the Results PDF cover) - not the config's road pieces.
+    const counts = corridorCounts(layout);
     const facts = [
-        ['Arterials', layout.arterials.length],
-        ['Signals', intersections],
-        ['Cross-streets', layout.connectors.length],
+        ['Arterials', counts.arterialRoads],
+        ['Side streets', counts.sideRoads],
+        ['Signals', counts.signals],
+        ['Roundabouts', counts.roundabouts],
+        ['All-way stops', counts.allWayStops],
+        ['Stop streets', counts.stopStreets],
     ];
 
     el.corridorFacts.replaceChildren(
@@ -460,7 +549,7 @@ function buildArterialModeControls() {
         segmentedHandlers.set(control, (value) => {
             state.arterialModes[arterial.id] = value;
             engine.setArterialMode(arterial.id, value);
-            updateStatsModeLabels();
+            syncMasterMode();
             logChange(control, value);
         });
 
@@ -468,7 +557,28 @@ function buildArterialModeControls() {
     });
 
     el.arterialModeControls.replaceChildren(...rows);
+    syncMasterMode();
 }
+
+/** The "All arterials" selector shows a mode only while every arterial is on it; mixed leaves it unlit. */
+function syncMasterMode() {
+    const modes = new Set(Object.values(state.arterialModes));
+    const shared = modes.size === 1 ? [...modes][0] : null;
+    document.querySelectorAll('[data-segmented="arterialMode:all"] button[data-value]').forEach((button) => {
+        const active = button.dataset.value === shared;
+        button.dataset.active = active ? 'true' : 'false';
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+segmentedHandlers.set('arterialMode:all', (value) => {
+    for (const arterial of layout.arterials) {
+        state.arterialModes[arterial.id] = value;
+        engine.setArterialMode(arterial.id, value);
+    }
+    buildArterialModeControls();
+    logChange('arterialMode:all', value);
+});
 
 /**
  * Clones the Blade-rendered `<x-segmented>` in `#segmented-template` and rebinds
@@ -499,7 +609,23 @@ function buildDemandControls() {
     const rows = entries.map((entry) => (entry.demand.fluctuation ? buildFluctuatingDemandRow(entry) : buildFlatDemandRow(entry)));
 
     el.demandControls.replaceChildren(...rows);
+    el.demandMasterInput.value = 100;
+    el.demandMasterValue.textContent = '100';
 }
+
+/** Scales every road's demand to a share of what the corridor configures; each row's own slider takes the new value, so per-road edits still work afterwards. */
+el.demandMasterInput.addEventListener('input', () => {
+    const percent = Number(el.demandMasterInput.value);
+    el.demandMasterValue.textContent = percent;
+    el.demandControls.querySelectorAll('input[data-base]').forEach((input) => {
+        const base = Number(input.dataset.base);
+        input.value = percent === 100 ? base : Math.min(Number(input.max), Math.round((base * percent) / 100));
+        input.dispatchEvent(new Event('input'));
+    });
+});
+el.demandMasterInput.addEventListener('change', () => {
+    logChange('demand:all', `${el.demandMasterInput.value}% of configured`);
+});
 
 function buildFlatDemandRow(entry) {
     const row = cloneTemplate('demand-row-template');
@@ -507,6 +633,7 @@ function buildFlatDemandRow(entry) {
 
     const input = row.querySelector('[data-demand-input]');
     const readout = row.querySelector('[data-demand-value]');
+    input.dataset.base = state.demand[entry.id];
     input.value = state.demand[entry.id];
     readout.textContent = state.demand[entry.id];
 
@@ -533,6 +660,8 @@ function buildFluctuatingDemandRow(entry) {
     const minReadout = row.querySelector('[data-demand-min-value]');
     const maxReadout = row.querySelector('[data-demand-max-value]');
 
+    minInput.dataset.base = entry.demand.fluctuation.minPerLanePerMin;
+    maxInput.dataset.base = entry.demand.fluctuation.maxPerLanePerMin;
     minInput.value = entry.demand.fluctuation.minPerLanePerMin;
     maxInput.value = entry.demand.fluctuation.maxPerLanePerMin;
     minReadout.textContent = entry.demand.fluctuation.minPerLanePerMin;
@@ -564,34 +693,6 @@ function updateDemandReadouts() {
     });
 }
 
-function buildStatsColumns() {
-    const columns = layout.arterials.map((arterial, index) => {
-        const column = cloneTemplate('stats-column-template');
-        column.dataset.arterialId = arterial.id;
-        column.querySelector('[data-accent-dot]').style.backgroundColor = accentFor(index);
-        column.querySelector('[data-arterial-name]').textContent = arterial.shortName;
-
-        const chips = column.querySelector('[data-cleared-chips]');
-        const arterialTotalChip = cloneTemplate('cleared-chip-template');
-        arterialTotalChip.querySelector('[data-chip-label]').textContent = 'Total';
-        arterialTotalChip.dataset.nodeId = ARTERIAL_TOTAL_CHIP_ID;
-        chips.replaceChildren(
-            ...arterial.intersections.map((node) => {
-                const chip = cloneTemplate('cleared-chip-template');
-                chip.querySelector('[data-chip-label]').textContent = shortNodeLabel(node);
-                chip.dataset.nodeId = node.id;
-                return chip;
-            }),
-            arterialTotalChip
-        );
-
-        return column;
-    });
-
-    el.statsColumns.replaceChildren(...columns);
-    updateStatsModeLabels();
-}
-
 /** "Pretorius & Hilda" -> "Hilda": the cross street is what distinguishes them. */
 function shortNodeLabel(node) {
     if (node.crossStreetName) return node.crossStreetName.replace(/\s+St$/i, '');
@@ -599,26 +700,173 @@ function shortNodeLabel(node) {
     return (parts[1] ?? node.name).trim();
 }
 
-function updateStatsModeLabels() {
-    el.statsColumns.querySelectorAll('[data-stats-column]').forEach((column) => {
-        const mode = state.arterialModes[column.dataset.arterialId];
-        const badge = column.querySelector('[data-stat="mode"]');
-        if (badge) badge.textContent = MODE_LABELS[mode] ?? mode;
+
+/* ------------------------------------------------------- the picked car */
+
+/**
+ * The car clicked on the map (2D or 3D): the camera follows it and the car card shows its stats, live; under
+ * destination routing the 2D map also draws its route. Cleared by clicking empty map, Esc, the card's close
+ * button, or the car leaving the network. Everything here only reads the engine.
+ */
+let selectedCarId = null;
+let followSelected = true;
+let carCardRefreshedAtMs = 0;
+/** How often the car card's numbers refresh (ms) - often enough to watch, not every frame. */
+const CAR_CARD_REFRESH_MS = 200;
+/** The car card's name for each vehicle type (car.js's VEHICLE_TYPES). */
+const VEHICLE_LABELS = { car: 'Car', truck_small: 'Small truck', truck_medium: 'Medium truck', truck_large: 'Large truck', bus: 'Bus', bmw: 'BMW', ranger: 'Ranger' };
+
+function selectCar(id) {
+    selectedCarId = id;
+    followSelected = true;
+    renderer3d?.setFollowCar(id);
+    carCardRefreshedAtMs = 0;
+    updateSelectedCar();
+    if (activeView === VIEW_2D) renderer.draw();
+}
+
+const formatSeconds = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s` : `${s.toFixed(1)} s`);
+
+function carCardRow(label, value, valueClass = '') {
+    const row = document.createElement('div');
+    row.className = 'flex justify-between gap-3';
+    const name = document.createElement('span');
+    name.className = 'text-slate-500';
+    name.textContent = label;
+    const text = document.createElement('span');
+    text.className = `text-right font-medium text-slate-800 dark:text-slate-100 ${valueClass}`;
+    text.textContent = value;
+    row.append(name, text);
+    return row;
+}
+
+function renderCarCard(info) {
+    const title = document.createElement('div');
+    title.className = 'mb-1.5 flex items-center justify-between gap-2';
+    const name = document.createElement('span');
+    name.className = 'font-semibold text-slate-900 dark:text-slate-100';
+    name.textContent = `${VEHICLE_LABELS[info.vehicleType] ?? info.vehicleType} #${info.id}`;
+    const buttons = document.createElement('span');
+    buttons.className = 'flex items-center gap-1';
+    const follow = document.createElement('button');
+    follow.type = 'button';
+    follow.dataset.active = followSelected ? 'true' : 'false';
+    follow.className = 'rounded border border-slate-300 px-1.5 text-[10px] text-slate-600 data-[active=true]:border-sky-500 data-[active=true]:bg-sky-50 data-[active=true]:text-sky-700 dark:border-slate-700 dark:text-slate-300 dark:data-[active=true]:bg-sky-500/10 dark:data-[active=true]:text-sky-300';
+    follow.textContent = followSelected ? 'Following' : 'Follow';
+    follow.title = 'Keep the camera on this car';
+    follow.addEventListener('click', () => {
+        followSelected = !followSelected;
+        renderer3d?.setFollowCar(followSelected ? selectedCarId : null);
+        carCardRefreshedAtMs = 0;
+        updateSelectedCar();
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'rounded px-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800';
+    close.textContent = '×';
+    close.title = 'Let go of this car (Esc)';
+    close.addEventListener('click', () => selectCar(null));
+    buttons.append(follow, close);
+    title.append(name, buttons);
+
+    const rows = [
+        carCardRow('Where', info.roadName),
+        carCardRow('Speed', info.stoppedNow ? 'stopped' : `${info.speedKph.toFixed(0)} km/h`, info.stoppedNow ? 'text-rose-600 dark:text-rose-400' : ''),
+        carCardRow('Waited so far', `${formatSeconds(info.totalWaitS)}${info.everStopped ? '' : ' (no stops yet)'}`),
+    ];
+    const { trip } = info;
+    if (trip) {
+        rows.push(
+            carCardRow('From', trip.origin),
+            carCardRow('Heading for', trip.destination + (trip.drivewayId ? ` · ${trip.drivewayId}` : '')),
+            ...(trip.intendedDestination ? [carCardRow('First meant for', trip.intendedDestination, 'text-amber-600 dark:text-amber-400')] : []),
+            carCardRow('Trip time', formatSeconds(trip.tripTimeS)),
+            carCardRow('Free-flow trip', formatSeconds(trip.freeFlowS)),
+            carCardRow('Delay so far', formatSeconds(trip.delaySoFarS)),
+            carCardRow('Share of trip waiting', trip.tripTimeS > 0 ? `${Math.round((info.totalWaitS / trip.tripTimeS) * 100)}%` : '—'),
+            carCardRow('Route variant', String(trip.variant)),
+            ...(trip.waitingForGap ? [carCardRow('Now', 'waiting for a gap to turn in')] : [])
+        );
+    } else {
+        const note = document.createElement('p');
+        note.className = 'mt-1 text-[10px] text-slate-500';
+        note.textContent = 'Random turning: this car decides at each junction as it gets there, so it has no destination. Switch on Destination routing to see trips.';
+        rows.push(note);
+    }
+    el.carCard.replaceChildren(title, ...rows);
+}
+
+/**
+ * Every frame: keep the camera on the picked car, refresh its card now and then, and push its route (and the
+ * driveway counts) to the 2D map. A car that has left the network lets go.
+ */
+function updateSelectedCar() {
+    const info = selectedCarId === null || !engine ? null : engine.carInfo(selectedCarId);
+    if (selectedCarId !== null && !info) {
+        selectedCarId = null;
+        renderer3d?.setFollowCar(null);
+    }
+    el.carCard.classList.toggle('hidden', !info);
+    if (info) {
+        if (followSelected && activeView === VIEW_2D) renderer.camera.centreOn(info.point, renderer.camera.scale);
+        const nowMs = performance.now();
+        if (nowMs - carCardRefreshedAtMs >= CAR_CARD_REFRESH_MS) {
+            carCardRefreshedAtMs = nowMs;
+            renderCarCard(info);
+        }
+    }
+
+    if (!engine?.routingActive) {
+        renderer.setRoutingDebug(info ? { routePreview: null, drivewayCounts: null, selectedPoint: info.point } : {});
+        return;
+    }
+    const routePreview = info ? engine.routePreview(selectedCarId) : null;
+    renderer.setRoutingDebug({ routePreview, selectedPoint: info?.point ?? null, drivewayCounts: { in: engine.routingStats.pulledOffByDriveway, out: engine.routingStats.departedByDriveway } });
+}
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && selectedCarId !== null) selectCar(null);
+    // S shows or hides the full live statistics - not while typing, and not with a modifier (browser shortcuts).
+    if ((event.key === 's' || event.key === 'S') && !event.ctrlKey && !event.metaKey && !event.altKey && !isTyping(event.target)) {
+        livePanel.toggle();
+    }
+});
+
+function isTyping(target) {
+    return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+}
+
+/** Clicks on the 3D view pick a car too - OrbitControls owns its drags, so only a press and release in one spot counts. */
+function watch3dClicks(canvas) {
+    let downAt = null;
+    canvas.addEventListener('pointerdown', (event) => {
+        downAt = { x: event.clientX, y: event.clientY };
+    });
+    canvas.addEventListener('pointerup', (event) => {
+        if (downAt && Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y) <= 4 && event.button === 0) selectCar(renderer3d?.pickCar(event.clientX, event.clientY) ?? null);
+        downAt = null;
     });
 }
 
 /* ----------------------------------------------------------- camera control */
 
 let dragging = null;
+let pointerDownAt = null;
 
 el.canvas.addEventListener('pointerdown', (event) => {
     el.canvas.setPointerCapture(event.pointerId);
     dragging = { x: event.clientX, y: event.clientY };
+    pointerDownAt = { x: event.clientX, y: event.clientY };
 });
 
 el.canvas.addEventListener('pointermove', (event) => {
     if (dragging) {
         renderer.camera.panByPixels(event.clientX - dragging.x, event.clientY - dragging.y);
+        // Panning the map yourself stops following the picked car (its card's Follow button picks it up again).
+        if (followSelected && selectedCarId !== null && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) > 4) {
+            followSelected = false;
+            carCardRefreshedAtMs = 0;
+        }
         dragging = { x: event.clientX, y: event.clientY };
         renderer.draw();
         return;
@@ -631,7 +879,15 @@ const endDrag = (event) => {
     dragging = null;
     if (el.canvas.hasPointerCapture(event.pointerId)) el.canvas.releasePointerCapture(event.pointerId);
 };
-el.canvas.addEventListener('pointerup', endDrag);
+el.canvas.addEventListener('pointerup', (event) => {
+    // A click (no drag) on the map picks the car under it - or, on empty map, lets go of the picked one.
+    if (pointerDownAt && Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y) <= 4) {
+        const rect = el.canvas.getBoundingClientRect();
+        selectCar(renderer.hitTestCar({ x: event.clientX - rect.left, y: event.clientY - rect.top })?.id ?? null);
+    }
+    pointerDownAt = null;
+    endDrag(event);
+});
 el.canvas.addEventListener('pointercancel', endDrag);
 
 el.canvas.addEventListener('pointerleave', () => {
@@ -680,6 +936,16 @@ function updateHover(event) {
         renderer.draw();
     }
 
+    hoveredNode = { node, local, rect };
+    renderTooltip();
+}
+
+/** The junction under the pointer, for renderFrame() to keep its tooltip (and timing bar) live while the sim runs. */
+let hoveredNode = null;
+
+function renderTooltip() {
+    if (!hoveredNode || renderer.hoverNodeId !== hoveredNode.node.id) return;
+    const { node, local, rect } = hoveredNode;
     const arterial = layout.arterials.find((a) => a.id === node.arterialId);
     const debug = engine?.signalDebugInfo(node.id);
     const v = 'text-slate-800 dark:text-slate-200';
@@ -703,7 +969,10 @@ function updateHover(event) {
                         ${row('Arterial queue', `${debug.arterialQueue} car${debug.arterialQueue === 1 ? '' : 's'}`)}
                         ${row('Cross queue', `${debug.crossQueue} car${debug.crossQueue === 1 ? '' : 's'}`)}
                         ${row('Next change', escapeHtml(debug.etaLabel))}
-                    </div>`
+                        ${row('Avg wait (last min)', debug.lastMinute?.avgWaitS != null ? `${debug.lastMinute.avgWaitS.toFixed(1)}s` : '—')}
+                        ${row('Throughput (last min)', debug.lastMinute ? `${debug.lastMinute.throughput} veh` : '—')}
+                    </div>
+                    ${signalTimingHtml(debug.timing, arterial.shortName, node.crossStreetName)}`
                     : ''
             }
         </dl>`;
@@ -715,6 +984,73 @@ function updateHover(event) {
     const top = Math.min(local.y + 14, rect.height - box.height - 8);
     el.tooltip.style.left = `${Math.max(8, left)}px`;
     el.tooltip.style.top = `${Math.max(8, top)}px`;
+}
+
+const TIMING_FILL = { green: 'fill-emerald-500', arrow: 'fill-teal-300 dark:fill-teal-400', yellow: 'fill-amber-400', red: 'fill-rose-500' };
+
+/**
+ * The tooltip's timing bar (engine.js's _signalTiming()). Fixed-time / green wave: one bar per
+ * road over the whole cycle, with a cursor at where the junction is in it now. Adaptive: the
+ * current green's window - its minimum, then the extension the detectors can stretch it to.
+ */
+function signalTimingHtml(timing, arterialName, crossName) {
+    if (!timing) return '';
+    const header = (title, right) =>
+        `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 flex justify-between font-medium text-slate-700 dark:text-slate-300"><span>${title}</span><span>${right}</span></div>`;
+
+    if (timing.kind === 'actuated') {
+        const road = escapeHtml(timing.phase === 0 ? arterialName : crossName);
+        const stage = `${road} ${timing.inTurn ? 'turn arrow' : 'green'}`;
+        if (timing.phaseState !== 'green') return header('Actuated stage', `${stage} ending`);
+        const { minS, maxS, elapsedS } = timing;
+        const x = Math.min(elapsedS, maxS);
+        return `${header('Actuated stage', stage)}
+            <svg viewBox="0 0 ${maxS} 6" preserveAspectRatio="none" class="mt-1 block h-2.5 w-full overflow-hidden rounded-sm">
+                <rect x="0" y="0" width="${minS}" height="6" class="${timing.inTurn ? TIMING_FILL.arrow : TIMING_FILL.green}" />
+                <rect x="${minS}" y="0" width="${maxS - minS}" height="6" class="fill-emerald-500/30" />
+                <rect x="0" y="0" width="${x}" height="6" class="fill-slate-900/25 dark:fill-white/25" />
+                <line x1="${x}" x2="${x}" y1="0" y2="6" vector-effect="non-scaling-stroke" stroke-width="2" class="stroke-slate-900 dark:stroke-white" />
+            </svg>
+            <div class="mt-0.5 flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                <span>${elapsedS.toFixed(1)}s · min ${minS.toFixed(0)}s</span>
+                <span>gap-out ${timing.gapOutS}s · max ${maxS.toFixed(0)}s</span>
+            </div>`;
+    }
+
+    const { cycleS, positionS, roads } = timing;
+    const bar = (runs) => {
+        let x = 0;
+        const rects = runs
+            .map((run) => {
+                const rect = `<rect x="${x}" y="0" width="${run.durationS}" height="6" class="${TIMING_FILL[run.state]}" />`;
+                x += run.durationS;
+                return rect;
+            })
+            .join('');
+        return `<svg viewBox="0 0 ${cycleS} 6" preserveAspectRatio="none" class="block h-2.5 w-full overflow-hidden rounded-sm">
+                ${rects}
+                <line x1="${positionS}" x2="${positionS}" y1="0" y2="6" vector-effect="non-scaling-stroke" stroke-width="2" class="stroke-slate-900 dark:stroke-white" />
+            </svg>`;
+    };
+    const totals = (runs) => {
+        const sum = (states) => runs.filter((r) => states.includes(r.state)).reduce((s, r) => s + r.durationS, 0);
+        const arrow = sum(['arrow']);
+        return [
+            `<span class="text-emerald-600 dark:text-emerald-400">${Math.round(sum(['green']))}s green</span>`,
+            ...(arrow ? [`<span class="text-teal-600 dark:text-teal-300">${Math.round(arrow)}s arrow</span>`] : []),
+            `<span class="text-amber-600 dark:text-amber-400">${Math.round(sum(['yellow']))}s amber</span>`,
+            `<span class="text-rose-600 dark:text-rose-400">${Math.round(sum(['red']))}s red</span>`,
+        ].join(' · ');
+    };
+    const roadRow = (label, runs) => `
+        <div class="mt-1">
+            <div class="flex justify-between text-[10px]"><span class="text-slate-600 dark:text-slate-300">${label}</span><span>${totals(runs)}</span></div>
+            <div class="mt-0.5">${bar(runs)}</div>
+        </div>`;
+
+    return `${header('Cycle timing', `${positionS.toFixed(0)} / ${Math.round(cycleS)}s`)}
+        ${roadRow(escapeHtml(arterialName), roads[0])}
+        ${roadRow(escapeHtml(crossName), roads[1])}`;
 }
 
 function escapeHtml(value) {
@@ -736,6 +1072,7 @@ function zoomButton(factor) {
 document.querySelectorAll('input[data-layer]').forEach((input) => {
     input.addEventListener('change', () => {
         renderer.setOptions({ [input.dataset.layer]: input.checked });
+        if (liveMetrics) liveMetrics.wantOverlays = overlaysWanted();
         renderer.draw();
         logChange(`layer:${input.dataset.layer}`, input.checked);
     });
@@ -793,6 +1130,7 @@ function clearCorridorError() {
 /** Full restart at t=0 with the current seed/config - shared by Reset, seed change and seed randomise. */
 function restartEngine() {
     engine.reset(engineResetOptions());
+    syncDriveways();
     accumulatorS = 0;
     lastFrameMs = null;
     // Any in-flight replay's outage-scheduling bookkeeping no longer applies once the engine
@@ -801,7 +1139,8 @@ function restartEngine() {
     // interrupted by a Reset before it could consume (and restore) the flag itself.
     replay = null;
     pauseAfterCatchUp = true;
-    buildFooterChart();
+    resetLiveStats();
+    livePanel.setContext({ routingActive: engine.routingActive });
     resetRunState();
 }
 
@@ -852,6 +1191,14 @@ el.randomEventsInput.addEventListener('change', () => {
     state.randomEvents = el.randomEventsInput.checked;
     engine.setRandomEvents(state.randomEvents);
     logChange('randomEvents', state.randomEvents);
+});
+
+// Trips are assigned as cars spawn, so switching routing restarts the run.
+el.destinationRoutingInput.addEventListener('change', () => {
+    state.routingMode = el.destinationRoutingInput.checked ? 'destination' : 'random';
+    restartEngine();
+    logChange('routingMode', state.routingMode);
+    fetchSampleRuns(state.corridorId); // the replay picker offers that routing mode's latest batch
 });
 
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {
@@ -928,6 +1275,9 @@ async function startReplay(run) {
     state.randomEvents = false;
     el.randomEventsInput.checked = false;
 
+    state.routingMode = layout.routing && run.routing_mode === 'destination' ? 'destination' : 'random';
+    el.destinationRoutingInput.checked = state.routingMode === 'destination';
+
     state.batteryBackedSensors = true;
     document.getElementById('battery-backed-sensors').checked = true;
 
@@ -948,8 +1298,11 @@ async function startReplay(run) {
         state.arterialModes[arterial.id] = run.controller_mode;
     }
     buildArterialModeControls();
+    railAccordion?.refresh();
 
     restartEngine(); // real engine.reset() with all of the above now in `state`
+    // A fixed-time run is its own baseline; any other replay compares against its fixed-time twin.
+    livePanel.setContext({ routingActive: engine.routingActive, replayTwin: run.controller_mode === 'fixed' ? null : run.fixed_twin ?? null });
 
     const config = run.raw_config_json ?? {};
     const warmupTicks = config.warmupTicks ?? 0;
@@ -1072,101 +1425,39 @@ function renderPowerPill(effectiveLoadShedding) {
 /** Clears every stat readout back to the em-dash placeholder. */
 function resetRunState() {
     el.simClock.textContent = '00:00.0';
-    el.statsColumns.querySelectorAll('[data-stat]').forEach((node) => {
-        if (node.dataset.stat !== 'mode') node.textContent = '—';
-    });
-    el.statsColumns.querySelectorAll('[data-chip-value]').forEach((node) => {
-        node.textContent = '—';
-    });
     renderRunPill();
-    updateStatsModeLabels();
 }
 
-/* ------------------------------------------------------------- footer chart */
+/* ------------------------------------------------------------ live statistics */
 
-/**
- * The live throughput chart. `appendChartSampleIfNeeded()` below feeds it a
- * point per arterial every 0.5 sim-seconds from `engine.js`'s cumulative
- * cleared-vehicle count, so the line's slope reads as throughput.
- *
- * Rebuilt whenever the corridor changes - the series are the arterials, so a
- * different corridor means a different legend.
- */
-function buildFooterChart() {
-    const canvas = document.getElementById('stats-chart');
-    if (footerChart) {
-        footerChart.destroy();
-        footerChart = null;
-    }
-    const options = baseOptions({
-        tickFormat: (v) => `${v}`,
-        xTitle: '',
-    });
-    options.layout.padding.top = 10;
-    options.scales.y.suggestedMin = 0;
-    options.plugins.legend = {
-        display: true,
-        position: 'bottom',
-        labels: {
-            boxWidth: 8,
-            boxHeight: 8,
-            usePointStyle: true,
-            pointStyle: 'circle',
-            color: INK.secondary,
-            padding: 12,
-        },
-    };
-
-    footerChart = new Chart(canvas, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                ...(layout?.arterials ?? []).map((arterial, index) =>
-                    lineDataset({ label: arterial.shortName, data: [], colour: accentFor(index) })
-                ),
-                // All arterials summed - appended last so appendChartSampleIfNeeded()
-                // can find it by index without a label lookup.
-                lineDataset({ label: 'Total', data: [], colour: INK.muted }),
-            ],
-        },
-        options,
-    });
-
-    lastChartSampleCount = 0;
-    el.statsChartEmpty?.classList.remove('hidden');
-
-    return footerChart;
+/** Live statistics start over: Reset, a new corridor, a new replay, and a replay's end of warm-up. */
+function resetLiveStats() {
+    liveMetrics?.reset();
+    liveTicks = 0;
+    pendingLiveSample = null;
+    renderer.setLiveOverlays(null);
+    livePanel.reset();
 }
 
-/** Pushes fresh chart points only when the engine actually produced new samples this frame. */
-function appendChartSampleIfNeeded(snapshot) {
-    if (!footerChart || !layout) return;
+function overlaysWanted() {
+    return Boolean(renderer.options.showQueueHeatmap || renderer.options.showDensity);
+}
 
-    const totalSamples = layout.arterials.reduce((n, a) => n + (snapshot.stats[a.id]?.chartSamples.length ?? 0), 0);
-    if (totalSamples === lastChartSampleCount) return;
-    lastChartSampleCount = totalSamples;
+/** Called after every engine tick: a live sample once a simulated second, skipped during a replay's silent warm-up. */
+function sampleLiveStats() {
+    liveTicks += 1;
+    if (liveTicks % LIVE_SAMPLE_EVERY_TICKS !== 0 || (replay && !replay.statsReset)) return;
+    pendingLiveSample = liveMetrics.sample();
+}
 
-    // Labelled in elapsed seconds, not sample index - the sample count keeps
-    // growing for the life of the run, so a raw index reads as if the chart
-    // had stalled once autoSkip starts hiding most of the ticks.
-    const perArterialSamples = layout.arterials.map((a) => snapshot.stats[a.id]?.chartSamples ?? []);
-    const first = perArterialSamples[0] ?? [];
-    footerChart.data.labels = first.map((_, i) => `${i * CHART_SAMPLE_INTERVAL_S}`);
-    footerChart.data.datasets.forEach((dataset, index) => {
-        // The 'Total' dataset is appended after one per arterial - see buildFooterChart().
-        dataset.data =
-            index < perArterialSamples.length
-                ? perArterialSamples[index].slice()
-                : first.map((_, i) => perArterialSamples.reduce((sum, samples) => sum + (samples[i] ?? 0), 0));
-    });
-    footerChart.update('none');
-    el.statsChartEmpty?.classList.toggle('hidden', totalSamples > 0);
+function renderLiveStats() {
+    if (!pendingLiveSample) return;
+    livePanel.update(pendingLiveSample, liveMetrics);
+    renderer.setLiveOverlays(pendingLiveSample.overlays);
+    pendingLiveSample = null;
 }
 
 /* -------------------------------------------------------------- render loop */
-
-const fmtSeconds = (s) => `${s.toFixed(1)}s`;
 
 function updateSimClock(simTimeS) {
     const totalTenths = Math.floor(simTimeS * 10);
@@ -1176,50 +1467,16 @@ function updateSimClock(simTimeS) {
     el.simClock.textContent = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${tenths}`;
 }
 
-function setStat(column, name, text) {
-    const node = column.querySelector(`[data-stat="${name}"]`);
-    if (node) node.textContent = text;
-}
-
-function updateStatsFooter(snapshot) {
-    el.statsColumns.querySelectorAll('[data-stats-column]').forEach((column) => {
-        const arterialId = column.dataset.arterialId;
-        const stats = snapshot.stats[arterialId];
-        if (!stats) return;
-
-        setStat(column, 'avgWaitNow', fmtSeconds(stats.avgWaitNow));
-        setStat(column, 'avgWaitRolling', fmtSeconds(stats.avgWaitRolling));
-        setStat(column, 'throughput', String(stats.throughputPerMin));
-        setStat(column, 'onRoad', String(stats.onRoad));
-        setStat(
-            column,
-            'clearedWithoutStop',
-            stats.clearedWithoutStopPct == null ? '—' : `${Math.round(stats.clearedWithoutStopPct)}%`
-        );
-
-        // Precise cumulative counts straight from the engine's own bookkeeping,
-        // not a sensor reading - unlike the queue chips these used to be, power
-        // cuts never blank these. The arterial's own "Total" chip is the whole
-        // road's clear count (clearedTotal), not a per-intersection section.
-        column.querySelectorAll('[data-cleared-chips] > [data-node-id]').forEach((chipEl) => {
-            const valueEl = chipEl.querySelector('[data-chip-value]');
-            if (!valueEl) return;
-            const nodeId = chipEl.dataset.nodeId;
-            const value = nodeId === ARTERIAL_TOTAL_CHIP_ID ? stats.clearedTotal : stats.clearedByNode[nodeId];
-            valueEl.textContent = value == null ? '—' : String(value);
-        });
-    });
-}
-
 /** One frame: push the engine's latest state into the canvas, footer stats and chart. */
 function renderFrame(snapshot) {
+    updateSelectedCar();
     // alpha = progress towards the next tick; the 2D map ignores it, the 3D view interpolates with it.
     activeRenderer().update(snapshot, accumulatorS / FIXED_DT_S);
-    updateStatsFooter(snapshot);
+    renderLiveStats();
     updateSimClock(snapshot.simTimeS);
     renderPowerPill(snapshot.powerState === 'load_shedding');
-    appendChartSampleIfNeeded(snapshot);
     updateDemandReadouts();
+    if (!el.tooltip.classList.contains('hidden')) renderTooltip();
 }
 
 /**
@@ -1281,6 +1538,7 @@ function animate(nowMs) {
  */
 function tickEngine() {
     engine.tick(FIXED_DT_S);
+    sampleLiveStats();
     if (!replay) return;
 
     replay.ticks += 1;
@@ -1288,6 +1546,7 @@ function tickEngine() {
 
     if (!replay.statsReset && measuredTick >= 0) {
         engine.resetStats();
+        resetLiveStats();
         replay.statsReset = true;
         logChange('replay', 'warm-up complete, stats reset');
     }
@@ -1330,7 +1589,7 @@ function tickEngine() {
         renderer2d.setTheme(theme);
         renderer3d?.setTheme(theme);
         applyChartTheme(theme);
-        if (!firstThemeCall) buildFooterChart();
+        if (!firstThemeCall) livePanel.setTheme();
         firstThemeCall = false;
     });
 
@@ -1341,6 +1600,8 @@ function tickEngine() {
         console.error('Corridor failed to load', error);
         showCorridorError(error.message);
     }
+
+    railAccordion = initRailAccordion(document.getElementById('sim-rail'), railSummaries());
 
     renderRunPill();
     rafId = requestAnimationFrame(animate);

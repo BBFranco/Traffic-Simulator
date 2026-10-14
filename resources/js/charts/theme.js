@@ -278,39 +278,44 @@ export const lineEndLabels = {
  *
  * `from`/`to` are CATEGORY INDICES, not axis values: on a category scale
  * `getPixelForValue` takes an index, so passing seconds would place the band far
- * off-canvas. Callers resolve the index from their label array.
+ * off-canvas. Callers resolve the index from their label array. Several windows
+ * (the live panel's scheduled outages) go in `bands: [{ from, to }]`, sharing
+ * one `label`.
  */
 export const xRangeBand = {
     id: 'xRangeBand',
     beforeDatasetsDraw(chart, _args, opts) {
-        if (!opts || opts.from === undefined || opts.to === undefined) return;
-        if (opts.from < 0 || opts.to < 0) return;
+        if (!opts) return;
+        const bands = opts.bands ?? (opts.from === undefined || opts.to === undefined ? [] : [{ from: opts.from, to: opts.to }]);
         const { ctx, chartArea, scales } = chart;
-        const x0 = scales.x.getPixelForValue(opts.from);
-        const x1 = scales.x.getPixelForValue(opts.to);
-        if (!Number.isFinite(x0) || !Number.isFinite(x1)) return;
+        for (const band of bands) {
+            if (band.from < 0 || band.to < 0) continue;
+            const x0 = scales.x.getPixelForValue(band.from);
+            const x1 = scales.x.getPixelForValue(band.to);
+            if (!Number.isFinite(x0) || !Number.isFinite(x1)) continue;
 
-        ctx.save();
-        ctx.fillStyle = opts.fill ?? INK.bandFill;
-        ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
+            ctx.save();
+            ctx.fillStyle = opts.fill ?? INK.bandFill;
+            ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
 
-        ctx.strokeStyle = opts.stroke ?? INK.bandStroke;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x0, chartArea.top);
-        ctx.lineTo(x0, chartArea.bottom);
-        ctx.moveTo(x1, chartArea.top);
-        ctx.lineTo(x1, chartArea.bottom);
-        ctx.stroke();
+            ctx.strokeStyle = opts.stroke ?? INK.bandStroke;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x0, chartArea.top);
+            ctx.lineTo(x0, chartArea.bottom);
+            ctx.moveTo(x1, chartArea.top);
+            ctx.lineTo(x1, chartArea.bottom);
+            ctx.stroke();
 
-        if (opts.label) {
-            ctx.font = "600 9px Figtree, ui-sans-serif, system-ui, sans-serif";
-            ctx.fillStyle = INK.bandLabel;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            ctx.fillText(opts.label, (x0 + x1) / 2, chartArea.top + 3);
+            if (opts.label) {
+                ctx.font = "600 9px Figtree, ui-sans-serif, system-ui, sans-serif";
+                ctx.fillStyle = INK.bandLabel;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText(opts.label, (x0 + x1) / 2, chartArea.top + 3);
+            }
+            ctx.restore();
         }
-        ctx.restore();
     },
 };
 

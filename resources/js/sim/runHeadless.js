@@ -13,7 +13,9 @@
  * with the returned rows/summary.
  */
 import { buildLayout } from './corridor.js';
-import { SimulationEngine } from './engine.js';
+import { SimulationEngine, WAIT_ACCOUNTING } from './engine.js';
+import { controllerConfigFor } from './controllers/phasePlan.js';
+import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
 const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
@@ -38,7 +40,11 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  *                             and every summary stat are scoped to this window only
  * @param dt                   physics timestep in seconds (must match the live sim's FIXED_DT_S for the sanity-check comparison in build step 13 to be meaningful)
  * @param sampleEverySeconds   how often (sim time) to emit a CSV row - spec explicitly says not literally every tick
- * @returns { rows: object[], sideStreetRows: object[], summary: object }
+ * @param routingMode          'random' | 'destination' - overrides the corridor's own `routing.mode` for this run;
+ *                             null keeps the corridor's (random when it has no `routing` section)
+ * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
+ * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
+ *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
 export function runHeadless({
     seed,
@@ -51,6 +57,8 @@ export function runHeadless({
     durationTicks,
     dt = 0.1,
     sampleEverySeconds = 1,
+    routingMode = null,
+    websterTurnWeight = false,
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -72,14 +80,19 @@ export function runHeadless({
         sensorMode,
         batteryBackedSensors: true,
         power: { loadShedding: false, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
+        routingMode,
+        websterTurnWeight,
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
     const rows = [];
     const sideStreetRows = [];
+    const totalRows = [];
+    const arterialScopeRows = [];
     let outageStarted = false;
     let outageEnded = false;
     let statsReset = warmupTicks <= 0;
+    let accountingAtMeasureStart = { ...engine.accounting };
 
     const totalTicks = warmupTicks + durationTicks;
     for (let tick = 0; tick < totalTicks; tick += 1) {
@@ -88,6 +101,7 @@ export function runHeadless({
         if (!statsReset && measuredTick >= 0) {
             engine.resetStats();
             statsReset = true;
+            accountingAtMeasureStart = { ...engine.accounting };
         }
 
         if (powerOutageStartTick != null && !outageStarted && measuredTick >= powerOutageStartTick) {
@@ -146,6 +160,26 @@ export function runHeadless({
                     snap.sideStreet.clearedWithoutStopPct == null ? '' : round(snap.sideStreet.clearedWithoutStopPct, 1),
                 powerState: snap.powerState,
             });
+
+            arterialScopeRows.push({
+                tick: measuredTick,
+                avgWaitTime: round(snap.arterialScope.avgWaitRolling, 3),
+                throughputPerMin: snap.arterialScope.throughputPerMin,
+                clearedTotal: snap.arterialScope.clearedTotal,
+                waitSumTotal: snap.arterialScope.waitSumTotal,
+                clearedWithoutStopping: snap.arterialScope.clearedWithoutStopPct == null ? '' : round(snap.arterialScope.clearedWithoutStopPct, 1),
+                powerState: snap.powerState,
+            });
+
+            totalRows.push({
+                tick: measuredTick,
+                avgWaitTime: round(snap.total.avgWaitRolling, 3),
+                throughputPerMin: snap.total.throughputPerMin,
+                clearedTotal: snap.total.clearedTotal,
+                waitSumTotal: snap.total.waitSumTotal,
+                clearedWithoutStopping: snap.total.clearedWithoutStopPct == null ? '' : round(snap.total.clearedWithoutStopPct, 1),
+                powerState: snap.powerState,
+            });
         }
     }
 
@@ -164,10 +198,13 @@ export function runHeadless({
         dt,
         rows,
         sideStreetRows,
+        totalRows,
+        arterialScopeRows,
         accounting,
+        accountingAtMeasureStart,
     });
 
-    return { rows, sideStreetRows, summary };
+    return { rows, sideStreetRows, totalRows, arterialScopeRows, summary };
 }
 
 function buildSummary({
@@ -184,7 +221,10 @@ function buildSummary({
     dt,
     rows,
     sideStreetRows,
+    totalRows,
+    arterialScopeRows,
     accounting,
+    accountingAtMeasureStart,
 }) {
     const finalSnap = engine.snapshot();
     const durationSeconds = durationTicks * dt;
@@ -201,8 +241,8 @@ function buildSummary({
     const perArterial = arterialBuckets.map(({ id, s }) => {
         return {
             id,
-            avgWaitTime: s.clearedTotal ? s.waitSumTotal / s.clearedTotal : 0,
-            throughputPerMin: s.clearedTotal / (durationSeconds / 60),
+            avgWaitTime: avgWait(s.waitSumTotal, s.clearedTotal),
+            throughputPerMin: perMin(s.clearedTotal, durationSeconds),
             clearedTotal: s.clearedTotal,
             waitSumTotal: s.waitSumTotal,
             clearedWithoutStopTotal: s.clearedWithoutStopTotal,
@@ -216,45 +256,42 @@ function buildSummary({
     // weighted by each arterial's own cleared count so a busier arterial
     // counts for more, not an unweighted average of two possibly very
     // different sample sizes.
-    const clearedTotalArterial = perArterial.reduce((sum, a) => sum + a.clearedTotal, 0);
-    const waitSumTotalArterial = perArterial.reduce((sum, a) => sum + a.waitSumTotal, 0);
-    const clearedWithoutStopTotalArterial = perArterial.reduce((sum, a) => sum + a.clearedWithoutStopTotal, 0);
-    const throughputPerMinArterial = perArterial.reduce((sum, a) => sum + a.throughputPerMin, 0);
-    const avgWaitTimeArterial = clearedTotalArterial ? waitSumTotalArterial / clearedTotalArterial : 0;
-    const pctClearedWithoutStopArterial = clearedTotalArterial
-        ? (clearedWithoutStopTotalArterial / clearedTotalArterial) * 100
-        : null;
+    // The engine's arterial-scope bucket: a trip along two arterials is one vehicle, not two.
+    const arterialScope = finalSnap.arterialScope;
+    const clearedTotalArterial = arterialScope.clearedTotal;
+    const waitSumTotalArterial = arterialScope.waitSumTotal;
+    const clearedWithoutStopTotalArterial = arterialScope.clearedWithoutStopTotal;
+    const throughputPerMinArterial = perMin(clearedTotalArterial, durationSeconds);
+    const avgWaitTimeArterial = avgWait(waitSumTotalArterial, clearedTotalArterial);
+    const pctClearedWithoutStopArterial = zeroStopPct(clearedWithoutStopTotalArterial, clearedTotalArterial);
 
     // Side-street scope: the engine already keeps one combined bucket across
     // every connector (see engine.js's `sideStreetStats`), so no further
     // aggregation is needed here.
     const sideStreet = finalSnap.sideStreet;
-    const avgWaitTimeSideStreet = sideStreet.clearedTotal ? sideStreet.waitSumTotal / sideStreet.clearedTotal : 0;
-    const throughputPerMinSideStreet = sideStreet.clearedTotal / (durationSeconds / 60);
+    const avgWaitTimeSideStreet = avgWait(sideStreet.waitSumTotal, sideStreet.clearedTotal);
+    const throughputPerMinSideStreet = perMin(sideStreet.clearedTotal, durationSeconds);
 
-    // Total scope: arterial + side-street blended, weighted by each scope's
-    // own cleared count - same weighting principle as the arterial-only
-    // aggregation above, just one level up.
-    const clearedTotal = clearedTotalArterial + sideStreet.clearedTotal;
-    const waitSumTotal = waitSumTotalArterial + sideStreet.waitSumTotal;
-    const clearedWithoutStopTotal = clearedWithoutStopTotalArterial + sideStreet.clearedWithoutStopTotal;
-    const throughputPerMin = throughputPerMinArterial + throughputPerMinSideStreet;
-    const avgWaitTime = clearedTotal ? waitSumTotal / clearedTotal : 0;
-    const pctClearedWithoutStop = clearedTotal ? (clearedWithoutStopTotal / clearedTotal) * 100 : null;
+    // Total scope: the engine's own every-vehicle-once bucket - not arterial + side street, since
+    // a trip can use both and is counted in each it used (engine.js's WAIT_ACCOUNTING).
+    const total = finalSnap.total;
+    const clearedTotal = total.clearedTotal;
+    const waitSumTotal = total.waitSumTotal;
+    const clearedWithoutStopTotal = total.clearedWithoutStopTotal;
+    const throughputPerMin = perMin(clearedTotal, durationSeconds);
+    const avgWaitTime = avgWait(waitSumTotal, clearedTotal);
+    const pctClearedWithoutStop = zeroStopPct(clearedWithoutStopTotal, clearedTotal);
 
-    const totalCumulativeByTick = buildTotalCumulativeByTick(rows, sideStreetRows);
-    const arterialCumulativeByTick = buildCumulativeByTick(rows);
+    const totalCumulativeByTick = buildCumulativeByTick(totalRows);
+    const arterialCumulativeByTick = buildCumulativeByTick(arterialScopeRows);
     const sideStreetCumulativeByTick = buildCumulativeByTick(sideStreetRows);
-    const arterialByTick = buildByTickThroughput(rows);
+    const arterialByTick = buildByTickThroughput(arterialScopeRows);
     const sideStreetByTick = buildByTickThroughput(sideStreetRows);
-    const totalByTick = new Map(arterialByTick);
-    for (const [tick, value] of sideStreetByTick) {
-        totalByTick.set(tick, (totalByTick.get(tick) ?? 0) + value);
-    }
+    const totalByTick = buildByTickThroughput(totalRows);
 
-    const arterialWaitByTick = buildByTickWeightedAvgWait([rows]);
+    const arterialWaitByTick = buildByTickWeightedAvgWait([arterialScopeRows]);
     const sideStreetWaitByTick = buildByTickWeightedAvgWait([sideStreetRows]);
-    const totalWaitByTick = buildByTickWeightedAvgWait([rows, sideStreetRows]);
+    const totalWaitByTick = buildByTickWeightedAvgWait([totalRows]);
 
     // Pre-outage / during-outage / post-recovery segmented total-scope averages - only
     // meaningful (non-null) for a bounded-outage run. Computed from cumulative counters at
@@ -303,6 +340,10 @@ function buildSummary({
     return {
         seed,
         controllerMode,
+        routingMode: engine.routingMode,
+        /** Destination routing's trip counters over the measured window - null for a random-turning run. */
+        routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures, engine.simTimeS) : null,
+        diagnostics: measuredDiagnostics(engine, accountingAtMeasureStart),
         powerState: powerOutageStartTick != null ? 'load_shedding' : 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         corridorConfig: corridorConfig.id,
@@ -361,7 +402,68 @@ function buildSummary({
             corridorConfig: corridorConfig.id,
             durationTicks,
             dt,
+            routingMode: engine.routingMode,
+            waitAccounting: WAIT_ACCOUNTING,
+            controllerConfig: controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+            /** Which destination tiers the corridor carried (routing.blocks) - null without a routing section. */
+            routingTiersHash: tiersHash(layout.routing),
+            /** Sensitivity-sweep settings (batch/runBatch.mjs) - 1 and null on an ordinary batch. */
+            demandScale: corridorConfig.demandScale ?? 1,
+            endToEndShare: layout.routing?.endToEndShare ?? null,
         },
+    };
+}
+
+/** Short FNV-1a hash of every block's id and tier, so two batches with edited tiers read as different. */
+function tiersHash(routing) {
+    if (!routing) return null;
+    const text = routing.blocks.map((block) => `${block.id}:${block.tier}:${block.weightShare}`).join('|');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+        h ^= text.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * Over the measured window: demand lost at map-edge entries with no room for it (expected arrivals - a blocked entry lets
+ * one car in once it clears, the rest never arrive), and cars that left the network while a roundabout still counted them
+ * as on its ring (the overrun _updateRoundaboutReleases() prevents - should stay 0).
+ */
+function measuredDiagnostics(engine, atMeasureStart) {
+    return {
+        arrivalsLost: Math.round(engine.accounting.arrivalsLost - atMeasureStart.arrivalsLost),
+        roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
+        lockup: engine.lockupWatch.report(),
+    };
+}
+
+function routingSummary(stats, departures, nowS) {
+    return {
+        trips: stats.trips,
+        meanTripS: meanTripS(stats),
+        meanTripDelayS: meanTripDelayS(stats),
+        toExit: stats.toExit,
+        pulledOff: stats.pulledOff,
+        divertedPct: divertedPct(stats),
+        missedTurns: stats.missedTurns,
+        missedBy: stats.missedBy,
+        rerouted: stats.rerouted,
+        pulledOffByBlock: stats.pulledOffByBlock,
+        missedDriveways: stats.missedDriveways,
+        missedDrivewaysBy: stats.missedDrivewaysBy,
+        drivewayFallbacks: stats.drivewayFallbacks,
+        pulledOffByDriveway: stats.pulledOffByDriveway,
+        departed: stats.departed,
+        departedByDriveway: stats.departedByDriveway,
+        /** Cars still waiting in a driveway to pull out when the run ended - a road too busy to leave onto shows up here. */
+        departuresWaiting: carsInDriveways(departures),
+        /** Mean time a car that pulled out had waited in its driveway first - in neither its trip nor any wait metric. */
+        meanDrivewayWaitS: meanDrivewayWaitS(stats),
+        /** Longest any car still in a driveway at the end had been waiting there. */
+        longestDrivewayWaitS: Math.max(0, ...departures.map((d) => (d.waiting.length ? nowS - d.waiting[0].queuedAtS : 0))),
+        departuresWaitingByDriveway: Object.fromEntries(departures.filter((d) => d.waiting.length).map((d) => [d.origin.dirId, d.waiting.length])),
     };
 }
 
@@ -412,19 +514,6 @@ function buildCumulativeByTick(rows) {
     return byTick;
 }
 
-/** Total-scope (arterial + side-street) cumulative {clearedTotal, waitSumTotal} at every sampled tick. */
-function buildTotalCumulativeByTick(rows, sideStreetRows) {
-    const byTick = buildCumulativeByTick(rows);
-    for (const [tick, entry] of buildCumulativeByTick(sideStreetRows)) {
-        const existing = byTick.get(tick) ?? { clearedTotal: 0, waitSumTotal: 0 };
-        byTick.set(tick, {
-            clearedTotal: existing.clearedTotal + entry.clearedTotal,
-            waitSumTotal: existing.waitSumTotal + entry.waitSumTotal,
-        });
-    }
-    return byTick;
-}
-
 /** Cumulative {clearedTotal, waitSumTotal} as of the latest sampled tick at or before `tick`, or zero before the first sample. */
 function cumulativeAtOrBefore(cumulativeByTick, tick) {
     if (tick <= 0) return { clearedTotal: 0, waitSumTotal: 0 };
@@ -451,8 +540,8 @@ function segmentStats(cumulativeByTick, fromTick, toTick, dt, finalCumulative = 
     const seconds = (toTick - fromTick) * dt;
 
     return {
-        avgWaitTime: clearedDelta > 0 ? waitDelta / clearedDelta : null,
-        throughputPerMin: seconds > 0 ? clearedDelta / (seconds / 60) : null,
+        avgWaitTime: clearedDelta > 0 ? avgWait(waitDelta, clearedDelta) : null,
+        throughputPerMin: seconds > 0 ? perMin(clearedDelta, seconds) : null,
         clearedTotal: clearedDelta,
     };
 }

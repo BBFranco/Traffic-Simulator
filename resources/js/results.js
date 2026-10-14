@@ -39,6 +39,8 @@ import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from './sim/batchSchedule.js';
+import { describeLayoutDrift } from './sim/layoutDrift.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
@@ -368,15 +370,12 @@ onThemeChange((theme) => {
  * (sim/batchWorker.js) so the page stays responsive while it works.
  */
 const REPS_PER_CONDITION = 30;
-const DURATION_TICKS = 24000; // 40 measured simulated minutes per run at DT=0.1s
+const DURATION_TICKS = MEASURED_TICKS; // sim/batchSchedule.js: 90 measured minutes, 60 of them after the power comes back
 // Warm-up (run BEFORE anything is measured, discarded from every stat - see
 // engine.js's resetStats()) is measured per corridor before each batch by
 // sim/warmupProbe.js, not a constant: 360 s suits the small corridors, the
 // 54-junction network needs tens of minutes.
-// Load-shedding conditions cut power a quarter of the way into the MEASURED window
-// and restore it at the halfway mark - see batch/runBatch.mjs's matching default schedule.
-const POWER_OUTAGE_START_TICK = Math.round(DURATION_TICKS * 0.25);
-const POWER_OUTAGE_END_TICK = Math.round(DURATION_TICKS * 0.5);
+// Load-shedding conditions cut power 15 min into the MEASURED window and restore it at 30 min (sim/batchSchedule.js).
 const DT = 0.1;
 const BASE_SEED = 20260101;
 /** Batch the network writes - don't POST 360 times (build step 17). */
@@ -401,7 +400,7 @@ batchButton?.addEventListener('click', () => openBatchModal());
  * @param {Record<string, {min: number, max: number, saturationFlowPerLanePerHour: number}>} demandOverrides
  *   Keyed by street id (arterial or connector), spec §10-11.
  */
-async function runBatch(demandOverrides) {
+async function runBatch(demandOverrides, routingMode = 'random') {
     if (batchRunning) return;
     batchRunning = true;
     batchButton.disabled = true;
@@ -424,7 +423,7 @@ async function runBatch(demandOverrides) {
         const batchStartedAt = new Date().toISOString();
         const totalRuns = matrix.length * REPS_PER_CONDITION;
 
-        const warmup = await probeWarmup(pool, corridorConfig);
+        const warmup = await probeWarmup(pool, corridorConfig, routingMode);
 
         let completed = 0;
         let pending = [];
@@ -448,6 +447,7 @@ async function runBatch(demandOverrides) {
                     corridorConfig,
                     durationTicks: DURATION_TICKS,
                     dt: DT,
+                    routingMode,
                 },
             }))
         );
@@ -472,17 +472,17 @@ async function runBatch(demandOverrides) {
             for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
                 topUp(jobIndex);
                 // eslint-disable-next-line no-await-in-loop
-                const { rows, sideStreetRows, summary } = await jobs[jobIndex].result;
+                const { sideStreetRows, totalRows, arterialScopeRows, summary } = await jobs[jobIndex].result;
                 jobs[jobIndex] = null; // let its rows go
                 jobIndex += 1;
 
-                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, batchStartedAt }));
+                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build: __BUILD_STAMP__ }));
 
                 // Every rep of a load-shedding condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
                 // card does - posted once after the last rep, not batched with the summary POSTs.
                 if (condition.powerState === 'load_shedding') {
-                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { rows, sideStreetRows });
+                    recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { totalRows, arterialScopeRows, sideStreetRows });
                 }
 
                 if (pending.length >= POST_BATCH_SIZE) {
@@ -499,6 +499,7 @@ async function runBatch(demandOverrides) {
                         dt: DT,
                         powerOutageStartTick: POWER_OUTAGE_START_TICK,
                         powerOutageEndTick: POWER_OUTAGE_END_TICK,
+                        routingMode,
                     })
                 );
             }
@@ -508,6 +509,9 @@ async function runBatch(demandOverrides) {
         if (pending.length) await postSimulationRuns(pending);
 
         if (batchProgressLabel) batchProgressLabel.textContent = 'Refreshing charts...';
+        // Show what was just run: its routing mode's latest batch.
+        const routingFilter = document.getElementById('filter-routing');
+        if (routingFilter) routingFilter.value = routingMode;
         await refreshAggregatesAndRerender();
         celebrateBatchComplete(totalRuns);
     } catch (error) {
@@ -566,7 +570,7 @@ function createBatchWorker() {
  * controller's runs averaged in seed order and the slowest levelling-off point
  * plus margin taken. Logged to the console so the choice can be checked.
  */
-async function probeWarmup(pool, corridorConfig) {
+async function probeWarmup(pool, corridorConfig, routingMode) {
     const conditions = probeConditions();
     const seeds = Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(BASE_SEED, 'normal', rep));
     const totalRuns = conditions.length * seeds.length;
@@ -579,7 +583,7 @@ async function probeWarmup(pool, corridorConfig) {
         conditions.map(async (condition) => {
             const runs = await Promise.all(
                 seeds.map((seed) =>
-                    pool.run('probeSeries', { ...condition, corridorConfig, seed, dt: DT }).then((series) => {
+                    pool.run('probeSeries', { ...condition, corridorConfig, seed, dt: DT, routingMode }).then((series) => {
                         finished += 1;
                         showProgress();
                         return series;
@@ -595,8 +599,11 @@ async function probeWarmup(pool, corridorConfig) {
     return warmup;
 }
 
-/** One worker per core, less one for the page itself; capped so a big machine never holds dozens of runs' rows at once. */
-const MAX_BATCH_WORKERS = 12;
+/**
+ * One worker per logical core, less one for the page itself; capped so a big machine never holds dozens of runs' rows
+ * at once (~210 MB each). On 8 cores / 16 threads, 15 workers clear ~6% more than 12 (2026-10-13 benchmark).
+ */
+const MAX_BATCH_WORKERS = 15;
 function batchWorkerCount() {
     return Math.max(1, Math.min(MAX_BATCH_WORKERS, (navigator.hardwareConcurrency || 2) - 1));
 }
@@ -762,13 +769,39 @@ async function openBatchModal() {
     batchModalBackdrop?.classList.remove('hidden');
     batchModalStreets.innerHTML = '<p class="text-xs text-slate-400">Loading corridor…</p>';
 
+    renderBatchModalDrift([]);
+
     try {
         const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
-        const corridorConfig = await fetchCorridor(corridorId);
+        const [corridorConfig, savedLayout] = await Promise.all([fetchCorridor(corridorId), fetchSavedLayout(corridorId)]);
         renderBatchModalStreets(corridorConfig, corridorId);
+        renderBatchModalDrift(savedLayout ? describeLayoutDrift(savedLayout, corridorConfig) : []);
     } catch (error) {
         batchModalStreets.innerHTML = `<p class="text-xs text-red-600 dark:text-red-400">${error.message}</p>`;
     }
+}
+
+/** The user's own copy of the corridor (Road Editor / Simulator) - null when they have none under that id, or it can't be loaded. */
+async function fetchSavedLayout(id) {
+    try {
+        const response = await fetch(data.savedLayoutUrlTemplate.replace('__ID__', encodeURIComponent(id)), { headers: { Accept: 'application/json' } });
+        return response.ok ? await response.json() : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Warns that the batch runs on the template, not the Road Editor's edits, when the two differ. */
+function renderBatchModalDrift(parts) {
+    const box = document.getElementById('batch-modal-drift');
+    if (!box) return;
+    box.classList.toggle('hidden', parts.length === 0);
+    box.replaceChildren();
+    if (!parts.length) return;
+    const strong = document.createElement('strong');
+    strong.className = 'font-semibold';
+    strong.textContent = 'Your saved layout differs from the template this batch runs on: ';
+    box.append(strong, `${parts.join(', ')}. The batch uses the template file (corridors/*.json), not your Road Editor edits - copy them into the template first if they should count.`);
 }
 
 function closeBatchModal() {
@@ -850,8 +883,9 @@ document.getElementById('batch-modal-confirm')?.addEventListener('click', () => 
             saturationFlowPerLanePerHour: Number(row.querySelector('input[data-field="saturation"]').value),
         };
     });
+    const routingMode = document.getElementById('batch-modal-destination')?.checked ? 'destination' : 'random';
     closeBatchModal();
-    runBatch(overrides);
+    runBatch(overrides, routingMode);
 });
 
 /** Clones corridorConfig and overwrites each street's demand with the modal's values. */
@@ -918,12 +952,21 @@ async function postRecoveryTicks(payload) {
 async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     const url = params.toString() ? `${data.resultsDataUrl}?${params}` : data.resultsDataUrl;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!response.ok) return;
+    if (!response.ok) throw new Error(`GET ${data.resultsDataUrl} -> ${response.status}`);
 
     const fresh = await response.json();
     Object.assign(data, fresh);
     rebuildByKey();
     document.getElementById('non-stationary-banner')?.classList.toggle('hidden', !fresh.hasNonStationaryBatch);
+    document.getElementById('non-stationary-culprit')?.classList.toggle('hidden', !fresh.warmupDriftingLabel);
+    const culpritLabel = document.getElementById('non-stationary-culprit-label');
+    if (culpritLabel) culpritLabel.textContent = fresh.warmupDriftingLabel ?? '';
+    document.getElementById('lockup-banner')?.classList.toggle('hidden', !fresh.lockupLabel);
+    const lockupLabel = document.getElementById('lockup-label');
+    if (lockupLabel) lockupLabel.textContent = fresh.lockupLabel ?? '';
+    document.getElementById('starved-banner')?.classList.toggle('hidden', !fresh.starvedLabel);
+    const starvedLabel = document.getElementById('starved-label');
+    if (starvedLabel) starvedLabel.textContent = fresh.starvedLabel ?? '';
 
     if (fresh.html) {
         const setHtml = (id, html) => {
@@ -933,6 +976,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
         setHtml('batch-summary', fresh.html.batchSummary);
         setHtml('research-question-cards', fresh.html.researchQuestionCards);
         setHtml('metric-section-groups', fresh.html.metricSectionGroups);
+        setHtml('routing-metrics', fresh.html.routingMetrics);
 
         const perConditionBody = document.querySelector('#per-condition-table tbody');
         if (perConditionBody) perConditionBody.innerHTML = fresh.html.perConditionRows;
@@ -968,15 +1012,22 @@ function currentFilterParams() {
     const params = new URLSearchParams();
     const corridor = document.getElementById('filter-corridor')?.value;
     if (corridor) params.set('corridor', corridor);
+    const routing = document.getElementById('filter-routing')?.value;
+    if (routing && routing !== 'random') params.set('routing', routing);
     return params;
 }
 
-document.getElementById('filter-corridor')?.addEventListener('change', () => {
-    const params = currentFilterParams();
-    const query = params.toString();
-    history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
-    refreshAggregatesAndRerender(params);
-});
+for (const filterId of ['filter-corridor', 'filter-routing']) {
+    document.getElementById(filterId)?.addEventListener('change', () => {
+        const params = currentFilterParams();
+        const query = params.toString();
+        history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
+        refreshAggregatesAndRerender(params).catch((error) => {
+            // eslint-disable-next-line no-alert
+            alert(`Could not load results for this selection: ${error.message}`);
+        });
+    });
+}
 
 /* ------------------------------------------------------------ PDF export */
 
@@ -989,6 +1040,9 @@ exportPdfButton?.addEventListener('click', async () => {
     exportPdfLabel.textContent = 'Building PDF…';
 
     try {
+        // The dropdown can disagree with the loaded data (browser-restored select value, or a failed
+        // refresh) - the cover/layout come from the dropdown, the numbers from `data`, so re-sync first.
+        await refreshAggregatesAndRerender();
         // Lazy: jsPDF only loads when someone actually exports.
         const { exportResultsPdf } = await import('./resultsPdf.js');
         const corridorId = corridorSelect?.value ?? '';
