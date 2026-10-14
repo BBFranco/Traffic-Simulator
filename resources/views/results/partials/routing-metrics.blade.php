@@ -7,7 +7,7 @@
             time beyond free-flow driving along its route, over the trips that reached the destination they set out for.
             Missed driveways are pull-offs that didn't make their driveway first time (wrong lane, or no gap in oncoming
             traffic); diverted trips ended somewhere else altogether. Driveway wait is how long a car leaving a block waited to
-            pull out - it is in neither its trip nor any wait figure, so it sits next to the runs' average wait. Still in driveways counts
+            pull out - it is in neither its trip nor any wait figure, so it sits next to the runs' average wait. It is therefore excluded from the wait comparisons, and it grows where queues stand across driveway exits, so it is larger under load shedding and dark-network delay is understated. Still in driveways counts
             the cars that hadn't got out when the run ended, and lost arrivals the map-edge demand turned away by a full entry.
         </p>
         <div class="overflow-x-auto {{ $card }}">
