@@ -70,6 +70,7 @@ use Illuminate\Database\Eloquent\Model;
     'missed_driveways',
     'diversion_pct',
     'routing_stats',
+    'coordination_stats',
     'diagnostics',
     'raw_config_json',
 ])]
@@ -83,6 +84,7 @@ class SimulationRun extends Model
         return [
             'raw_config_json' => 'array',
             'routing_stats' => 'array',
+            'coordination_stats' => 'array',
             'diagnostics' => 'array',
             'warmup_drifting' => 'array',
             'warmup_ticks' => 'integer',

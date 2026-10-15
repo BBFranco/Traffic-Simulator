@@ -355,3 +355,45 @@ test('recovery hold: after power returns every coordinated junction runs as plai
     for (let i = 0; i < 200; i += 1) engine.tick(DT);
     assert.ok(marriedCount() > 0, 'married back in once the hold has ended');
 });
+
+test('route offsets: one direction gets travel time + start lag exactly; a two-way link the compromise of both', async () => {
+    const { routeOffsets } = await import('../../resources/js/sim/controllers/coordinationRoutes.js');
+    const { startFromRestLagS } = await import('../../resources/js/sim/controllers/greenWave.js');
+    const v = 60 / 3.6;
+    const t = 250 / v + startFromRestLagS(v);
+    const oneWay = routeOffsets([{ nodeIds: ['a', 'b'], gapsM: [250], weight: 1 }], 60, v);
+    assert.ok(Math.abs(oneWay.get('b') - t) <= 0.25, `offset ${oneWay.get('b')} vs ${t}`);
+    // Both directions, equal weight: +t one way, -t the other - the best compromise is together (0) or half a cycle apart.
+    const twoWay = routeOffsets([{ nodeIds: ['a', 'b'], gapsM: [250], weight: 1 }, { nodeIds: ['b', 'a'], gapsM: [250], weight: 1 }], 60, v);
+    const off = twoWay.get('b');
+    assert.ok(Math.min(off, 60 - off) <= 0.25 || Math.abs(off - 30) <= 0.25, `two-way offset ${off}`);
+    // The heavier direction wins: 3:1 pulls it most of the way to its own wish.
+    const weighted = routeOffsets([{ nodeIds: ['a', 'b'], gapsM: [250], weight: 3 }, { nodeIds: ['b', 'a'], gapsM: [250], weight: 1 }], 60, v);
+    assert.ok(Math.abs(weighted.get("b") - (3 * t + (60 - t)) / 4) <= 0.3, `weighted offset ${weighted.get("b")} - the weighted mean of +t and -t round the cycle`);
+});
+
+test('route plan: coordinates phase 1 - the cross street\'s through green is the coordinated stage, stages back in real phases', async () => {
+    const { planRoute } = await import('../../resources/js/sim/controllers/coordinationRoutes.js');
+    const demand = (perMin) => ({ spawnRatePerLanePerMin: perMin, saturationFlowPerLanePerHour: 1250 });
+    const nodeInfos = [{ node: { id: 'a' } }, { node: { id: 'b' } }];
+    const route = { nodeInfos, coordinatedPhase: 1, chains: [{ nodeIds: ['a', 'b'], gapsM: [250], weight: 1 }], targetSpeedMps: 60 / 3.6 };
+    const plan = planRoute(route, () => demand(3), () => demand(8), () => [null, { demand: demand(2), weight: 1 }]);
+    const a = plan.nodes.get('a');
+    assert.equal(a.coordinatedPhase, 1);
+    assert.deepEqual(a.stages.map((s) => `${s.phase}${s.turn ? 't' : ''}`), ['1t', '1', '0']);
+    const c = new CoordinatedAdaptiveController(a, 0);
+    assert.equal(c.layout.coordinatedIndex, 1);
+    // The busier cross street (8 vs 3) gets the bigger green.
+    assert.ok(a.stageGreens[1] > a.stageGreens[2], `greens ${a.stageGreens}`);
+});
+
+test('coordinated phase 1: the cross street\'s green is held to its yield point and the arterial is the actuated one', () => {
+    // Stages in cycle order [cross 30 s, arterial 20 s]: the cross street is coordinated, yield at 30.
+    const plan = { offsetS: 0, cycleLengthS: 58, stages: [{ phase: 1, turn: false }, { phase: 0, turn: false }], stageGreens: [30, 20], coordinatedPhase: 1 };
+    const c = new CoordinatedAdaptiveController(plan, 0);
+    assert.equal(label(c), '1:green');
+    const changes = run(c, 0, 60, (t) => ({ call: true, detected: t > 30 }));
+    assert.ok(Math.abs(changes[0][0] - 30) <= 0.15 && changes[0][1] === '1:yellow', `cross yielded at ${changes[0]}`);
+    const arterialEnd = changes.find(([, s]) => s === '0:yellow');
+    assert.ok(Math.abs(arterialEnd[0] - 54) <= 0.15, `arterial forced off at ${arterialEnd[0]}`);
+});

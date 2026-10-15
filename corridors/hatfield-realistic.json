@@ -1224,8 +1224,8 @@
             "lanes": 4,
             "demand": {
                 "fluctuationPeriodS": 300,
-                "spawnRatePerLanePerMinMax": 9,
-                "spawnRatePerLanePerMinMin": 3,
+                "spawnRatePerLanePerMinMax": 11,
+                "spawnRatePerLanePerMinMin": 5,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,

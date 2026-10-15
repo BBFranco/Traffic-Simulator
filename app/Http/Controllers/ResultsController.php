@@ -9,6 +9,7 @@ use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
 use App\Models\TrafficCount;
 use App\Support\ConfidenceInterval;
+use App\Support\CoordinationMetrics;
 use App\Support\CorridorRepository;
 use App\Support\RoutingMetrics;
 use App\Support\SeedPairedDeltas;
@@ -89,6 +90,7 @@ class ResultsController extends Controller
         private readonly CorridorRepository $corridors,
         private readonly SeedPairedDeltas $seedPairedDeltas,
         private readonly RoutingMetrics $routingMetrics,
+        private readonly CoordinationMetrics $coordinationMetrics,
     ) {}
 
     public function index(): View
@@ -122,6 +124,7 @@ class ResultsController extends Controller
                 'lockupLabel' => $payload['lockupLabel'],
                 'starvedLabel' => $payload['starvedLabel'],
                 'routingMetrics' => $payload['routingMetrics'],
+                'coordinationMetrics' => $payload['coordinationMetrics'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 // The user's own copy, only to warn in the run modal when it differs from the template the batch runs on.
                 'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
@@ -170,6 +173,7 @@ class ResultsController extends Controller
             'lockupLabel' => $payload['lockupLabel'],
             'starvedLabel' => $payload['starvedLabel'],
             'routingMetrics' => $payload['routingMetrics'],
+            'coordinationMetrics' => $payload['coordinationMetrics'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
                 'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
@@ -666,6 +670,7 @@ class ResultsController extends Controller
             'lockupLabel' => $this->lockupLabel((clone $query)),
             'starvedLabel' => $this->starvedLabel((clone $query)),
             'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
+            'coordinationMetrics' => $this->coordinationMetrics->forBatches($batchIds),
         ];
     }
 

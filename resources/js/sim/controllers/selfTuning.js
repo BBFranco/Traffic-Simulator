@@ -66,9 +66,14 @@ export class SelfTuner {
     /**
      * nodeInfos/arterialDemandFor/crossDemandFor/turnFor/targetSpeedMps: what the planned-demand plan was built from (planCoordination()).
      * plan: that plan; nowS: when it took effect.
+     * A connector route (coordinationRoutes.js) brings its own `planner` (planRoute()) and `marry` (chooseMarriedOnChains()),
+     * and its `coordinatedPhase` (1) - whose measured flow decides the marriages.
      */
-    constructor({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS, coord = COORDINATED_DEFAULTS }) {
+    constructor({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS, coord = COORDINATED_DEFAULTS, planner = null, marry = null, coordinatedPhase = 0 }) {
         this.nodeInfos = nodeInfos;
+        this.planner = planner ?? ((...args) => planCoordination(...args.slice(0, 4), targetSpeedMps, args[4]));
+        this.marry = marry ?? ((q, previousLinks) => chooseMarried(nodeInfos, q, targetSpeedMps, coord, previousLinks));
+        this.coordinatedPhase = coordinatedPhase;
         this.turnFor = turnFor;
         this.targetSpeedMps = targetSpeedMps;
         this.coord = coord;
@@ -88,7 +93,7 @@ export class SelfTuner {
             for (const [key, demand] of Object.entries(planned)) q[key] = demand?.spawnRatePerLanePerMin ?? 0;
             this.estimates.set(node.id, { planned, q });
         }
-        this.marriage = chooseMarried(nodeInfos, (nodeId) => this.estimates.get(nodeId).q[0], targetSpeedMps, coord);
+        this.marriage = this.marry((nodeId) => this.estimates.get(nodeId).q[coordinatedPhase], undefined);
         this.windowStartS = nowS;
         this.cyclesInWindow = 0;
         this.nextBoundaryS = this._boundaryAfter(nowS);
@@ -147,14 +152,14 @@ export class SelfTuner {
         };
         const turnFor = (node) =>
             this.turnFor(node).map((stage, phase) => stage && { ...stage, demand: demandOf(node, `${phase}t`) });
-        const args = [this.nodeInfos, (node) => demandOf(node, 0), (node) => demandOf(node, 1), turnFor, this.targetSpeedMps];
+        const args = [this.nodeInfos, (node) => demandOf(node, 0), (node) => demandOf(node, 1), turnFor];
 
-        this.marriage = chooseMarried(this.nodeInfos, (nodeId) => this.estimates.get(nodeId).q[0], this.targetSpeedMps, this.coord, this.marriage.links);
-        const target = marriedCriticalCycle(planCoordination(...args), this.marriage.nodes) ?? this.commonCycleS;
+        this.marriage = this.marry((nodeId) => this.estimates.get(nodeId).q[this.coordinatedPhase], this.marriage.links);
+        const target = marriedCriticalCycle(this.planner(...args, {}), this.marriage.nodes) ?? this.commonCycleS;
         const step = this.coord.retuneMaxStepS;
         const previousS = this.commonCycleS;
         this.commonCycleS = Math.min(this.maxCycleS, Math.max(this.minCycleS, previousS - step, Math.min(previousS + step, target)));
-        const plan = planCoordination(...args, { commonCycleS: this.commonCycleS });
+        const plan = this.planner(...args, { commonCycleS: this.commonCycleS });
         for (const nodePlan of plan.nodes.values()) nodePlan.anchorS = boundaryS;
 
         this.anchorS = boundaryS;

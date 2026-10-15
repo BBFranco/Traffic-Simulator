@@ -927,16 +927,72 @@ function warmupSettleNote(settle) {
     return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting.`;
 }
 
-function drawMethodNotes(report, data) {
+const GREEN_END_LABELS = {
+    yield: 'Arterial yielded',
+    gapOut: 'Gapped out',
+    forceOff: 'Forced off',
+    maxOut: 'Maxed out',
+    platoonEarly: 'Ended early for a platoon',
+    reservice: 'Cross street served again',
+    sideCap: 'Side-street wait cap',
+};
+
+/**
+ * Coordinated adaptive batches only: what the coordination actually did (server CoordinationMetrics, from each run's
+ * coordination_stats) - per sensor and power state, how greens ended, and which junctions coordinated.
+ */
+function drawCoordination(report, metrics, number) {
+    report.sectionTitle('Coordination', 'Coordinated adaptive only - what the coordination layers did over the measured window', number);
+
+    report.heading(
+        'Per sensor and power state',
+        'Married: share of junction-time on the common cycle (the rest ran as plain adaptive - selective coordination, the resync hold after power returns, or dark under load shedding). Cycle: mean common cycle on the routes where a junction married - each arterial, and Jan Shoba coordinated along its own length. Re-plans: self-tuning updates per measured hour, all routes. Resync holds: per run, after power returns. Messages / holds / early ends: platoon messages posted, arterial greens held for an arriving platoon, cross greens ended early for one - per measured hour.'
+    );
+    const sensorRank = (sensor) => SENSOR_ORDER.indexOf(sensor);
+    const conditions = [...metrics.conditions].sort((a, b) => a.power_state.localeCompare(b.power_state) * -1 || sensorRank(a.sensor_mode) - sensorRank(b.sensor_mode));
+    report.table({
+        head: [['Sensor', 'Power', 'Runs', 'Married (%)', 'Cycle (s)', 'Re-plans / h', 'Resync holds', 'Messages / h', 'Holds / h', 'Early ends / h']],
+        body: conditions.map((row) => [
+            SENSOR_LABELS[row.sensor_mode] ?? row.sensor_mode,
+            POWER_LABELS[row.power_state] ?? row.power_state,
+            String(row.runs),
+            fmt(row.married_pct),
+            fmt(row.mean_cycle_s),
+            fmt(row.retunes_per_hour),
+            fmt(row.recovery_holds),
+            row.messages_per_hour == null ? 'n/a' : Number(row.messages_per_hour).toFixed(0),
+            fmt(row.holds_per_hour),
+            fmt(row.early_ends_per_hour),
+        ]),
+        columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9].map((column) => [column, { halign: 'right' }])),
+    });
+
+    report.heading('How greens ended', 'Share of every green that ended, by why - per sensor and power state.');
+    const reasons = Object.keys(GREEN_END_LABELS).filter((reason) => conditions.some((row) => row.green_ends_pct?.[reason]));
+    report.table({
+        head: [['Sensor', 'Power', ...reasons.map((reason) => `${GREEN_END_LABELS[reason]} (%)`)]],
+        body: conditions.map((row) => [SENSOR_LABELS[row.sensor_mode] ?? row.sensor_mode, POWER_LABELS[row.power_state] ?? row.power_state, ...reasons.map((reason) => fmt(row.green_ends_pct?.[reason] ?? 0))]),
+        columnStyles: Object.fromEntries(reasons.map((_, i) => [i + 2, { halign: 'right' }])),
+    });
+
+    report.heading('Per junction', 'Normal power, every sensor pooled: how much of the time each junction coordinated, the route it coordinated on (its arterial, or "route:Jan Shoba"), and the mean common cycle of that route. Junctions on no strong link run as plain adaptive throughout (0%).');
+    report.table({
+        head: [['Junction', 'Route', 'Married (%)', 'Route cycle (s)']],
+        body: metrics.junctions.map((row) => [row.node_id, row.route_id, fmt(row.married_pct), fmt(row.mean_cycle_s)]),
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
+    });
+}
+
+function drawMethodNotes(report, data, number) {
     const minRecoveredRuns = data.minRecoveredRuns ?? 10;
     // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
     const warmup = data.batchWarmupLabel
         ? `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`
         : 'a warm-up (not recorded for this batch)';
-    report.sectionTitle('Method notes', null, SCOPES.length + 2);
+    report.sectionTitle('Method notes', null, number);
     const settleNote = warmupSettleNote(data.batchStamp?.warmupSettleMinutes);
     [
-        `Every condition (controller mode x power state, with adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring ${data.batchStamp?.measuredMinutes ?? 40} simulated minutes at dt = 0.1 s.`,
+        `Every condition (controller mode x power state, with adaptive and coordinated adaptive further split by sensor model) gets 30 seeded repetitions per batch; the Runs columns show how many are pooled into each figure here. Each run discards ${warmup} before measuring ${data.batchStamp?.measuredMinutes ?? 40} simulated minutes at dt = 0.1 s.`,
         ...(settleNote ? [settleNote] : []),
         `Wait accounting: ${data.batchStamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         `Load-shedding conditions cut power ${data.batchStamp?.outageStartMinutes ?? '-'} min into the measured window and restore it at ${data.batchStamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour.`,
@@ -995,7 +1051,13 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
             distributionTable(report, data, variants, scope);
         });
         if (data.routingMetrics?.length) drawRoutingTrips(report, data.routingMetrics);
-        drawMethodNotes(report, data);
+        let section = SCOPES.length + 2;
+        if (data.coordinationMetrics?.conditions?.length) {
+            report.newPage();
+            drawCoordination(report, data.coordinationMetrics, section);
+            section += 1;
+        }
+        drawMethodNotes(report, data, section);
 
         report.stampPages();
         report.doc.save(reportFileName(corridorId, data.batchStamp, now));

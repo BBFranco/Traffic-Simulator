@@ -369,6 +369,8 @@ function buildSummary({
         maxWaitArterial: arterialWaits.maxWait,
         p95WaitSideStreet: sideStreetWaits.p95Wait,
         maxWaitSideStreet: sideStreetWaits.maxWait,
+        // What the coordination did (controllers/coordinationStats.js) - coordinated adaptive runs only.
+        ...(controllerMode === 'coordinated_adaptive' ? { coordination: engine.coordinationStats.summary() } : {}),
         preOutage: segments.preOutage,
         duringOutage: segments.duringOutage,
         postRecovery: segments.postRecovery,

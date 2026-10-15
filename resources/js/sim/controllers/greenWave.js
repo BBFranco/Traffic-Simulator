@@ -167,7 +167,7 @@ export function planCoordination(nodeInfos, arterialDemandFor, crossDemandFor, t
  * time from the other stages rather than lengthening the cycle, so every node keeps the exact
  * common cycle the offsets are built on.
  */
-function splitCommonCycle(cycleLengthS, stages, ratios) {
+export function splitCommonCycle(cycleLengthS, stages, ratios) {
     return floorWithinCycle(stages, websterGreens(stages, ratios, cycleLengthS), cycleLengthS);
 }
 

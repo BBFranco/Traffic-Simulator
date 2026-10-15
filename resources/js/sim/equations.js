@@ -216,6 +216,8 @@ export const COORDINATED_DEFAULTS = {
     sideMaxWaitS: 60, // seconds - about one common cycle: a call older than this has already sat through a whole red it should have been served in
     recoveryHold: true, // lever 3: after power returns every junction runs as plain adaptive for recoveryHoldS, flushing the outage queues, then marries back in
     recoveryHoldS: 300, // seconds
+    forceRoutes: false, // connector routes married at every link whatever their flow (the selective rule left Jan Shoba's ~3-7 veh/min/lane all divorced)
+    connectorRoutes: true, // Jan Shoba (`scope: "arterial"` connectors) coordinated along its own chains on phase 1 - controllers/coordinationRoutes.js
     selective: true, // SCATS-style marriage: only junctions on a link with strong arterial flow coordinate - the rest run plain adaptive
     marryFlowPerLaneMin: 6, // veh/min per lane - mean busiest-lane arterial flow at a link's two ends that marries them
     divorceRatio: 0.8, // a married link divorces only once its flow falls below this share of marryFlowPerLaneMin (hysteresis)

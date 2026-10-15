@@ -38,6 +38,12 @@
  * the background timing identical to green wave's. A new plan (setPlan()) is taken up as the
  * arterial green next opens, never mid-stage.
  */
+/*
+ * Coordinated phase: on an arterial route the arterial (phase 0) is the coordinated road; on a connector route
+ * (Jan Shoba - see engine.js's _coordinationGroups()) it is the cross street (phase 1) - the plan's
+ * `coordinatedPhase`. Throughout this file "the arterial" means the coordinated road and "the cross street" the
+ * other one.
+ */
 import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS, shouldExtendGreen } from '../equations.js';
 import { MAX_TURN_GREEN_S } from './adaptive.js';
 import { ALL_RED_S, MIN_TURN_GREEN_S, YELLOW_S } from './phasePlan.js';
@@ -55,7 +61,7 @@ function mod(a, n) {
  * through green): each stage's planned green start and end, and where the yield point falls in
  * absolute time. The arterial's own green is [C - gA, C); every other stage lies inside [0, C - gA).
  */
-export function layoutPlan({ offsetS, cycleLengthS, stages, stageGreens, anchorS = 0 }) {
+export function layoutPlan({ offsetS, cycleLengthS, stages, stageGreens, anchorS = 0, coordinatedPhase = 0 }) {
     const C = cycleLengthS;
     const starts = [];
     let acc = 0;
@@ -63,15 +69,16 @@ export function layoutPlan({ offsetS, cycleLengthS, stages, stageGreens, anchorS
         starts.push(acc);
         acc += stageGreens[i] + CLEARANCE_S;
     });
-    const arterialIndex = stages.findIndex((s) => s.phase === 0 && !s.turn);
-    const yieldTc = starts[arterialIndex] + stageGreens[arterialIndex];
+    const coordinatedIndex = stages.findIndex((s) => s.phase === coordinatedPhase && !s.turn);
+    const yieldTc = starts[coordinatedIndex] + stageGreens[coordinatedIndex];
     const uStart = starts.map((s) => mod(s - yieldTc, C));
-    const uEnd = stages.map((_, i) => (i === arterialIndex ? C : uStart[i] + stageGreens[i]));
+    const uEnd = stages.map((_, i) => (i === coordinatedIndex ? C : uStart[i] + stageGreens[i]));
     return {
         C,
         stages,
         stageGreens,
-        arterialIndex,
+        coordinatedIndex,
+        coordinatedPhase,
         uStart,
         uEnd,
         /** Absolute time of one yield point - every other is a whole number of cycles from it. */
@@ -95,7 +102,7 @@ export class CoordinatedAdaptiveController {
         this.pendingPlan = null;
         this._applyPlan(plan);
         /** When the arterial green last ended - a yield point after it that the arterial wasn't green for was missed. */
-        this.lastArterialEndS = -Infinity;
+        this.lastCoordinatedEndS = -Infinity;
         /** The yield point the current non-arterial stages are timed from - their force-offs are this plus their planned end. */
         this.cycleBaseS = 0;
         this.yieldAtS = Infinity;
@@ -147,6 +154,11 @@ export class CoordinatedAdaptiveController {
         this.pendingMarried = married && !this.married;
     }
 
+    /** Is the coordinated road's through green showing - the arterial's, or the cross street's on a connector route. */
+    isCoordinatedGreen() {
+        return this.stageIndex === this.layout.coordinatedIndex && this.phaseState === 'green';
+    }
+
     /** Self-tuning's new plan - taken up as the arterial green next opens. */
     setPlan(plan) {
         this.pendingPlan = plan;
@@ -176,15 +188,15 @@ export class CoordinatedAdaptiveController {
             this.secondsSinceLastDetection = vehicleDetectedThisTick ? 0 : this.secondsSinceLastDetection + dt;
             const end = !this.married
                 ? this._isolatedEnds(otherCallSufficient)
-                : this.stageIndex === this.layout.arterialIndex
-                  ? this._arterialEnds(now, dt, otherCallSufficient, turnCalls, platoon)
+                : this.stageIndex === this.layout.coordinatedIndex
+                  ? this._coordinatedEnds(now, dt, otherCallSufficient, turnCalls, platoon)
                   : this._actuatedEnds(now, turnCalls, platoon);
             if (end) {
                 // Still busy: vehicles were crossing right up to the end - the stage used all the green it got.
                 const busy = this.secondsSinceLastDetection < this.coord.busyGapS;
                 this.lastEnd = { stageIndex: this.stageIndex, reason: end, atS: now, greenS: this.phaseElapsed, busy };
                 this.onGreenEnd?.(this.lastEnd);
-                if (this.stageIndex === this.layout.arterialIndex) this.lastArterialEndS = now;
+                if (this.stageIndex === this.layout.coordinatedIndex) this.lastCoordinatedEndS = now;
                 this.phaseState = 'yellow';
                 this.phaseElapsed = 0;
             }
@@ -219,11 +231,11 @@ export class CoordinatedAdaptiveController {
     }
 
     /** Does the coordinated arterial green end this tick - returns why, or null to hold. */
-    _arterialEnds(now, dt, otherCallSufficient, turnCalls, platoon) {
+    _coordinatedEnds(now, dt, otherCallSufficient, turnCalls, platoon) {
         if (this.phaseElapsed < this._minGreenOf(this.stageIndex)) return null;
         if (this._sideCapped()) return 'sideCap';
         if (now < this.yieldAtS) return this._mayReserve(now, otherCallSufficient, turnCalls) ? 'reservice' : null;
-        const slackS = this._windowSlackS(this._stageAfterArterial(turnCalls), now);
+        const slackS = this._windowSlackS(this._stageAfterCoordinated(turnCalls), now);
         if (slackS < -WINDOW_TOLERANCE_S) {
             // Too late in the cycle to serve the cross street before its force-off: rest to the next yield point.
             this.yieldAtS = this.prevYieldAt(now) + this.layout.C;
@@ -247,8 +259,8 @@ export class CoordinatedAdaptiveController {
      */
     _mayReserve(now, otherCallSufficient, turnCalls) {
         if (!this.coord.reservice || !otherCallSufficient || this.secondsSinceLastDetection < this.params.gapOutS) return false;
-        if (this.lastArterialEndS < this.cycleBaseS - WINDOW_TOLERANCE_S) return false; // not an early return - it hasn't yielded this cycle
-        return this._windowSlackS(this._stageAfterArterial(turnCalls), now, this.cycleBaseS) >= -WINDOW_TOLERANCE_S;
+        if (this.lastCoordinatedEndS < this.cycleBaseS - WINDOW_TOLERANCE_S) return false; // not an early return - it hasn't yielded this cycle
+        return this._windowSlackS(this._stageAfterCoordinated(turnCalls), now, this.cycleBaseS) >= -WINDOW_TOLERANCE_S;
     }
 
     /** Has the cross street's call waited past the side-street cap. */
@@ -266,7 +278,7 @@ export class CoordinatedAdaptiveController {
         }
         if (now >= this.forceOffAtS) return 'forceOff';
         if (this.secondsSinceLastDetection >= this.params.gapOutS) return 'gapOut';
-        if (platoon && this.secondsSinceLastDetection >= this.coord.earlyStartGapS && this._nextIsArterial(turnCalls)) {
+        if (platoon && this.secondsSinceLastDetection >= this.coord.earlyStartGapS && this._nextIsCoordinated(turnCalls)) {
             const dueBy = now + CLEARANCE_S + this.coord.earlyStartLeadS;
             if (platoon(now, dueBy) >= this.coord.platoonMinCars) return 'platoonEarly';
         }
@@ -274,16 +286,17 @@ export class CoordinatedAdaptiveController {
     }
 
     /** Would the arterial through green follow the current stage. */
-    _nextIsArterial(turnCalls) {
-        const { stages, arterialIndex } = this.layout;
+    _nextIsCoordinated(turnCalls) {
+        const { stages, coordinatedIndex } = this.layout;
         const nextIndex = (this.stageIndex + 1) % stages.length;
-        return nextIndex === arterialIndex || (stages[nextIndex].turn && stages[nextIndex].phase === 0 && !turnCalls[0]);
+        const { coordinatedPhase } = this.layout;
+        return nextIndex === coordinatedIndex || (stages[nextIndex].turn && stages[nextIndex].phase === coordinatedPhase && !turnCalls[coordinatedPhase]);
     }
 
     /** The stage the arterial hands over to: the cross street's turn stage when it has a call, else its through green. */
-    _stageAfterArterial(turnCalls) {
-        const { stages, arterialIndex } = this.layout;
-        const next = (arterialIndex + 1) % stages.length;
+    _stageAfterCoordinated(turnCalls) {
+        const { stages, coordinatedIndex } = this.layout;
+        const next = (coordinatedIndex + 1) % stages.length;
         return stages[next].turn && !turnCalls[stages[next].phase] ? (next + 1) % stages.length : next;
     }
 
@@ -315,11 +328,11 @@ export class CoordinatedAdaptiveController {
     }
 
     _nextStage(now, turnCalls) {
-        const { stages, arterialIndex } = this.layout;
-        if (this.stageIndex === arterialIndex) return this._stageAfterArterial(turnCalls);
+        const { stages, coordinatedIndex } = this.layout;
+        if (this.stageIndex === coordinatedIndex) return this._stageAfterCoordinated(turnCalls);
         let next = (this.stageIndex + 1) % stages.length;
         // Skip an uncalled turn stage, and one too late to fit its minimum before its force-off.
-        if (next !== arterialIndex && stages[next].turn) {
+        if (next !== coordinatedIndex && stages[next].turn) {
             const fits = this.cycleBaseS + this.layout.uEnd[next] - now >= this._minGreenOf(next) - WINDOW_TOLERANCE_S;
             if (!turnCalls[stages[next].phase] || !fits) next = (next + 1) % stages.length;
         }
@@ -327,8 +340,8 @@ export class CoordinatedAdaptiveController {
     }
 
     _startStage(stageIndex, now) {
-        const { arterialIndex } = this.layout;
-        if (stageIndex === arterialIndex) {
+        const { coordinatedIndex } = this.layout;
+        if (stageIndex === coordinatedIndex) {
             if (this.pendingMarried) {
                 this.married = true;
                 this.pendingMarried = false;
@@ -339,13 +352,13 @@ export class CoordinatedAdaptiveController {
             }
             const prevYield = this.prevYieldAt(now);
             // A yield point passed while the arterial was red (a stage ran late) is still open to it; otherwise it holds to the next.
-            this.yieldAtS = prevYield > this.lastArterialEndS ? prevYield : prevYield + this.layout.C;
+            this.yieldAtS = prevYield > this.lastCoordinatedEndS ? prevYield : prevYield + this.layout.C;
             this.forceOffAtS = Infinity;
             this.platoonHeldS = 0;
             this.capServing = false;
         } else {
-            if (this.stageIndex === arterialIndex) this.capServing = this.lastEnd?.reason === 'sideCap';
-            if (this.stageIndex === arterialIndex) this.cycleBaseS = this.prevYieldAt(now);
+            if (this.stageIndex === coordinatedIndex) this.capServing = this.lastEnd?.reason === 'sideCap';
+            if (this.stageIndex === coordinatedIndex) this.cycleBaseS = this.prevYieldAt(now);
             this.forceOffAtS = this.cycleBaseS + this.layout.uEnd[stageIndex];
         }
         this._enter(stageIndex, 'green', 0);
@@ -368,7 +381,7 @@ export class CoordinatedAdaptiveController {
 
     /** Start in whichever stage the plan has at `simTimeS`, with that stage's force-off or yield point. */
     _placeAt(simTimeS) {
-        const { C, stages, stageGreens, uStart, arterialIndex } = this.layout;
+        const { C, stages, stageGreens, uStart, coordinatedIndex } = this.layout;
         this.cycleBaseS = this.prevYieldAt(simTimeS);
         const u = simTimeS - this.cycleBaseS;
         for (let i = 0; i < stages.length; i += 1) {
@@ -377,16 +390,16 @@ export class CoordinatedAdaptiveController {
             const state = into < stageGreens[i] ? 'green' : into < stageGreens[i] + YELLOW_S ? 'yellow' : 'allRed';
             const elapsed = state === 'green' ? into : state === 'yellow' ? into - stageGreens[i] : into - stageGreens[i] - YELLOW_S;
             this._enter(i, state, elapsed);
-            if (i === arterialIndex) {
+            if (i === coordinatedIndex) {
                 // In the planned arterial green its yield point is the next one; in its amber it has just yielded.
                 this.yieldAtS = state === 'green' ? this.cycleBaseS + C : this.cycleBaseS;
-                if (state !== 'green') this.lastArterialEndS = simTimeS - elapsed;
+                if (state !== 'green') this.lastCoordinatedEndS = simTimeS - elapsed;
             } else {
                 this.forceOffAtS = this.cycleBaseS + this.layout.uEnd[i];
             }
             return;
         }
-        this._enter(arterialIndex, 'green', 0); // floating-point edge at exactly a boundary
+        this._enter(coordinatedIndex, 'green', 0); // floating-point edge at exactly a boundary
         this.yieldAtS = this.cycleBaseS + C;
     }
 }

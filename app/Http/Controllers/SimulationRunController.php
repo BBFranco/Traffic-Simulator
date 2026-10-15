@@ -23,6 +23,7 @@ class SimulationRunController extends Controller
             'batch_started_at' => isset($run['batch_started_at']) ? Carbon::parse($run['batch_started_at'])->utc()->format('Y-m-d H:i:s') : null,
             'raw_config_json' => json_encode($run['raw_config_json']),
             'routing_stats' => isset($run['routing_stats']) ? json_encode($run['routing_stats']) : null,
+            'coordination_stats' => isset($run['coordination_stats']) ? json_encode($run['coordination_stats']) : null,
             'warmup_drifting' => isset($run['warmup_drifting']) ? json_encode($run['warmup_drifting']) : null,
             'diagnostics' => isset($run['diagnostics']) ? json_encode($run['diagnostics']) : null,
             'created_at' => now(),

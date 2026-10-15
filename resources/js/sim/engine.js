@@ -40,6 +40,8 @@ import { buildGreenWaveControllers, planCoordination } from './controllers/green
 import { CoordinatedAdaptiveController } from './controllers/coordinatedAdaptive.js';
 import { CoordinationBus, travelTimeS } from './controllers/coordinationBus.js';
 import { SelfTuner, chooseMarried, marriedCriticalCycle, stageKey } from './controllers/selfTuning.js';
+import { CoordinationStats } from './controllers/coordinationStats.js';
+import { chooseMarriedOnChains, planRoute } from './controllers/coordinationRoutes.js';
 import { MinorStopController } from './controllers/minorStop.js';
 import {
     RoundaboutController,
@@ -1127,8 +1129,14 @@ export class SimulationEngine {
         this.websterTurnWeight = websterTurnWeight;
         /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
         this.coordination = { ...COORDINATED_DEFAULTS, ...coordination };
-        /** Per arterial id: { bus, tuner } while it runs coordinated adaptive - see _buildCoordinatedControllersFor(). */
-        this.coordinationByArterial = new Map();
+        /**
+         * Coordinated adaptive's groups - each arterial, and each connector route (Jan Shoba) - by id, and each coordinated
+         * junction's group: { id, coordinatedPhase, bus, tuner, nodeInfos, ... } - see _rebuildCoordination().
+         */
+        this.coordinationGroups = new Map();
+        this.coordinationGroupOfNode = new Map();
+        /** What coordinated adaptive did over the run - the report's coordination section (runHeadless.js's summary.coordination). */
+        this.coordinationStats = new CoordinationStats();
         this.rng.reseed(seed);
         this.eventRng.reseed(seed ^ EVENT_SEED_SALT);
         this._resetRouting(seed, routingMode);
@@ -1371,6 +1379,7 @@ export class SimulationEngine {
      * mid-trip at that instant, not an ongoing bias.
      */
     resetStats() {
+        this.coordinationStats?.reset();
         for (const state of this.arterialState.values()) {
             state.stats.clearedTotal = 0;
             state.stats.clearedWithoutStopTotal = 0;
@@ -1420,7 +1429,7 @@ export class SimulationEngine {
                 const detected = controller.inTurn ? this._turnLaneDetected(info, controller.phase) : this._vehicleDetectedAtStopLine(info, controller.phase);
                 const otherCallSufficient = this._isOtherCallSufficient(info, controller.phase, dt);
                 const turnCalls = [this._turnLaneCalled(info, 0), this._turnLaneCalled(info, 1)];
-                controller.tick(dt, this.simTimeS, detected, otherCallSufficient, turnCalls, info.platoonView, info.callPersistenceS[1]);
+                controller.tick(dt, this.simTimeS, detected, otherCallSufficient, turnCalls, info.platoonView, info.callPersistenceS[1 - controller.layout.coordinatedPhase]);
             } else if (info.controllerType === 'greenWave') {
                 info.controller.tick(dt, this.simTimeS);
             } else {
@@ -1428,7 +1437,7 @@ export class SimulationEngine {
             }
         }
 
-        this._tickCoordination();
+        this._tickCoordination(dt);
         this._updateAllWayStopReleases();
         this._updateRoundaboutReleases();
 
@@ -1939,15 +1948,21 @@ export class SimulationEngine {
         if (next !== this.powerState) {
             // Power back: coordinated adaptive holds every junction on plain adaptive for a while (recoveryHold) to flush the outage queues.
             this.recoveryHoldUntilS = this.powerState === 'load_shedding' && next === 'normal' && this.coordination?.recoveryHold ? this.simTimeS + this.coordination.recoveryHoldS : null;
+            const coordinates = [...this.arterialState.values()].some((state) => state.mode === 'coordinated_adaptive');
+            if (this.recoveryHoldUntilS != null && coordinates) this.coordinationStats.onRecoveryHold(this.coordination.recoveryHoldS);
             this.powerState = next;
             this._rebuildAllControllers();
         }
     }
 
     _rebuildAllControllers() {
+        // Coordinated adaptive is built once, network-wide, after every arterial's other controllers.
+        this.deferCoordination = true;
         for (const arterial of this.layout.arterials) {
             this._rebuildControllersForArterial(arterial.id);
         }
+        this.deferCoordination = false;
+        this._rebuildCoordination();
     }
 
     /** Mode or power-state change: every node on this arterial gets a fresh controller. */
@@ -1960,13 +1975,13 @@ export class SimulationEngine {
             for (const info of nodeInfos) if (!isSignalled(info)) this._rebuildController(info.node.id);
             return;
         }
-        this.coordinationByArterial?.delete(arterialId);
         if (this.powerState !== 'load_shedding' && state.mode === 'coordinated_adaptive') {
             for (const info of nodeInfos) if (!isSignalled(info)) this._rebuildController(info.node.id);
-            this._buildCoordinatedControllersFor(arterialId, nodeInfos);
-            return;
+        } else {
+            for (const info of nodeInfos) this._rebuildController(info.node.id);
         }
-        for (const info of nodeInfos) this._rebuildController(info.node.id);
+        // Network-wide: a connector route spans several arterials' junctions, so any arterial's change can reshape it.
+        if (this.coordinationGroups) this._rebuildCoordination();
     }
 
     /**
@@ -1986,7 +2001,7 @@ export class SimulationEngine {
         }
         if (this.powerState !== 'load_shedding' && state.mode === 'coordinated_adaptive') {
             // A new planned demand is a new background plan - restarts self-tuning from it, like a power return.
-            this._buildCoordinatedControllersFor(arterialId, nodeInfos);
+            this._rebuildCoordination();
             return;
         }
         for (const info of nodeInfos) {
@@ -2016,29 +2031,171 @@ export class SimulationEngine {
     }
 
     /**
-     * Coordinated adaptive across the arterial's signals (controllers/coordinatedAdaptive.js): green wave's plan as the
-     * background, adaptive actuation on top, plus - per this.coordination - the platoon bus (layer 2) and self-tuning
-     * (layer 3). Roundabouts and stops between them keep their own control. Built fresh on every mode change and power
-     * return, so self-tuning always restarts from the planned demand.
+     * Coordinated adaptive, network-wide (controllers/coordinatedAdaptive.js): green wave's plan as the background,
+     * adaptive actuation on top, plus - per this.coordination - the platoon bus (layer 2) and self-tuning (layer 3).
+     * The groups are each coordinated arterial's signals, and - `connectorRoutes` - each connector route (Jan Shoba,
+     * coordinated on its own phase 1 along its connector chains, controllers/coordinationRoutes.js). A junction on
+     * both coordinates one: the route takes it unless its arterial married it and carries more there. Roundabouts and
+     * stops keep their own control. Built fresh on every mode change and power return, so self-tuning always restarts
+     * from the planned demand.
      */
-    _buildCoordinatedControllersFor(arterialId, allNodeInfos) {
-        const nodeInfos = allNodeInfos.filter(isSignalled);
-        if (!nodeInfos.length) return;
-        const arterial = nodeInfos[0].arterial;
+    _rebuildCoordination() {
+        if (this.deferCoordination) return;
+        this.coordinationGroups.clear();
+        this.coordinationGroupOfNode.clear();
+        if (this.powerState === 'load_shedding') return;
+
+        const coordinated = this.layout.arterials.filter((arterial) => this.arterialState.get(arterial.id).mode === 'coordinated_adaptive');
+        const groups = coordinated.map((arterial) => this._arterialCoordinationGroup(arterial)).filter(Boolean);
+        const routes = this.coordination.connectorRoutes ? this._connectorRoutes(groups) : [];
+        // A route that took junctions out of an arterial leaves it a shorter chain - its planned marriage is re-decided on that.
+        for (const group of groups) group.marriage = chooseMarried(group.nodeInfos, group.arterialQ, group.targetSpeedMps, this.coordination);
+        for (const group of [...groups, ...routes]) if (group.nodeInfos.length) this._buildCoordinationGroup(group);
+    }
+
+    /** One coordinated arterial's signals, planned along it (greenWave.js's planCoordination()), with its planned-demand marriage. */
+    _arterialCoordinationGroup(arterial) {
+        const nodeInfos = (this.nodeInfosByArterial.get(arterial.id) ?? []).filter(isSignalled);
+        if (!nodeInfos.length) return null;
         const targetSpeedMps = (arterial.targetSpeedKph ?? 50) / 3.6;
+        const q = (nodeId) => this._arterialDemandAt(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0;
+        return {
+            id: arterial.id,
+            coordinatedPhase: 0,
+            nodeInfos,
+            targetSpeedMps,
+            arterialQ: q,
+            marriage: chooseMarried(nodeInfos, q, targetSpeedMps, this.coordination),
+            planner: (infos, arterialDemandFor, crossDemandFor, turnFor, options) => planCoordination(infos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, options),
+            marry: null,
+        };
+    }
+
+    /**
+     * Connector routes: every `scope: "arterial"` connector direction chained end to end through its joins, grouped by
+     * road name (Jan Shoba's southbound and northbound chains form one route), coordinating phase 1 at its signals. A
+     * signal stays with its arterial group when that group married it and its arterial carries more there; otherwise
+     * the route takes it out of the arterial group.
+     */
+    _connectorRoutes(arterialGroups) {
+        const groupOf = new Map();
+        for (const group of arterialGroups) for (const info of group.nodeInfos) groupOf.set(info.node.id, group);
+        const chainsByName = new Map();
+        for (const chain of this._connectorChains()) {
+            if (!chainsByName.has(chain.name)) chainsByName.set(chain.name, []);
+            chainsByName.get(chain.name).push(chain);
+        }
+
+        const routes = [];
+        for (const [name, chains] of chainsByName) {
+            const targetSpeedMps = chains[0].targetSpeedMps;
+            const crossQ = (nodeId) => this._crossDemandFor(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0;
+            const arterialQ = (nodeId) => this._arterialDemandAt(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0;
+            // Only signals whose arterial runs coordinated adaptive can join; the route's own planned marriage over all of them.
+            const eligible = (stops) => stops.filter((stop) => groupOf.has(stop.nodeId));
+            const toChains = (pick) => chains.map((chain) => {
+                const stops = pick(eligible(chain.stops));
+                return { nodeIds: stops.map((stop) => stop.nodeId), gapsM: stops.slice(1).map((stop, i) => stop.sM - stops[i].sM), weight: 1 };
+            });
+            const allChains = toChains((stops) => stops);
+            const routeNodeIds = [...new Set(allChains.flatMap((chain) => chain.nodeIds))];
+            // forceRoutes: the route marries every link whatever its flow - selective off for it alone.
+            const routeCoord = this.coordination.forceRoutes ? { ...this.coordination, selective: false } : this.coordination;
+            const routeMarriage = chooseMarriedOnChains(allChains, routeNodeIds, crossQ, targetSpeedMps, routeCoord);
+            const owned = new Set(routeNodeIds.filter((nodeId) => {
+                const arterialMarried = groupOf.get(nodeId).marriage.nodes.has(nodeId);
+                return !arterialMarried || (routeMarriage.nodes.has(nodeId) && crossQ(nodeId) > arterialQ(nodeId));
+            }));
+            if (!owned.size) continue;
+            for (const nodeId of owned) {
+                const group = groupOf.get(nodeId);
+                group.nodeInfos = group.nodeInfos.filter((info) => info.node.id !== nodeId);
+            }
+
+            const routeChains = toChains((stops) => stops.filter((stop) => owned.has(stop.nodeId))).filter((chain) => chain.nodeIds.length);
+            const route = {
+                id: `route:${name}`,
+                coordinatedPhase: 1,
+                nodeInfos: [...owned].map((nodeId) => this.nodesInfo.get(nodeId)),
+                chains: routeChains,
+                targetSpeedMps,
+                marriage: chooseMarriedOnChains(routeChains, [...owned], crossQ, targetSpeedMps, routeCoord),
+            };
+            route.planner = (infos, arterialDemandFor, crossDemandFor, turnFor, options) => planRoute(route, arterialDemandFor, crossDemandFor, turnFor, options);
+            route.marry = (q, previousLinks) => chooseMarriedOnChains(route.chains, [...owned], q, targetSpeedMps, routeCoord, previousLinks);
+            routes.push(route);
+        }
+        return routes;
+    }
+
+    /**
+     * Every `scope: "arterial"` connector direction chained end to end through its end-of-road joins, with each signal
+     * it passes (phase 1 gates only) at its distance along the chain: [{ name, targetSpeedMps, stops: [{ nodeId, sM }] }].
+     */
+    _connectorChains() {
+        const isRouteRoad = (key) => {
+            const [id] = key.split(':');
+            const connector = this.connectorsById.get(id);
+            return Boolean(connector && connector.scope === 'arterial' && connector.name);
+        };
+        const keys = [];
+        for (const connector of this.layout.connectors) {
+            if (connector.scope !== 'arterial' || !connector.name) continue;
+            const dirs = this.connectorDirs.get(connector.id);
+            for (const dirKey of ['fwd', 'rev']) if (dirs[dirKey].road.lanes) keys.push(`${connector.id}:${dirKey}`);
+        }
+        const nextOf = (key) => {
+            const join = this.joinsFrom.get(key);
+            return join && !join.slip && isRouteRoad(join.to.key) && this.connectorsById.get(join.to.key.split(':')[0]).name === this.connectorsById.get(key.split(':')[0]).name ? join : null;
+        };
+        const fed = new Set(keys.map((key) => nextOf(key)?.to.key).filter(Boolean));
+
+        const chains = [];
+        for (const start of keys.filter((key) => !fed.has(key))) {
+            const [startId] = start.split(':');
+            const connector = this.connectorsById.get(startId);
+            const chain = { name: connector.name, targetSpeedMps: (connector.targetSpeedKph ?? 40) / 3.6, stops: [] };
+            let key = start;
+            let roadStartM = 0;
+            let entryM = 0;
+            const seen = new Set();
+            while (key && !seen.has(key)) {
+                seen.add(key);
+                const [id, dirKey] = key.split(':');
+                const dir = this.connectorDirs.get(id)[dirKey];
+                for (const gate of dir.gates) {
+                    if (gate.phase !== 1 || !gate.approach || !isSignalled(gate.info)) continue;
+                    chain.stops.push({ nodeId: gate.node.id, sM: roadStartM + gate.stopLineDistanceM - entryM });
+                }
+                const join = nextOf(key);
+                if (!join) break;
+                roadStartM += this.connectorsById.get(id).routeLengthM - entryM;
+                entryM = join.toAtM ?? 0;
+                key = join.to.key;
+            }
+            chains.push(chain);
+        }
+        return chains;
+    }
+
+    /** One coordination group's plan, bus, self-tuner and controllers - registered for its junctions. */
+    _buildCoordinationGroup(group) {
+        const { nodeInfos, targetSpeedMps, coordinatedPhase } = group;
         const arterialDemandFor = (node) => this._arterialDemandAt(node);
         const crossDemandFor = (node) => this._crossDemandFor(node);
         const turnFor = (node) => this._turnStagesAt(this.nodesInfo.get(node.id));
         const coord = this.coordination;
         // Selective coordination from the planned demand to start with; self-tuning re-decides it from measured flows.
-        const marriage = chooseMarried(nodeInfos, (nodeId) => arterialDemandFor(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0, targetSpeedMps, coord);
-        const unmarriedPlan = planCoordination(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps);
+        const { marriage } = group;
+        const unmarriedPlan = group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, {});
         const marriedCycleS = marriedCriticalCycle(unmarriedPlan, marriage.nodes);
         const plan = marriedCycleS != null && marriedCycleS !== unmarriedPlan.commonCycleS
-            ? planCoordination(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, { commonCycleS: marriedCycleS })
+            ? group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, { commonCycleS: marriedCycleS })
             : unmarriedPlan;
         const bus = coord.platoonMessages ? new CoordinationBus() : null;
-        const tuner = coord.selfTuning ? new SelfTuner({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS: this.simTimeS, coord }) : null;
+        const tuner = coord.selfTuning
+            ? new SelfTuner({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS: this.simTimeS, coord, planner: group.planner, marry: group.marry, coordinatedPhase })
+            : null;
         for (const info of nodeInfos) {
             const holding = this.simTimeS < (this.recoveryHoldUntilS ?? -Infinity);
             const controller = new CoordinatedAdaptiveController(plan.nodes.get(info.node.id), this.simTimeS, { coord, married: !holding && marriage.nodes.has(info.node.id) });
@@ -2046,7 +2203,10 @@ export class SimulationEngine {
                 controller.onGreenEnd = (end) => {
                     const stage = controller.layout.stages[end.stageIndex];
                     tuner.recordGreenEnd(info.node.id, stageKey(stage.phase, stage.turn), end);
+                    this.coordinationStats.onGreenEnd(end.reason);
                 };
+            } else {
+                controller.onGreenEnd = (end) => this.coordinationStats.onGreenEnd(end.reason);
             }
             info.controllerType = 'coordinatedAdaptive';
             info.controller = controller;
@@ -2054,19 +2214,25 @@ export class SimulationEngine {
             info.radarSamples = [[], []];
             info.platoonView = bus ? bus.viewFor(info.node.id) : null;
         }
-        this.coordinationByArterial.set(arterialId, { bus, tuner, nodeInfos, targetSpeedMps, marriedNodes: marriage.nodes });
+        const entry = { id: group.id, coordinatedPhase, bus, tuner, nodeInfos, targetSpeedMps, marriedNodes: marriage.nodes, commonCycleS: plan.commonCycleS };
+        this.coordinationGroups.set(group.id, entry);
+        for (const info of nodeInfos) this.coordinationGroupOfNode.set(info.node.id, entry);
     }
 
-    /** Per tick: stale platoon messages dropped, and self-tuning's new plan handed out on its re-tuning boundary. */
-    _tickCoordination() {
+    /** Per tick: stale platoon messages dropped, self-tuning's new plan handed out on its re-tuning boundary, and the run's coordination record sampled. */
+    _tickCoordination(dt) {
         const holding = this.simTimeS < (this.recoveryHoldUntilS ?? -Infinity);
         const holdEnds = !holding && this.recoveryHoldUntilS != null;
         if (holdEnds) this.recoveryHoldUntilS = null;
-        for (const coordination of this.coordinationByArterial.values()) {
+        for (const [groupId, coordination] of this.coordinationGroups) {
             const { bus, tuner, nodeInfos } = coordination;
             bus?.expire(this.simTimeS);
+            this.coordinationStats.sample(dt, groupId, nodeInfos, tuner?.commonCycleS ?? coordination.commonCycleS);
             const plan = tuner?.tick(this.simTimeS);
-            if (plan) for (const info of nodeInfos) info.controller.setPlan(plan.nodes.get(info.node.id));
+            if (plan) {
+                this.coordinationStats.onRetune(groupId);
+                for (const info of nodeInfos) info.controller.setPlan(plan.nodes.get(info.node.id));
+            }
             if (!plan && !holdEnds) continue;
             const married = tuner?.marriage.nodes ?? coordination.marriedNodes;
             for (const info of nodeInfos) info.controller.setMarried(!holding && married.has(info.node.id));
@@ -2076,11 +2242,11 @@ export class SimulationEngine {
     /**
      * A vehicle has just entered `gate`'s junction (committed to going straight, or started its turn) - what a stop-line
      * counter sees. Coordinated adaptive only: it is counted for self-tuning, it is off the bus's list for this junction,
-     * and one going straight on along an arterial is posted to the next signal.
+     * and one going straight on is posted to the next signal along its road.
      */
     _onJunctionEntry(gate, car) {
         if (gate.info.controllerType !== 'coordinatedAdaptive') return;
-        const coordination = this.coordinationByArterial.get(gate.info.arterial.id);
+        const coordination = this.coordinationGroupOfNode.get(gate.node.id);
         if (!coordination) return;
         coordination.bus?.arrived(gate.node.id, car.id);
         if (coordination.tuner) {
@@ -2089,30 +2255,46 @@ export class SimulationEngine {
             const roadKey = gate.carriageway?.id ?? `${gate.connector?.id}:${gate.dirKey}`;
             coordination.tuner.recordEntry(gate.node.id, stageKey(gate.phase, turnLane && hasTurnStage), `${roadKey}#${car.lane}`);
         }
-        if (gate.carriageway && !car.turnPlan?.option) this._postPlatoon(gate.carriageway, car, gate.stopLineDistanceM);
+        if (!car.turnPlan?.option) this._postPlatoon(this._roadOfGate(gate), car, gate.stopLineDistanceM);
+    }
+
+    /** The road a gate is on, as _joinRoad() describes one - an arterial direction or a connector direction. */
+    _roadOfGate(gate) {
+        return gate.carriageway
+            ? this._joinRoad({ kind: 'arterial', key: gate.carriageway.id })
+            : this._joinRoad({ kind: 'connector', id: gate.connector.id, dirKey: gate.dirKey, key: `${gate.connector.id}:${gate.dirKey}` });
     }
 
     /**
-     * Layer 2: `car` is on `carriageway` heading away from a junction (past `pastM`) - post it to the next signal ahead, if that one runs
-     * coordinated adaptive with the bus on and the car's way takes it there (not off at a driveway, peel-off or slip road
-     * first). The arrival time is free-flow from where it is now (coordinationBus.js's travelTimeS()).
+     * Layer 2: `car` is on `road` (_joinRoad()'s shape) heading away from a junction (past `pastM`) - post it to the next
+     * signal ahead, if that one coordinates this road's phase with the bus on and the car's way takes it there (not off
+     * at a driveway, peel-off or slip road first). With no signal left on this road, the next one along its end-of-road
+     * join counts (Jan Shoba runs on through several connectors). The arrival time is free-flow from where it is now
+     * (coordinationBus.js's travelTimeS()).
      */
-    _postPlatoon(carriageway, car, pastM = car.distanceM) {
-        const gate = carriageway.gates.find((g) => g.stopLineDistanceM > pastM + 0.01);
-        if (!gate?.approach || gate.phase !== 0 || gate.info.controllerType !== 'coordinatedAdaptive') return;
-        const coordination = this.coordinationByArterial.get(gate.info.arterial.id);
-        if (!coordination?.bus || !this._carHeadsFor(carriageway, car, gate)) return;
-        const distanceM = gate.stopLineDistanceM - car.distanceM;
+    _postPlatoon(road, car, pastM = car.distanceM) {
+        let gate = road.gates.find((g) => g.stopLineDistanceM > pastM + 0.01);
+        let distanceM = gate ? gate.stopLineDistanceM - car.distanceM : 0;
+        if (!gate) {
+            const join = this.joinsFrom.get(road.key);
+            gate = join?.to.gates.find((g) => g.stopLineDistanceM > (join.toAtM ?? 0));
+            if (!gate) return;
+            distanceM = road.lengthM - car.distanceM + gate.stopLineDistanceM - (join.toAtM ?? 0);
+        }
+        if (!gate.approach || gate.info.controllerType !== 'coordinatedAdaptive') return;
+        const coordination = this.coordinationGroupOfNode.get(gate.node.id);
+        if (!coordination?.bus || gate.phase !== coordination.coordinatedPhase || !this._carHeadsFor(road.key, car, Math.min(road.lengthM, car.distanceM + distanceM))) return;
         const v = coordination.targetSpeedMps * (VEHICLE_TYPES[car.vehicleType].desiredSpeedFactor ?? 1);
         coordination.bus.post(gate.node.id, car.id, this.simTimeS + travelTimeS(distanceM, car.speedMps, v, IDM_DEFAULTS.a));
+        this.coordinationStats.onPlatoonMessage();
     }
 
-    /** Does `car`'s way along `carriageway` reach `gate`'s stop line - by its route (destination mode), or the peel-offs it has already decided on. */
-    _carHeadsFor(carriageway, car, gate) {
+    /** Does `car`'s way along road `roadKey` reach `untilM` on it - by its route (destination mode), or the peel-offs it has already decided on. */
+    _carHeadsFor(roadKey, car, untilM) {
         const driveway = car.trip?.driveway;
-        if (driveway && car.road === driveway.road && driveway.atM < gate.stopLineDistanceM) return false;
-        for (const join of this.divergesFrom.get(carriageway.id) ?? []) {
-            if (join.fromAtM <= car.distanceM || join.fromAtM >= gate.stopLineDistanceM) continue;
+        if (driveway && car.road === driveway.road && driveway.atM < untilM) return false;
+        for (const join of this.divergesFrom.get(roadKey) ?? []) {
+            if (join.fromAtM <= car.distanceM || join.fromAtM >= untilM) continue;
             if (car.trip && this.routingActive) {
                 const stateId = this.routingModel.stateOfDiverge.get(join);
                 const kind = stateId && this._routeArcPeek(car, stateId)?.kind;
@@ -4175,7 +4357,10 @@ export class SimulationEngine {
                 const { gates } = this.carriagewaysById.get(path.carriagewayId);
                 const next = gates.findIndex((gate) => gate.stopLineDistanceM > car.distanceM);
                 car.nextNodeIndex = next === -1 ? gates.length : next;
-                this._postPlatoon(this.carriagewaysById.get(path.carriagewayId), car);
+            }
+            if (!path.sameRoad && (path.carriagewayId || path.connectorId)) {
+                const key = path.carriagewayId ?? `${path.connectorId}:${path.dirKey}`;
+                this._postPlatoon(this._joinRoad(path.carriagewayId ? { kind: 'arterial', key } : { kind: 'connector', id: path.connectorId, dirKey: path.dirKey, key }), car);
             }
             lane.cars.push(car);
             sortFrontFirst(lane.cars);
@@ -4583,7 +4768,7 @@ export class SimulationEngine {
     _coordinatedTiming(info) {
         const controller = info.controller;
         const { stages, stageGreens, C } = controller.layout;
-        const coordination = this.coordinationByArterial.get(info.arterial.id);
+        const coordination = this.coordinationGroupOfNode.get(info.node.id);
         const now = this.simTimeS;
         const ends = controller.lastEnd;
         return {
@@ -4593,8 +4778,9 @@ export class SimulationEngine {
             coordination: {
                 married: controller.married,
                 offsetS: controller.layout.offsetS,
-                yieldInS: controller.isArterialGreen() ? controller.yieldAtS - now : null,
-                forceOffInS: controller.phaseState === 'green' && !controller.isArterialGreen() ? controller.forceOffAtS - now : null,
+                group: coordination?.id ?? null,
+                yieldInS: controller.isCoordinatedGreen() ? controller.yieldAtS - now : null,
+                forceOffInS: controller.phaseState === 'green' && !controller.isCoordinatedGreen() ? controller.forceOffAtS - now : null,
                 platoonHeldS: controller.platoonHeldS,
                 nextPlatoon: coordination?.bus?.nextPlatoon(info.node.id, now, this.coordination.platoonLookaheadS) ?? null,
                 lastEnd: ends && { stage: stageKey(stages[ends.stageIndex].phase, stages[ends.stageIndex].turn), reason: ends.reason, greenS: ends.greenS, agoS: now - ends.atS },
@@ -4645,7 +4831,7 @@ export class SimulationEngine {
         if (info.controllerType === 'coordinatedAdaptive') {
             const now = this.simTimeS;
             if (!controller.married) return 'isolated - plain adaptive rules (no strong arterial link to coordinate on)';
-            if (controller.isArterialGreen()) {
+            if (controller.isCoordinatedGreen()) {
                 if (phaseElapsed < controller.params.minGreen || now < controller.yieldAtS) return `≥ ${Math.max(0, controller.yieldAtS - now).toFixed(1)}s (coordinated - holds to its yield point)`;
                 if (controller.platoonHeldS > 0) return `holding for an arriving platoon (${controller.platoonHeldS.toFixed(1)}s of ${this.coordination.platoonExtendMaxS}s)`;
                 return 'resting - yields to a sufficient call on the cross street while it can still be served';

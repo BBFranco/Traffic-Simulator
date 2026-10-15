@@ -4053,6 +4053,229 @@
       "maxWaitArterial": 117.19999999999762,
       "p95WaitSideStreet": 38.00000000000027,
       "maxWaitSideStreet": 81.39999999999958,
+      "coordination": {
+        "measuredS": 10230,
+        "marriedShare": 0.078,
+        "nodes": {
+          "stanza_festival": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_hilda": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_grosvenor": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_janshoba_nb": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_janshoba_sb": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "pt_janshoba_sb": {
+            "arterialId": "pretorius",
+            "marriedShare": 0.455
+          },
+          "pt_janshoba_nb": {
+            "arterialId": "pretorius",
+            "marriedShare": 0.455
+          },
+          "pt_grosvenor": {
+            "arterialId": "pretorius",
+            "marriedShare": 0.455
+          },
+          "pt_hilda": {
+            "arterialId": "pretorius",
+            "marriedShare": 0
+          },
+          "pt_festival": {
+            "arterialId": "pretorius",
+            "marriedShare": 0
+          },
+          "fb_festival": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0.455
+          },
+          "fb_hilda": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0.455
+          },
+          "fb_grosvenor": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0.132
+          },
+          "fb_janshoba_nb": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0
+          },
+          "fb_janshoba_sb": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0
+          },
+          "arcadia_festival": {
+            "arterialId": "arcadia_west",
+            "marriedShare": 0
+          },
+          "arcadia_hilda": {
+            "arterialId": "arcadia",
+            "marriedShare": 0
+          },
+          "arcadia_grosvenor": {
+            "arterialId": "arcadia",
+            "marriedShare": 0
+          },
+          "park_grosvenor": {
+            "arterialId": "park",
+            "marriedShare": 0
+          },
+          "park_janshoba": {
+            "arterialId": "park",
+            "marriedShare": 0
+          },
+          "burnett_janshoba": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "burnett_grosvenor": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "burnett_hilda": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "burnett_festival": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "south_janshoba": {
+            "arterialId": "south_janshoba_divided",
+            "marriedShare": 0
+          },
+          "duxbury_janshoba": {
+            "arterialId": "duxbury",
+            "marriedShare": 0
+          },
+          "lunnon_duxbury": {
+            "arterialId": "lunnon",
+            "marriedShare": 0
+          },
+          "lynnwood_herold": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          },
+          "lynnwood_janshoba": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          },
+          "lynnwood_dyer": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          },
+          "lynnwood_duxbury": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          }
+        },
+        "arterials": {
+          "stanza": {
+            "meanCycleS": 46.8,
+            "minCycleS": 46.8,
+            "maxCycleS": 46.8,
+            "finalCycleS": 46.8,
+            "retunes": 2
+          },
+          "pretorius": {
+            "meanCycleS": 38.9,
+            "minCycleS": 34.3,
+            "maxCycleS": 42.9,
+            "finalCycleS": 42.9,
+            "retunes": 2
+          },
+          "francisbaard": {
+            "meanCycleS": 33.9,
+            "minCycleS": 31.3,
+            "maxCycleS": 38.1,
+            "finalCycleS": 38.1,
+            "retunes": 2
+          },
+          "arcadia_west": {
+            "meanCycleS": 22.2,
+            "minCycleS": 22.2,
+            "maxCycleS": 22.2,
+            "finalCycleS": 22.2,
+            "retunes": 5
+          },
+          "arcadia": {
+            "meanCycleS": 35,
+            "minCycleS": 35,
+            "maxCycleS": 35,
+            "finalCycleS": 35,
+            "retunes": 2
+          },
+          "park": {
+            "meanCycleS": 39.4,
+            "minCycleS": 39.4,
+            "maxCycleS": 39.4,
+            "finalCycleS": 39.4,
+            "retunes": 2
+          },
+          "burnett": {
+            "meanCycleS": 48.1,
+            "minCycleS": 48.1,
+            "maxCycleS": 48.1,
+            "finalCycleS": 48.1,
+            "retunes": 2
+          },
+          "south_janshoba_divided": {
+            "meanCycleS": 35.3,
+            "minCycleS": 35.3,
+            "maxCycleS": 35.3,
+            "finalCycleS": 35.3,
+            "retunes": 2
+          },
+          "duxbury": {
+            "meanCycleS": 43.3,
+            "minCycleS": 43.3,
+            "maxCycleS": 43.3,
+            "finalCycleS": 43.3,
+            "retunes": 3
+          },
+          "lunnon": {
+            "meanCycleS": 21.4,
+            "minCycleS": 21.4,
+            "maxCycleS": 21.4,
+            "finalCycleS": 21.4,
+            "retunes": 6
+          },
+          "lynnwood": {
+            "meanCycleS": 67.3,
+            "minCycleS": 67.3,
+            "maxCycleS": 67.3,
+            "finalCycleS": 67.3,
+            "retunes": 1
+          }
+        },
+        "recoveryHolds": 1,
+        "recoveryHoldS": 300,
+        "platoon": {
+          "messages": 1335,
+          "holds": 1,
+          "holdS": 0.8
+        },
+        "greenEnds": {
+          "gapOut": 403,
+          "yield": 18,
+          "maxOut": 29,
+          "forceOff": 11,
+          "platoonEarly": 1
+        }
+      },
       "preOutage": {
         "avgWaitTime": 10.230540540540563,
         "throughputPerMin": 148,
@@ -4955,6 +5178,228 @@
       "maxWaitArterial": 156.09999999999542,
       "p95WaitSideStreet": 40.3000000000003,
       "maxWaitSideStreet": 85.29999999999943,
+      "coordination": {
+        "measuredS": 10230,
+        "marriedShare": 0.073,
+        "nodes": {
+          "stanza_festival": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_hilda": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_grosvenor": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_janshoba_nb": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "stanza_janshoba_sb": {
+            "arterialId": "stanza",
+            "marriedShare": 0
+          },
+          "pt_janshoba_sb": {
+            "arterialId": "pretorius",
+            "marriedShare": 0.455
+          },
+          "pt_janshoba_nb": {
+            "arterialId": "pretorius",
+            "marriedShare": 0.455
+          },
+          "pt_grosvenor": {
+            "arterialId": "pretorius",
+            "marriedShare": 0.455
+          },
+          "pt_hilda": {
+            "arterialId": "pretorius",
+            "marriedShare": 0
+          },
+          "pt_festival": {
+            "arterialId": "pretorius",
+            "marriedShare": 0
+          },
+          "fb_festival": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0.455
+          },
+          "fb_hilda": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0.455
+          },
+          "fb_grosvenor": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0
+          },
+          "fb_janshoba_nb": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0
+          },
+          "fb_janshoba_sb": {
+            "arterialId": "francisbaard",
+            "marriedShare": 0
+          },
+          "arcadia_festival": {
+            "arterialId": "arcadia_west",
+            "marriedShare": 0
+          },
+          "arcadia_hilda": {
+            "arterialId": "arcadia",
+            "marriedShare": 0
+          },
+          "arcadia_grosvenor": {
+            "arterialId": "arcadia",
+            "marriedShare": 0
+          },
+          "park_grosvenor": {
+            "arterialId": "park",
+            "marriedShare": 0
+          },
+          "park_janshoba": {
+            "arterialId": "park",
+            "marriedShare": 0
+          },
+          "burnett_janshoba": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "burnett_grosvenor": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "burnett_hilda": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "burnett_festival": {
+            "arterialId": "burnett",
+            "marriedShare": 0
+          },
+          "south_janshoba": {
+            "arterialId": "south_janshoba_divided",
+            "marriedShare": 0
+          },
+          "duxbury_janshoba": {
+            "arterialId": "duxbury",
+            "marriedShare": 0
+          },
+          "lunnon_duxbury": {
+            "arterialId": "lunnon",
+            "marriedShare": 0
+          },
+          "lynnwood_herold": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          },
+          "lynnwood_janshoba": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          },
+          "lynnwood_dyer": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          },
+          "lynnwood_duxbury": {
+            "arterialId": "lynnwood",
+            "marriedShare": 0
+          }
+        },
+        "arterials": {
+          "stanza": {
+            "meanCycleS": 46.8,
+            "minCycleS": 46.8,
+            "maxCycleS": 46.8,
+            "finalCycleS": 46.8,
+            "retunes": 2
+          },
+          "pretorius": {
+            "meanCycleS": 40.9,
+            "minCycleS": 38.3,
+            "maxCycleS": 45.3,
+            "finalCycleS": 45.3,
+            "retunes": 2
+          },
+          "francisbaard": {
+            "meanCycleS": 33.7,
+            "minCycleS": 30.3,
+            "maxCycleS": 37.8,
+            "finalCycleS": 37.8,
+            "retunes": 2
+          },
+          "arcadia_west": {
+            "meanCycleS": 22.2,
+            "minCycleS": 22.2,
+            "maxCycleS": 22.2,
+            "finalCycleS": 22.2,
+            "retunes": 5
+          },
+          "arcadia": {
+            "meanCycleS": 35,
+            "minCycleS": 35,
+            "maxCycleS": 35,
+            "finalCycleS": 35,
+            "retunes": 2
+          },
+          "park": {
+            "meanCycleS": 39.4,
+            "minCycleS": 39.4,
+            "maxCycleS": 39.4,
+            "finalCycleS": 39.4,
+            "retunes": 2
+          },
+          "burnett": {
+            "meanCycleS": 48.1,
+            "minCycleS": 48.1,
+            "maxCycleS": 48.1,
+            "finalCycleS": 48.1,
+            "retunes": 2
+          },
+          "south_janshoba_divided": {
+            "meanCycleS": 35.3,
+            "minCycleS": 35.3,
+            "maxCycleS": 35.3,
+            "finalCycleS": 35.3,
+            "retunes": 2
+          },
+          "duxbury": {
+            "meanCycleS": 43.3,
+            "minCycleS": 43.3,
+            "maxCycleS": 43.3,
+            "finalCycleS": 43.3,
+            "retunes": 3
+          },
+          "lunnon": {
+            "meanCycleS": 21.4,
+            "minCycleS": 21.4,
+            "maxCycleS": 21.4,
+            "finalCycleS": 21.4,
+            "retunes": 6
+          },
+          "lynnwood": {
+            "meanCycleS": 67.3,
+            "minCycleS": 67.3,
+            "maxCycleS": 67.3,
+            "finalCycleS": 67.3,
+            "retunes": 1
+          }
+        },
+        "recoveryHolds": 1,
+        "recoveryHoldS": 300,
+        "platoon": {
+          "messages": 1288,
+          "holds": 0,
+          "holdS": 0
+        },
+        "greenEnds": {
+          "gapOut": 379,
+          "maxOut": 35,
+          "yield": 18,
+          "forceOff": 17
+        }
+      },
       "preOutage": {
         "avgWaitTime": 12.633983286908123,
         "throughputPerMin": 143.6,
