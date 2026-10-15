@@ -38,7 +38,7 @@
 
                 <button type="button" id="batch-run-button"
                         class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Generate dataset (360 runs)
+                    Generate dataset (600 runs)
                 </button>
             </div>
         </div>

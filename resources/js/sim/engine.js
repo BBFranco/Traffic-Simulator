@@ -317,6 +317,19 @@ function carryTripStats(from, to) {
     return to;
 }
 
+/**
+ * Sorts `cars` front of the queue first, in place. Most ticks a lane is already in order, and a stable sort leaves an
+ * ordered array untouched, so checking first returns exactly what sort() would - without its comparator calls.
+ */
+function sortFrontFirst(cars) {
+    for (let i = 1; i < cars.length; i += 1) {
+        if (cars[i - 1].distanceM - cars[i].distanceM < 0) {
+            cars.sort((a, b) => b.distanceM - a.distanceM);
+            return;
+        }
+    }
+}
+
 function nearestAhead(a, b) {
     if (!a) return b;
     if (!b) return a;
@@ -1667,6 +1680,24 @@ export class SimulationEngine {
      * turn-in only reaches the gates beyond the junction it turned at.
      */
     _plannedApproachFlows() {
+        // Pure function of the design demand, turn chances and routed flows - memoised on exactly those, since every
+        // junction's Webster inputs (and every self-tuning re-plan) ask for the whole corridor's flows.
+        const key = this._plannedFlowsKey();
+        if (this._plannedFlowsCache?.key !== key || this._plannedFlowsCache.routingModel !== this.routingModel) {
+            this._plannedFlowsCache = { key, routingModel: this.routingModel, flows: this._computePlannedApproachFlows() };
+        }
+        return this._plannedFlowsCache.flows;
+    }
+
+    /** Everything _computePlannedApproachFlows() reads that can change during a run, as one string. */
+    _plannedFlowsKey() {
+        let key = this.routingActive ? 'd' : 'r';
+        for (const carriageway of this.carriageways) key += `|${carriageway.noSpawn ? 'x' : ''}${this.arterialState.get(carriageway.arterial.id).spawnRatePerLanePerMin}`;
+        for (const connector of this.layout.connectors) key += `|${connector.demand.spawnRatePerLanePerMin},${connector.crossChance},${connector.turnChance}`;
+        return key;
+    }
+
+    _computePlannedApproachFlows() {
         if (this.routingActive) return this._flowsFromArrivals(new Map([...this.routingModel.movementFlowByGate].map(([gate, flow]) => [gate, flow.total])));
         const arrivals = new Map(); // gate -> veh/min arriving on that approach (all its lanes)
         const arterialRoads = this.carriageways.map((carriageway) => ({
@@ -2221,7 +2252,7 @@ export class SimulationEngine {
         const arterialState = this.arterialState.get(arterial.id);
 
         for (const lane of state.lanes) {
-            lane.cars.sort((a, b) => b.distanceM - a.distanceM); // front of the queue first
+            sortFrontFirst(lane.cars); // front of the queue first
 
             // Cross-routing (build step 9) first, as its own pass - a car that
             // diverts this tick is removed here and never IDM-steps on the
@@ -2238,7 +2269,7 @@ export class SimulationEngine {
         this._leaveClosedTurnLanes(state);
 
         for (const lane of state.lanes) {
-            lane.cars.sort((a, b) => b.distanceM - a.distanceM); // a lane change may have just reordered this lane
+            sortFrontFirst(lane.cars); // a lane change may have just reordered this lane
 
             for (let i = 0; i < lane.cars.length; i += 1) {
                 const car = lane.cars[i];
@@ -2523,7 +2554,7 @@ export class SimulationEngine {
         car.laneChangeCooldownS = cooldownS;
         const toCars = state.lanes[targetIndex].cars;
         toCars.push(car);
-        toCars.sort((a, b) => b.distanceM - a.distanceM);
+        sortFrontFirst(toCars);
     }
 
     /** Native side-street arrivals (build step 9 gap) - separate from _maybeCrossRoute, which only diverts arterial cars onto a connector. */
@@ -2581,24 +2612,25 @@ export class SimulationEngine {
             const dir = dirs[dirKey];
             const dirState = state[dirKey];
             if (!dir.road.lanes) continue; // one-way connector's unused direction
+            const roadKey = `${connector.id}:${dirKey}`;
 
             // Turns onto the arterial first, as their own pass - same reason as
             // _stepArterialCars()'s cross-routing pass.
             for (const lane of dirState.lanes) {
-                lane.cars.sort((a, b) => b.distanceM - a.distanceM);
+                sortFrontFirst(lane.cars);
                 lane.cars = lane.cars.filter((car) => !this._maybeTurnOffConnector(connector, dir, dirKey, car));
             }
             if (dirState.lanes.length > 1) this._performConnectorLaneChanges(dir, dirState, dt);
             this._leaveClosedTurnLanes(dirState);
 
             for (const lane of dirState.lanes) {
-                lane.cars.sort((a, b) => b.distanceM - a.distanceM);
+                sortFrontFirst(lane.cars);
 
                 for (let i = 0; i < lane.cars.length; i += 1) {
                     const car = lane.cars[i];
                     const realAhead = i > 0 ? lane.cars[i - 1] : null;
-                    const joinAhead = i === 0 ? this._joinObstacle(`${connector.id}:${dirKey}`, car) : null;
-                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(`${connector.id}:${dirKey}`, dirState, lane, car));
+                    const joinAhead = i === 0 ? this._joinObstacle(roadKey, car) : null;
+                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(roadKey, dirState, lane, car));
                     const speedLimitMps = Math.min(this._connectorTurnApproachSpeedLimit(dir, car), this._drivewaySpeedLimit(car));
                     if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                     car.steppedTick = this.tickNo;
@@ -2606,8 +2638,8 @@ export class SimulationEngine {
                 }
 
                 if (this.routingActive) this._drivewayArrivals(dirState, lane);
-                this._peelOff(`${connector.id}:${dirKey}`, dirState, lane);
-                const join = this.joinsFrom.get(`${connector.id}:${dirKey}`);
+                this._peelOff(roadKey, dirState, lane);
+                const join = this.joinsFrom.get(roadKey);
                 while (lane.cars.length && lane.cars[0].distanceM > routeLengthM) {
                     if (join) {
                         if (!this._handOff(join, lane)) break; // no room on the next road yet
@@ -3593,7 +3625,7 @@ export class SimulationEngine {
             car.nextNodeIndex = next === -1 ? join.to.gates.length : next;
         }
         target.cars.push(car);
-        target.cars.sort((a, b) => b.distanceM - a.distanceM);
+        sortFrontFirst(target.cars);
         return true;
     }
 
@@ -3645,7 +3677,7 @@ export class SimulationEngine {
                 car.turnPlan = null;
                 this._glideFrom(car, drawnAt);
                 target.cars.push(car);
-                target.cars.sort((a, b) => b.distanceM - a.distanceM);
+                sortFrontFirst(target.cars);
             }
         }
     }
@@ -3677,8 +3709,10 @@ export class SimulationEngine {
      * arriving at speed with no room (and missing the turn, or driving into the tail).
      */
     _peelHold(key, dirState, lane, car) {
+        const joins = this.divergesFrom.get(key);
+        if (!joins) return null;
         let hold = null;
-        for (const join of this.divergesFrom.get(key) ?? []) {
+        for (const join of joins) {
             const toGoM = join.fromAtM - car.distanceM;
             if (toGoM > DIVERGE_DECISION_M || toGoM < -15) continue;
             if (!join.slip && !car.peelDecisions?.get(join)) continue;
@@ -4097,7 +4131,7 @@ export class SimulationEngine {
 
     _stepTurningCars(dt) {
         if (!this.turningCars.length) return;
-        this.turningCars.sort((a, b) => b.distanceM - a.distanceM);
+        sortFrontFirst(this.turningCars);
 
         const leaderByKey = new Map();
         const stillTurning = [];
@@ -4144,7 +4178,7 @@ export class SimulationEngine {
                 this._postPlatoon(this.carriagewaysById.get(path.carriagewayId), car);
             }
             lane.cars.push(car);
-            lane.cars.sort((a, b) => b.distanceM - a.distanceM);
+            sortFrontFirst(lane.cars);
             this._letInDone(car, car.road, car.lane);
         }
         this.turningCars = stillTurning;
@@ -5232,11 +5266,12 @@ export class SimulationEngine {
     }
 
     _addWait(car, key) {
-        car.waitByKey ??= new Map();
-        if (!car.waitByKey.has(key)) car.waitByKey.set(key, 0);
+        const waitByKey = (car.waitByKey ??= new Map());
+        const soFarS = waitByKey.get(key);
+        if (soFarS === undefined) waitByKey.set(key, 0);
         const deltaS = car.totalWaitS - (car.waitSeenS ?? 0);
         if (deltaS <= 0) return;
-        car.waitByKey.set(key, car.waitByKey.get(key) + deltaS);
+        waitByKey.set(key, (soFarS ?? 0) + deltaS);
         car.stoppedKeys ??= new Set();
         car.stoppedKeys.add(key);
         car.waitSeenS = car.totalWaitS;
