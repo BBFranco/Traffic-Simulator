@@ -364,7 +364,7 @@ onThemeChange((theme) => {
 
 /**
  * Build steps 17-18: runs the full 12-condition x 30-rep experimental matrix
- * (360 headless runs) in this tab and populates `simulation_runs`.
+ * (600 headless runs - 20 conditions x 30 reps) in this tab and populates `simulation_runs`.
  *
  * `runHeadless()` here is the exact same function batch/runBatch.mjs calls
  * from the CLI - only the driver differs (a browser button instead of a
@@ -380,7 +380,7 @@ const DURATION_TICKS = MEASURED_TICKS; // sim/batchSchedule.js: 90 measured minu
 // Load-shedding conditions cut power 15 min into the MEASURED window and restore it at 30 min (sim/batchSchedule.js).
 const DT = 0.1;
 const BASE_SEED = 20260101;
-/** Batch the network writes - don't POST 360 times (build step 17). */
+/** Batch the network writes - don't POST 600 times (build step 17). */
 const POST_BATCH_SIZE = 25;
 
 const batchButton = document.getElementById('batch-run-button');
@@ -395,7 +395,7 @@ let batchRunning = false;
 batchButton?.addEventListener('click', () => openBatchModal());
 
 /**
- * Runs the 360-run batch (unchanged from before the modal existed - only the
+ * Runs the 600-run batch (unchanged from before the modal existed - only the
  * corridorConfig passed in can now carry per-street demand overrides from the
  * modal, see runBatchModal.js's docblock at the top of this section).
  *
@@ -533,7 +533,7 @@ async function runBatch(demandOverrides, routingMode = 'random') {
         pool?.terminate();
         batchRunning = false;
         batchButton.disabled = false;
-        batchButton.textContent = 'Generate dataset (360 runs)';
+        batchButton.textContent = `Generate dataset (${buildExperimentalMatrix().length * REPS_PER_CONDITION} runs)`;
         batchRunningBadge?.classList.add('hidden');
         batchProgressWrap?.classList.add('hidden');
     }
@@ -665,7 +665,7 @@ class BatchWorkerPool {
     }
 }
 
-/** Success toast + a brief fireworks burst when the 360-run batch finishes. */
+/** Success toast + a brief fireworks burst when the 600-run batch finishes. */
 function celebrateBatchComplete(totalRuns) {
     const toast = document.getElementById('batch-complete-toast');
     const toastLabel = document.getElementById('batch-complete-toast-label');

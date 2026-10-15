@@ -59,7 +59,7 @@
                 <div>
                     <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Generate dataset - demand parameters</h2>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Per-street sinusoidal demand for the 360-run batch against the corridor selected above.
+                        Per-street sinusoidal demand for the 600-run batch against the corridor selected above.
                         All fields editable; import a finished Traffic Counter upload to overwrite mid/amplitude
                         from a least-squares fit of field counts.
                     </p>
@@ -89,7 +89,7 @@
                     Cancel
                 </button>
                 <button type="button" id="batch-modal-confirm" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Run batch (360 runs)
+                    Run batch (600 runs)
                 </button>
             </div>
         </div>
@@ -98,7 +98,7 @@
     <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
         <strong class="font-semibold">Nothing below is measured yet.</strong>
         Click <strong>Generate dataset</strong> to run the full 12-condition x 30-rep experimental matrix
-        (360 headless runs) in this browser tab and populate
+        (600 headless runs) in this browser tab and populate
         <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
         while it runs - the tab is not frozen, just busy.
     </div>
@@ -135,7 +135,7 @@
         </div>
     </div>
 
-    {{-- Completion toast + fireworks burst, shown once the 360-run batch finishes. --}}
+    {{-- Completion toast + fireworks burst, shown once the 600-run batch finishes. --}}
     <div id="batch-complete-toast" class="hidden fixed right-4 top-4 z-[60] flex items-center gap-2 rounded-md border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 shadow-lg dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300">
         <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
         <span id="batch-complete-toast-label">Dataset generated.</span>

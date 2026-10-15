@@ -26,8 +26,8 @@ test('camera seed 20270104 runs without a lockup', { timeout: 600_000 }, () => {
     const { lockup } = summary.diagnostics;
     assert.equal(lockup.isLockup, false, JSON.stringify(lockup));
     assert.ok(summary.maxWait < 1000, `max wait ${summary.maxWait}`);
-    // 170.2/min after the 2026-10-09 fix; the locked run cleared 140.2.
-    assert.ok(Math.abs(summary.throughputPerMin - 170) < 5, `throughput ${summary.throughputPerMin}`);
+    // 170.2/min after the 2026-10-09 fix, 177 after Lynnwood's demand went to 5-11 (2026-10-15); the locked run cleared 140.2.
+    assert.ok(Math.abs(summary.throughputPerMin - 177) < 5, `throughput ${summary.throughputPerMin}`);
 });
 
 // Batch 6e6c9e99 (random turning, 38 min warm-up): Jan Shoba's southbound merge starved its merging lane after the outage.
