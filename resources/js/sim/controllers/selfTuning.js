@@ -100,6 +100,32 @@ export class SelfTuner {
         this._resetWindow();
         this.lastUpdate = null;
         this.updates = 0;
+        /** Ablation (coord.freezeAfterWarmup): once frozen, tick() never re-plans. */
+        this.frozen = false;
+    }
+
+    /** Stops re-planning; returns the state a rebuilt tuner is restored from (restore()). */
+    freeze() {
+        this.frozen = true;
+        return {
+            commonCycleS: this.commonCycleS,
+            q: [...this.estimates].map(([nodeId, estimate]) => [nodeId, { ...estimate.q }]),
+            links: [...this.marriage.links],
+            nodes: [...this.marriage.nodes],
+        };
+    }
+
+    /** Takes a frozen tuner's state over (a rebuild after a power return) - still frozen. */
+    restore(state) {
+        for (const [nodeId, q] of state.q) Object.assign(this.estimates.get(nodeId).q, q);
+        this.commonCycleS = state.commonCycleS;
+        this.marriage = { nodes: new Set(state.nodes), links: new Set(state.links) };
+        this.frozen = true;
+    }
+
+    /** The plan for the current estimates and common cycle - what a restored tuner's controllers are built on. */
+    planNow() {
+        return this.planner(...this._planArgs(), { commonCycleS: this.commonCycleS });
     }
 
     /** A vehicle entered `nodeId`'s junction from lane `laneKey`, on the stage `key`. */
@@ -122,7 +148,7 @@ export class SelfTuner {
      * plan carrying anchorS), else null.
      */
     tick(nowS) {
-        if (nowS < this.nextBoundaryS) return null;
+        if (this.frozen || nowS < this.nextBoundaryS) return null;
         const boundaryS = this.nextBoundaryS;
         this.cyclesInWindow += 1;
         this.nextBoundaryS += this.commonCycleS;
@@ -146,13 +172,7 @@ export class SelfTuner {
             }
         }
 
-        const demandOf = (node, key) => {
-            const { planned, q } = this.estimates.get(node.id);
-            return planned[key] && { ...planned[key], spawnRatePerLanePerMin: q[key] };
-        };
-        const turnFor = (node) =>
-            this.turnFor(node).map((stage, phase) => stage && { ...stage, demand: demandOf(node, `${phase}t`) });
-        const args = [this.nodeInfos, (node) => demandOf(node, 0), (node) => demandOf(node, 1), turnFor];
+        const args = this._planArgs();
 
         this.marriage = this.marry((nodeId) => this.estimates.get(nodeId).q[this.coordinatedPhase], this.marriage.links);
         const target = marriedCriticalCycle(this.planner(...args, {}), this.marriage.nodes) ?? this.commonCycleS;
@@ -170,6 +190,17 @@ export class SelfTuner {
         this.updates += 1;
         this.lastUpdate = { atS: boundaryS, targetCycleS: target, commonCycleS: this.commonCycleS, married: this.marriage.nodes.size };
         return plan;
+    }
+
+    /** The planner's first four arguments from the current q estimates. */
+    _planArgs() {
+        const demandOf = (node, key) => {
+            const { planned, q } = this.estimates.get(node.id);
+            return planned[key] && { ...planned[key], spawnRatePerLanePerMin: q[key] };
+        };
+        const turnFor = (node) =>
+            this.turnFor(node).map((stage, phase) => stage && { ...stage, demand: demandOf(node, `${phase}t`) });
+        return [this.nodeInfos, (node) => demandOf(node, 0), (node) => demandOf(node, 1), turnFor];
     }
 
     /** The first common-cycle boundary after `nowS` - node 0's cycle start, offsets measured from it. */

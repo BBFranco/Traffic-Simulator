@@ -211,6 +211,17 @@ export function runHeadless({
     return { rows, sideStreetRows, totalRows, arterialScopeRows, summary };
 }
 
+/** `engine.roadWaits` as plain JSON, named and scoped from the layout: { roadId: { name, scope, vehicles, meanWait, maxWait } }. */
+function roadWaitsSummary(layout, roadWaits) {
+    const roads = new Map();
+    for (const arterial of layout.arterials) roads.set(arterial.id, { name: arterial.name, scope: arterial.scope === 'side' ? 'side' : 'arterial' });
+    for (const connector of layout.connectors) roads.set(connector.id, { name: connector.name ?? connector.id, scope: connector.scope === 'arterial' ? 'arterial' : 'side' });
+    const round = (value) => Math.round(value * 100) / 100;
+    return Object.fromEntries(
+        [...roadWaits].filter(([id]) => roads.has(id)).map(([id, r]) => [id, { ...roads.get(id), vehicles: r.n, meanWait: round(r.waitSum / r.n), maxWait: round(r.maxWait) }])
+    );
+}
+
 function buildSummary({
     layout,
     engine,
@@ -369,6 +380,8 @@ function buildSummary({
         maxWaitArterial: arterialWaits.maxWait,
         p95WaitSideStreet: sideStreetWaits.p95Wait,
         maxWaitSideStreet: sideStreetWaits.maxWait,
+        /** Per road: vehicles that used it, their mean and worst wait built up on it - the report's per-road table. */
+        roadWaits: roadWaitsSummary(layout, engine.roadWaits),
         // What the coordination did (controllers/coordinationStats.js) - coordinated adaptive runs only.
         ...(controllerMode === 'coordinated_adaptive' ? { coordination: engine.coordinationStats.summary() } : {}),
         preOutage: segments.preOutage,

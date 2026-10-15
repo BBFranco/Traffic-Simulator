@@ -214,6 +214,9 @@ export const COORDINATED_DEFAULTS = {
     reservice: true, // a cross street that calls again inside its own window is served again, rather than waiting a whole cycle
     sideWaitCap: false, // lever 1, off: probed 2026-10-15 - never fired on the outage queue it was aimed at (those junctions were divorced). A cross street whose call has waited sideMaxWaitS overrides the coordination: served at once, and not forced off
     sideMaxWaitS: 60, // seconds - about one common cycle: a call older than this has already sat through a whole red it should have been served in
+    divorceNodes: [], // ablation: junction ids that never marry - plain adaptive whatever their links' flow, and left out of the common cycle
+    crossShiftS: 10, // seconds of every married junction's coordinated green handed to its cross street (earlier yield point, later force-off) - controllers/coordinatedAdaptive.js's shiftToCross(). Confirmed 2026-10-15 on 30 seeds: total -2.6% / -2.1% (normal / load shedding), side streets -8.7% / -6.3% against 0, arterial unchanged
+    freezeAfterWarmup: false, // ablation: the self-tuner stops re-planning when the warm-up ends - common cycle, splits and marriages held where they had settled (a power return rebuilds from that state, not from the planned demand)
     recoveryHold: true, // lever 3: after power returns every junction runs as plain adaptive for recoveryHoldS, flushing the outage queues, then marries back in
     recoveryHoldS: 300, // seconds
     forceRoutes: false, // connector routes married at every link whatever their flow (the selective rule left Jan Shoba's ~3-7 veh/min/lane all divorced)

@@ -11,6 +11,7 @@ use App\Models\TrafficCount;
 use App\Support\ConfidenceInterval;
 use App\Support\CoordinationMetrics;
 use App\Support\CorridorRepository;
+use App\Support\RoadWaitMetrics;
 use App\Support\RoutingMetrics;
 use App\Support\SeedPairedDeltas;
 use Illuminate\Database\Eloquent\Builder;
@@ -91,6 +92,7 @@ class ResultsController extends Controller
         private readonly SeedPairedDeltas $seedPairedDeltas,
         private readonly RoutingMetrics $routingMetrics,
         private readonly CoordinationMetrics $coordinationMetrics,
+        private readonly RoadWaitMetrics $roadWaitMetrics,
     ) {}
 
     public function index(): View
@@ -125,6 +127,7 @@ class ResultsController extends Controller
                 'starvedLabel' => $payload['starvedLabel'],
                 'routingMetrics' => $payload['routingMetrics'],
                 'coordinationMetrics' => $payload['coordinationMetrics'],
+                'roadWaits' => $payload['roadWaits'],
                 'corridorUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 // The user's own copy, only to warn in the run modal when it differs from the template the batch runs on.
                 'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
@@ -174,6 +177,7 @@ class ResultsController extends Controller
             'starvedLabel' => $payload['starvedLabel'],
             'routingMetrics' => $payload['routingMetrics'],
             'coordinationMetrics' => $payload['coordinationMetrics'],
+            'roadWaits' => $payload['roadWaits'],
             'html' => [
                 'batchSummary' => trim(view('results.partials.batch-summary', $viewData)->render()),
                 'researchQuestionCards' => view('results.partials.research-question-cards', $viewData)->render(),
@@ -670,7 +674,9 @@ class ResultsController extends Controller
             'lockupLabel' => $this->lockupLabel((clone $query)),
             'starvedLabel' => $this->starvedLabel((clone $query)),
             'routingMetrics' => $this->routingMetrics->forBatches($batchIds),
-            'coordinationMetrics' => $this->coordinationMetrics->forBatches($batchIds),
+            // Coordinated adaptive's own record, with its paired difference against adaptive alongside the vs-fixed-time ones.
+            'coordinationMetrics' => [...$this->coordinationMetrics->forBatches($batchIds), 'versus_adaptive' => $this->seedPairedDeltas->versusAdaptive($batchIds)],
+            'roadWaits' => $this->roadWaitMetrics->forBatches($batchIds),
         ];
     }
 
@@ -867,6 +873,11 @@ class ResultsController extends Controller
                 ? null
                 : round(($config['durationTicks'] - $outageEndTicks) * ($config['dt'] ?? 0.1)),
             'controllerConfig' => $controllers,
+            // The coordination layers and thresholds the batch's coordinated adaptive runs used (marriage gates, platoon, tuning, levers).
+            'coordination' => SimulationRun::query()
+                ->where('batch_id', $latest->batch_id)
+                ->where('controller_mode', 'coordinated_adaptive')
+                ->first(['raw_config_json'])?->raw_config_json['controllerConfig']['coordination'] ?? null,
             'routingTiersHash' => $config['routingTiersHash'] ?? null,
         ];
     }
@@ -1294,8 +1305,10 @@ class ResultsController extends Controller
             // The tail next to the mean - stored for the total scope only.
             'median_wait_delta_pct' => $suffix === '' ? ($paired['median_wait_time']['delta'] ?? null) : null,
             'median_wait_delta_ci95_pct' => $suffix === '' ? ($paired['median_wait_time']['ci95'] ?? null) : null,
-            'p95_wait_delta_pct' => $suffix === '' ? ($paired['p95_wait_time']['delta'] ?? null) : null,
-            'p95_wait_delta_ci95_pct' => $suffix === '' ? ($paired['p95_wait_time']['ci95'] ?? null) : null,
+            'p95_wait_delta_pct' => $paired['p95_wait_time'.$suffix]['delta'] ?? null,
+            'p95_wait_delta_ci95_pct' => $paired['p95_wait_time'.$suffix]['ci95'] ?? null,
+            'max_wait_delta_pct' => $paired['max_wait_time'.$suffix]['delta'] ?? null,
+            'max_wait_delta_ci95_pct' => $paired['max_wait_time'.$suffix]['ci95'] ?? null,
         ];
     }
 

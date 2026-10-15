@@ -88,6 +88,23 @@ export function layoutPlan({ offsetS, cycleLengthS, stages, stageGreens, anchorS
     };
 }
 
+/**
+ * Ablation (`coord.crossShiftS`): `shiftS` of the coordinated through green handed to the other road's through green -
+ * the yield point comes that much earlier and the cross street's window ends that much later, the cycle and offsets
+ * unchanged. The coordinated green never drops below `minGreenS`.
+ */
+export function shiftToCross(plan, shiftS, minGreenS) {
+    const coordinatedPhase = plan.coordinatedPhase ?? 0;
+    const coordinatedIndex = plan.stages.findIndex((s) => s.phase === coordinatedPhase && !s.turn);
+    const crossIndex = plan.stages.findIndex((s) => s.phase !== coordinatedPhase && !s.turn);
+    if (coordinatedIndex < 0 || crossIndex < 0) return plan;
+    const moved = Math.max(0, Math.min(shiftS, plan.stageGreens[coordinatedIndex] - minGreenS));
+    const stageGreens = [...plan.stageGreens];
+    stageGreens[coordinatedIndex] -= moved;
+    stageGreens[crossIndex] += moved;
+    return { ...plan, stageGreens };
+}
+
 export class CoordinatedAdaptiveController {
     /**
      * plan: { offsetS, cycleLengthS, stages, stageGreens, anchorS? } - one node's entry of planCoordination().
@@ -376,7 +393,7 @@ export class CoordinatedAdaptiveController {
 
     _applyPlan(plan) {
         this.plan = plan;
-        this.layout = layoutPlan(plan);
+        this.layout = layoutPlan(this.coord.crossShiftS ? shiftToCross(plan, this.coord.crossShiftS, this.params.minGreen) : plan);
     }
 
     /** Start in whichever stage the plan has at `simTimeS`, with that stage's force-off or yield point. */

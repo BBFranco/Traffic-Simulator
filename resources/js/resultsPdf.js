@@ -32,6 +32,7 @@ import {
 import { currentTheme } from './theme.js';
 import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { MAX_WARMUP_TICKS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
+import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS } from './sim/equations.js';
 import { LayoutRenderer, setRendererTheme } from './sim/renderer.js';
 
 const SCOPES = [
@@ -96,6 +97,8 @@ const fmtRecovery = (row, metric) => {
  */
 const cappedRecoveryS = (meanS, recovered, runs, windowS) =>
     windowS == null || !runs ? null : ((meanS ?? 0) * recovered + windowS * (runs - recovered)) / runs;
+/** The capped-mean wait recovery must differ from the baseline's by this share before its cell is tinted - the capped mean carries no interval. */
+const CAPPED_GAP_MIN = 0.1;
 /** Wait recovery as the share of runs that recovered within the window, then the capped mean. */
 const fmtWaitRecovery = (row, metric, windowS) => {
     const recovered = row[`${metric}_recovered`];
@@ -590,7 +593,10 @@ function drawCover(report, data, variants, corridorLayout) {
             [
                 plural(corridorLayout.arterialRoads, 'arterial road'),
                 plural(corridorLayout.sideRoads, 'side street'),
-                plural(corridorLayout.signals, 'signalised junction'),
+                // park_hilda is signal-controlled but has no arterial approach, so coordination never takes it: count what could coordinate.
+                data.coordinationMetrics?.junctions?.length && data.coordinationMetrics.junctions.length < corridorLayout.signals
+                    ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')}`
+                    : plural(corridorLayout.signals, 'signalised junction'),
                 corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
                 corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
                 corridorLayout.stopStreets && plural(corridorLayout.stopStreets, 'stop street'),
@@ -680,9 +686,23 @@ function lowerIsBetter(delta, ci95) {
     return delta < 0;
 }
 
+/** "mode|power" -> "ITS vs fixed-time" lost arrivals per run, from the destination-routing rows (the sensors pooled per mode). Empty without routing rows. */
+function lostArrivalsByCondition(routingMetrics) {
+    const byKey = new Map((routingMetrics ?? []).filter((row) => row.arrivals_lost_per_run != null).map((row) => [`${row.controller_mode}|${row.power_state}`, row.arrivals_lost_per_run]));
+    const out = new Map();
+    for (const [key, lost] of byKey) {
+        const [, power] = key.split('|');
+        const fixed = byKey.get(`fixed|${power}`);
+        if (key.startsWith('fixed|') || fixed == null) continue;
+        out.set(key, `${Math.round(lost)} vs ${Math.round(fixed)}`);
+    }
+    return out;
+}
+
 function comparisonTable(report, data, variants, scope, { compact = false } = {}) {
     // The cover's compact headline keeps to the blended adaptive average and green wave.
     const rows = comparisonRows(data, variants, scope).filter((c) => !compact || c.variant.sensor === null || c.variant.sensor === 'average');
+    const lostArrivals = lostArrivalsByCondition(data.routingMetrics);
     if (!rows.length) {
         report.paragraph('No paired comparisons yet - run the batch for this corridor first.');
         return;
@@ -701,6 +721,12 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
             : []),
         { header: 'Throughput', value: (c) => fmtPaired(c.throughput_delta_pct, c.throughput_delta_ci95_pct, '%'), improves: 'throughput_improves' },
         { header: 'Cleared w/o stop', value: (c) => fmtPaired(c.cleared_delta_pp, c.cleared_delta_ci95_pp, ' pp'), improves: 'cleared_improves' },
+        ...(compact && lostArrivals.size
+            ? [
+                  // Wait alone hides saturation: a controller that turns demand away at a full entry has a shorter queue to wait in.
+                  { header: 'Lost arrivals / run (ITS vs fixed)', value: (c) => lostArrivals.get(`${c.mode}|${c.power_state}`) ?? 'n/a' },
+              ]
+            : []),
         ...(compact
             ? []
             : [
@@ -709,17 +735,23 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
                   {
                       header: 'Recovery (wait)',
                       value: (c) => fmtRecoveryDelta(c, 'wait', data.batchStamp?.postRestoreWindowS),
+                      // Tinted on the capped-mean gap, not the recovered share: one run short of 100% against a 100% baseline is not a loss.
                       improves: (c) => {
                           if (c.power_state !== 'load_shedding') return null;
-                          const share = c.recovery_wait_recovered / c.runs;
-                          const baselineShare = c.baseline_recovery_wait_recovered / c.baseline_runs;
-                          // The same share recovered on both sides is no difference, not a regression.
-                          return share === baselineShare ? null : share > baselineShare;
+                          const windowS = data.batchStamp?.postRestoreWindowS;
+                          const its = cappedRecoveryS(c.recovery_wait_seconds, c.recovery_wait_recovered, c.runs, windowS);
+                          const baseline = cappedRecoveryS(c.baseline_recovery_wait_seconds, c.baseline_recovery_wait_recovered, c.baseline_runs, windowS);
+                          if (its == null || !baseline || Math.abs(its - baseline) / baseline < CAPPED_GAP_MIN) return null;
+                          return its < baseline;
                       },
                   },
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
+
+    if (!compact && rows.some((c) => c.power_state === 'load_shedding' && c.baseline_runs && c.baseline_recovery_wait_recovered === c.baseline_runs)) {
+        report.paragraph('Recovery (wait): where the fixed-time baseline recovered in every run (100%), a single ITS run that did not recover reads as a loss in the share. The cell is tinted on the capped-mean gap (at least 10%) instead - read the shares as counts, not as a difference.');
+    }
 
     report.table({
         head: [columns.map((column) => column.header)],
@@ -729,6 +761,31 @@ function comparisonTable(report, data, variants, scope, { compact = false } = {}
             if (hook.section !== 'body') return;
             const key = columns[hook.column.index].improves;
             if (key) toneCell(hook.cell, typeof key === 'function' ? key(rows[hook.row.index]) : rows[hook.row.index][key]);
+        },
+    });
+}
+
+/** One scope's P95 and max-wait deltas against fixed-time, with their paired CIs. */
+function tailTable(report, data, variants, scope) {
+    const rows = comparisonRows(data, variants, scope);
+    if (!rows.length || !rows.some((c) => c.p95_wait_delta_pct != null || c.max_wait_delta_pct != null)) {
+        report.paragraph('No tail comparison for this batch (per-scope P95/max not recorded).');
+        return;
+    }
+    const columns = [
+        { header: 'ITS variant', value: (c) => c.variant.label },
+        { header: 'Power', value: (c) => POWER_LABELS[c.power_state] ?? c.power_state },
+        { header: 'P95 wait', value: (c) => fmtPaired(c.p95_wait_delta_pct, c.p95_wait_delta_ci95_pct, '%'), improves: (c) => lowerIsBetter(c.p95_wait_delta_pct, c.p95_wait_delta_ci95_pct) },
+        { header: 'Max wait (run mean)', value: (c) => fmtPaired(c.max_wait_delta_pct, c.max_wait_delta_ci95_pct, '%'), improves: (c) => lowerIsBetter(c.max_wait_delta_pct, c.max_wait_delta_ci95_pct) },
+    ];
+    report.table({
+        head: [columns.map((column) => column.header)],
+        body: rows.map((c) => columns.map((column) => column.value(c))),
+        columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i < 2 ? 'left' : 'right' }])),
+        didParseCell: (hook) => {
+            if (hook.section !== 'body') return;
+            const improves = columns[hook.column.index].improves;
+            if (improves) toneCell(hook.cell, improves(rows[hook.row.index]));
         },
     });
 }
@@ -829,6 +886,9 @@ function drawScope(report, data, variants, scope, index) {
 
     report.heading('Every ITS variant vs fixed-time', 'Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). Recovery: throughput first - wait-recovery is often cut off by the end of the measured window.');
     comparisonTable(report, data, variants, scope);
+
+    report.heading('Tail vs fixed-time', 'P95 and the mean of each run\'s longest wait, as the change against fixed-time on the same seeds (negative is better; tinted only when the 95% CI excludes zero). A mean can improve while the few stranded vehicles get worse - that shows here.');
+    tailTable(report, data, variants, scope);
 
     const barAspect = 270 / 760;
     report.chartCard(`${scope.label} - average wait time`, 'seconds per vehicle · lower is better', barChartImage(data, variants, m('avg_wait_time'), { unit: '', tickSuffix: 's' }), barAspect);
@@ -941,6 +1001,91 @@ const GREEN_END_LABELS = {
  * Coordinated adaptive batches only: what the coordination actually did (server CoordinationMetrics, from each run's
  * coordination_stats) - per sensor and power state, how greens ended, and which junctions coordinated.
  */
+/**
+ * Coordinated adaptive against adaptive itself - same sensor, same seeds - with the CI on the per-seed differences. Against
+ * fixed-time both look good; this says what the coordination layers added on top of plain actuation.
+ */
+function drawVersusAdaptive(report, versus, conditions) {
+    if (!versus || !Object.keys(versus).length) return;
+    report.heading(
+        'Coordinated vs adaptive',
+        'Coordinated adaptive against adaptive with the same sensor on the same seeds and power state; ± is the 95% CI on the per-seed differences (the "avg. of sensors" row pairs each seed\'s sensor mean). Wait, P95 and max: negative is better. Throughput and cleared-without-stopping: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI. Recovery: throughput, seconds.'
+    );
+    const sensors = ['average', ...SENSOR_ORDER];
+    const powers = [...new Set(conditions.map((row) => row.power_state))].sort().reverse();
+    const rows = powers.flatMap((power) => sensors.map((sensor) => ({ sensor, power, paired: versus[`${sensor}|${power}`] }))).filter((row) => row.paired);
+    const delta = (column, unit, lowerBetter) => ({
+        value: (row) => fmtPaired(row.paired[column]?.delta, row.paired[column]?.ci95, unit),
+        improves: (row) => {
+            const d = row.paired[column];
+            if (!d || Math.abs(d.delta) <= d.ci95) return null;
+            return lowerBetter ? d.delta < 0 : d.delta > 0;
+        },
+    });
+    const columns = [
+        { header: 'Sensor', value: (row) => (row.sensor === 'average' ? 'Avg. of sensors' : SENSOR_LABELS[row.sensor] ?? row.sensor) },
+        { header: 'Power', value: (row) => POWER_LABELS[row.power] ?? row.power },
+        { header: 'Wait, total', ...delta('avg_wait_time', '%', true) },
+        { header: 'Wait, arterial', ...delta('avg_wait_time_arterial', '%', true) },
+        { header: 'Wait, side streets', ...delta('avg_wait_time_side_street', '%', true) },
+        { header: 'P95, total', ...delta('p95_wait_time', '%', true) },
+        { header: 'P95, side streets', ...delta('p95_wait_time_side_street', '%', true) },
+        { header: 'Max, side streets', ...delta('max_wait_time_side_street', '%', true) },
+        { header: 'Throughput', ...delta('throughput_per_min', '%', false) },
+        { header: 'Cleared w/o stop', ...delta('pct_cleared_without_stop', ' pp', false) },
+    ];
+    report.table({
+        head: [columns.map((column) => column.header)],
+        body: rows.map((row) => columns.map((column) => column.value(row))),
+        columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i < 2 ? 'left' : 'right' }])),
+        didParseCell: (hook) => {
+            if (hook.section !== 'body') return;
+            const improves = columns[hook.column.index].improves;
+            if (improves) toneCell(hook.cell, improves(rows[hook.row.index]));
+        },
+    });
+}
+
+/** Wait per road: each controller's mean, and the paired differences that show where a gain or loss sits (a main road, or the streets crossing it). */
+function drawRoadWaits(report, roadWaits, number) {
+    report.newPage();
+    report.sectionTitle('Wait by road', 'Where the wait is - each road on its own, the main roads and the streets crossing them', number);
+    const labels = { arterial: 'Main roads', side: 'Side streets' };
+    [...new Set(roadWaits.map((row) => row.power_state))].sort().reverse().forEach((power) => {
+        ['arterial', 'side'].forEach((scope) => {
+            const rows = roadWaits.filter((row) => row.power_state === power && row.scope === scope);
+            if (!rows.length) return;
+            report.heading(
+                `${labels[scope]} - ${POWER_LABELS[power] ?? power}`,
+                scope === 'arterial' && power === 'normal'
+                    ? 'Mean wait (s) a vehicle built up on each road, over the vehicles that used it - a trip over several roads is in each, with only the wait it built up there. Adaptive and coordinated adaptive: the sensors averaged per seed. Δ columns: paired change on the same seeds, % of the baseline, ± 95% CI; tinted only where the CI excludes zero (negative is better).'
+                    : null
+            );
+            const pair = (key) => ({ value: (row) => fmtPaired(row[key]?.delta, row[key]?.ci95, '%'), improves: (row) => lowerIsBetter(row[key]?.delta, row[key]?.ci95) });
+            const columns = [
+                { header: 'Road', value: (row) => (row.name && row.name !== row.road_id ? `${row.name} (${row.road_id})` : row.road_id) },
+                { header: 'Fixed', value: (row) => fmt(row.fixed) },
+                { header: 'Adaptive', value: (row) => fmt(row.adaptive) },
+                { header: 'Green wave', value: (row) => fmt(row.green_wave) },
+                { header: 'Coordinated', value: (row) => fmt(row.coordinated_adaptive) },
+                { header: 'Adaptive vs fixed', ...pair('adaptive_vs_fixed') },
+                { header: 'Coordinated vs fixed', ...pair('coordinated_vs_fixed') },
+                { header: 'Coordinated vs adaptive', ...pair('coordinated_vs_adaptive') },
+            ];
+            report.table({
+                head: [columns.map((column) => column.header)],
+                body: rows.map((row) => columns.map((column) => column.value(row))),
+                columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i === 0 ? 'left' : 'right' }])),
+                didParseCell: (hook) => {
+                    if (hook.section !== 'body') return;
+                    const improves = columns[hook.column.index].improves;
+                    if (improves) toneCell(hook.cell, improves(rows[hook.row.index]));
+                },
+            });
+        });
+    });
+}
+
 function drawCoordination(report, metrics, number) {
     report.sectionTitle('Coordination', 'Coordinated adaptive only - what the coordination layers did over the measured window', number);
 
@@ -967,6 +1112,8 @@ function drawCoordination(report, metrics, number) {
         columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9].map((column) => [column, { halign: 'right' }])),
     });
 
+    drawVersusAdaptive(report, metrics.versus_adaptive, conditions);
+
     report.heading('How greens ended', 'Share of every green that ended, by why - per sensor and power state.');
     const reasons = Object.keys(GREEN_END_LABELS).filter((reason) => conditions.some((row) => row.green_ends_pct?.[reason]));
     report.table({
@@ -975,12 +1122,32 @@ function drawCoordination(report, metrics, number) {
         columnStyles: Object.fromEntries(reasons.map((_, i) => [i + 2, { halign: 'right' }])),
     });
 
-    report.heading('Per junction', 'Normal power, every sensor pooled: how much of the time each junction coordinated, the route it coordinated on (its arterial, or "route:Jan Shoba"), and the mean common cycle of that route. Junctions on no strong link run as plain adaptive throughout (0%).');
+    report.heading(
+        'Per junction',
+        'Every sensor pooled: how much of the time each junction coordinated at normal power and under load shedding (the dark window counts as unmarried, so the load-shedding share is of the whole measured window), the route it coordinated on (its arterial, or "route:Jan Shoba"), and the mean common cycle of that route at normal power ("-" where no junction on the route ever coordinated, so no cycle was run). Junctions on no strong link run as plain adaptive throughout (0%).'
+    );
     report.table({
-        head: [['Junction', 'Route', 'Married (%)', 'Route cycle (s)']],
-        body: metrics.junctions.map((row) => [row.node_id, row.route_id, fmt(row.married_pct), fmt(row.mean_cycle_s)]),
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
+        head: [['Junction', 'Route', 'Married, normal (%)', 'Married, load shedding (%)', 'Route cycle (s)']],
+        body: metrics.junctions.map((row) => [row.node_id, row.route_id, fmt(row.married_pct), fmt(row.married_pct_load_shedding), row.mean_cycle_s == null ? '-' : fmt(row.mean_cycle_s)]),
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
     });
+}
+
+/**
+ * The gates and thresholds the actuated controllers ran on, so a coordination result can be reproduced: the batch's own
+ * coordination settings (stamped on its runs), the actuation rules from the code the report was built with.
+ */
+function thresholdNotes(data) {
+    const coordination = data.batchStamp?.coordination;
+    if (!coordination) return [];
+    const c = { ...COORDINATED_DEFAULTS, ...coordination };
+    const a = ADAPTIVE_DEFAULTS;
+    const on = (flag) => (flag ? 'on' : 'off');
+    return [
+        `Adaptive actuation (every sensor, plain and coordinated): a green gaps out after ${a.gapOutS} s without a detection, never shorter than ${a.minGreen} s, capped at ${a.maxGreen} s; the other phase must have ${a.minCallToSwitch} vehicles queued (wide-window sensors) or its call persist ${a.callDebounceS} s (loop, magnetometer), and a lesser call is served anyway after ${a.maxCallWaitS} s.`,
+        `Coordinated adaptive gates: a link marries when the busiest-lane arterial flow at its two ends averages at least ${c.marryFlowPerLaneMin} veh/min per lane and a platoon crosses it within ${c.marryMaxTravelS} s, and divorces below ${Math.round(c.divorceRatio * 100)}% of that; selective marriage ${on(c.selective)}, connector routes (Jan Shoba) ${on(c.connectorRoutes)}, forced route marriage ${on(c.forceRoutes)}. Platoon messages ${on(c.platoonMessages)}: a platoon of ${c.platoonMinCars}+ vehicles holds the arterial green up to ${c.platoonExtendMaxS} s past its yield point when due within ${c.platoonLookaheadS} s, and a thinned-out cross green (${c.earlyStartGapS} s without detection) ends early for a platoon due within amber + all-red + ${c.earlyStartLeadS} s. Self-tuning ${on(c.selfTuning)}: re-plan every ${c.retuneEveryCycles} common cycles, flow smoothing ${c.retuneSmoothing}, common cycle moves at most ${c.retuneMaxStepS} s per update, saturated stages boosted ${Math.round(c.saturatedBoost * 100)}%${c.freezeAfterWarmup ? '; FROZEN after warm-up (ablation)' : ''}.`,
+        `Coordinated adaptive levers: re-service of a cross call within its own window ${on(c.reservice)}; side-street max-wait cap ${on(c.sideWaitCap)} (${c.sideMaxWaitS} s); resync hold after power returns ${on(c.recoveryHold)} (${c.recoveryHoldS} s on plain adaptive before marrying back).`,
+    ];
 }
 
 function drawMethodNotes(report, data, number) {
@@ -1003,6 +1170,7 @@ function drawMethodNotes(report, data, number) {
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total scope only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
+        ...thresholdNotes(data),
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
 
@@ -1052,6 +1220,10 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         });
         if (data.routingMetrics?.length) drawRoutingTrips(report, data.routingMetrics);
         let section = SCOPES.length + 2;
+        if (data.roadWaits?.length) {
+            drawRoadWaits(report, data.roadWaits, section);
+            section += 1;
+        }
         if (data.coordinationMetrics?.conditions?.length) {
             report.newPage();
             drawCoordination(report, data.coordinationMetrics, section);

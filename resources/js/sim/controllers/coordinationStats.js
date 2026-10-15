@@ -20,10 +20,15 @@ export class CoordinationStats {
         this.recoveryHoldS = 0;
         this.platoon = { messages: 0, holds: 0, holdS: 0 };
         this.greenEnds = {};
+        /** Seconds the network sat dark under load shedding - every junction that was coordinating was unmarried through them. */
+        this.darkS = 0;
+        /** Set by the first lit sample: the run coordinates, so dark time is worth counting. */
+        this.tracking = false;
     }
 
     /** One tick of one coordination group (an arterial, or a connector route): its junctions' married time, its common cycle, and any platoon hold. */
     sample(dt, routeId, nodeInfos, commonCycleS) {
+        this.tracking = true;
         const route = this._route(routeId);
         route.seconds += dt;
         route.cycleSum += commonCycleS * dt;
@@ -48,6 +53,10 @@ export class CoordinationStats {
         }
     }
 
+    sampleDark(dt) {
+        this.darkS += dt;
+    }
+
     onRetune(routeId) {
         this._route(routeId).retunes += 1;
     }
@@ -69,13 +78,14 @@ export class CoordinationStats {
     summary() {
         const round = (value, places = 1) => (value == null ? null : Number(value.toFixed(places)));
         const nodes = [...this.byNode.values()];
-        const seconds = nodes.reduce((sum, node) => sum + node.seconds, 0);
+        const seconds = nodes.reduce((sum, node) => sum + node.seconds + this.darkS, 0);
         const marriedS = nodes.reduce((sum, node) => sum + node.marriedS, 0);
         return {
             measuredS: round(seconds),
             marriedShare: seconds ? round(marriedS / seconds, 3) : null,
+            darkS: round(this.darkS),
             nodes: Object.fromEntries(
-                [...this.byNode].map(([nodeId, node]) => [nodeId, { routeId: node.routeId, marriedShare: node.seconds ? round(node.marriedS / node.seconds, 3) : null }])
+                [...this.byNode].map(([nodeId, node]) => [nodeId, { routeId: node.routeId, marriedShare: node.seconds ? round(node.marriedS / (node.seconds + this.darkS), 3) : null }])
             ),
             routes: Object.fromEntries(
                 [...this.byRoute].map(([routeId, a]) => [

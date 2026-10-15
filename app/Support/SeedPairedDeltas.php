@@ -20,7 +20,17 @@ class SeedPairedDeltas
 {
     private const SCOPED_COLUMNS = ['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds'];
 
-    private const TOTAL_ONLY_COLUMNS = ['median_wait_time', 'p95_wait_time'];
+    private const TOTAL_ONLY_COLUMNS = ['median_wait_time', 'p95_wait_time', 'max_wait_time'];
+
+    /** The tail per scope too (the median is stored for the total scope only). */
+    private const SCOPED_TAIL_COLUMNS = ['p95_wait_time_arterial', 'max_wait_time_arterial', 'p95_wait_time_side_street', 'max_wait_time_side_street'];
+
+    /** What coordinated adaptive is read against adaptive on: the wait in every scope, its tail, throughput, cleared-without-stop and recovery. */
+    private const VERSUS_ADAPTIVE_COLUMNS = [
+        'avg_wait_time', 'avg_wait_time_arterial', 'avg_wait_time_side_street',
+        'p95_wait_time', 'p95_wait_time_arterial', 'p95_wait_time_side_street', 'max_wait_time_side_street',
+        'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds',
+    ];
 
     private const SCOPE_SUFFIXES = ['', '_arterial', '_side_street'];
 
@@ -60,6 +70,51 @@ class SeedPairedDeltas
                 ->mapWithKeys(fn (string $column): array => [$column => $this->pairedDelta($group, $baselines, $pairKey, $column)])
                 ->filter()
                 ->all())
+            ->all();
+    }
+
+    /**
+     * Coordinated adaptive against adaptive on the same seeds and sensor (the sensors' mean per seed for the 'average' row),
+     * in the same shape as forBatches(), keyed "sensor|power".
+     *
+     * @param  Collection<int, string>  $batchIds
+     * @return array<string, array<string, array{delta: float, ci95: float, pairs: int}>>
+     */
+    public function versusAdaptive(Collection $batchIds): array
+    {
+        $columns = self::VERSUS_ADAPTIVE_COLUMNS;
+        $runs = SimulationRun::query()
+            ->whereIn('batch_id', $batchIds)
+            ->whereIn('controller_mode', ['adaptive', 'coordinated_adaptive'])
+            ->get(['controller_mode', 'sensor_mode', 'power_state', 'corridor_config', 'seed', ...$columns])
+            ->toBase();
+        $adaptive = $runs->where('controller_mode', 'adaptive');
+        $coordinated = $runs->where('controller_mode', 'coordinated_adaptive');
+
+        $perSensorKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}|{$run->sensor_mode}";
+        $perSeedKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}";
+        $sensorBaselines = $adaptive->keyBy($perSensorKey);
+        $averageBaselines = $adaptive->groupBy($perSeedKey)->map(fn (Collection $group): object => (object) collect($columns)
+            ->mapWithKeys(fn (string $column): array => [$column => $group->pluck($column)->filter(fn ($value): bool => $value !== null)->avg()])
+            ->all());
+
+        $result = [];
+        foreach ($coordinated->groupBy(fn (SimulationRun $run): string => "{$run->sensor_mode}|{$run->power_state}") as $key => $group) {
+            $result[$key] = $this->pairedColumns($group, $sensorBaselines, $perSensorKey, $columns);
+        }
+        foreach ($coordinated->groupBy(fn (SimulationRun $run): string => "average|{$run->power_state}") as $key => $group) {
+            $result[$key] = $this->pairedColumns($group, $averageBaselines, $perSeedKey, $columns);
+        }
+
+        return $result;
+    }
+
+    /** @return array<string, array{delta: float, ci95: float, pairs: int}> */
+    private function pairedColumns(Collection $group, Collection $baselines, callable $pairKey, array $columns): array
+    {
+        return collect($columns)
+            ->mapWithKeys(fn (string $column): array => [$column => $this->pairedDelta($group, $baselines, $pairKey, $column)])
+            ->filter()
             ->all();
     }
 
@@ -116,6 +171,7 @@ class SeedPairedDeltas
             ->crossJoin(self::SCOPE_SUFFIXES)
             ->map(fn (array $parts): string => $parts[0].$parts[1])
             ->merge(self::TOTAL_ONLY_COLUMNS)
+            ->merge(self::SCOPED_TAIL_COLUMNS)
             ->all();
     }
 

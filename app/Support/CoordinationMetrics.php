@@ -31,7 +31,7 @@ class CoordinationMetrics
                 ->map(fn (Collection $group): array => $this->condition($group))
                 ->values()
                 ->all(),
-            'junctions' => $this->junctions($runs->where('power_state', 'normal')),
+            'junctions' => $this->junctions($runs),
         ];
     }
 
@@ -62,14 +62,15 @@ class CoordinationMetrics
     }
 
     /**
-     * Per junction at normal power, every sensor pooled: married share, and the mean common cycle of the route it coordinated on.
+     * Per junction, every sensor pooled: married share at normal power and under load shedding (the dark window counted as
+     * unmarried), and the mean common cycle of the route it coordinated on at normal power.
      *
      * @param  Collection<int, SimulationRun>  $runs
-     * @return array<int, array{node_id: string, route_id: string, married_pct: ?float, mean_cycle_s: ?float}>
+     * @return array<int, array{node_id: string, route_id: string, married_pct: ?float, married_pct_load_shedding: ?float, mean_cycle_s: ?float}>
      */
     private function junctions(Collection $runs): array
     {
-        return $runs->flatMap(fn (SimulationRun $run): array => collect($run->coordination_stats['nodes'] ?? [])
+        $samples = fn (Collection $group): Collection => $group->flatMap(fn (SimulationRun $run): array => collect($run->coordination_stats['nodes'] ?? [])
             ->map(fn (array $node, string $nodeId): array => [
                 'node_id' => $nodeId,
                 'route_id' => $node['routeId'],
@@ -77,14 +78,25 @@ class CoordinationMetrics
                 'cycle_s' => $run->coordination_stats['routes'][$node['routeId']]['meanCycleS'] ?? null,
             ])
             ->values()
-            ->all())
-            ->groupBy('node_id')
-            ->map(fn (Collection $samples, string $nodeId): array => [
+            ->all());
+        $normal = $samples($runs->where('power_state', 'normal'))->groupBy('node_id');
+        $shedding = $samples($runs->where('power_state', 'load_shedding'))->groupBy('node_id');
+        $share = fn (?Collection $group): ?float => $group ? $this->mean($group->map(fn (array $sample): ?float => $this->percent($sample['married_share']))) : null;
+
+        return $normal->keys()->merge($shedding->keys())->unique()
+            ->map(fn (string $nodeId): array => [
                 'node_id' => $nodeId,
-                'route_id' => $samples->first()['route_id'],
-                'married_pct' => $this->mean($samples->map(fn (array $sample): ?float => $this->percent($sample['married_share']))),
-                'mean_cycle_s' => $this->mean($samples->pluck('cycle_s')),
+                'route_id' => ($normal[$nodeId] ?? $shedding[$nodeId])->first()['route_id'],
+                'married_pct' => $share($normal[$nodeId] ?? null),
+                'married_pct_load_shedding' => $share($shedding[$nodeId] ?? null),
+                'mean_cycle_s' => isset($normal[$nodeId]) ? $this->mean($normal[$nodeId]->pluck('cycle_s')) : null,
             ])
+            ->pipe(function (Collection $junctions): Collection {
+                // A route no junction married on ran no common cycle - its planned cycle drove nothing, so it is not shown.
+                $marriedRoutes = $junctions->filter(fn (array $junction): bool => ($junction['married_pct'] ?? 0) > 0)->pluck('route_id')->unique();
+
+                return $junctions->map(fn (array $junction): array => $marriedRoutes->contains($junction['route_id']) ? $junction : [...$junction, 'mean_cycle_s' => null]);
+            })
             ->sortByDesc('married_pct')
             ->values()
             ->all();

@@ -88,6 +88,7 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.diversion_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'runs.*.routing_stats' => ['nullable', 'array'],
             'runs.*.coordination_stats' => ['nullable', 'array'],
+            'runs.*.road_waits' => ['nullable', 'array'],
             'runs.*.raw_config_json' => ['required', 'array'],
             'runs.*.warmup_ticks' => ['nullable', 'integer', 'min:0'],
             'runs.*.warmup_stationary' => ['nullable', 'boolean'],

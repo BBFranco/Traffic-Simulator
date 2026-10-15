@@ -43,6 +43,344 @@
       "maxWaitArterial": 162.79999999999504,
       "p95WaitSideStreet": 55.200000000000514,
       "maxWaitSideStreet": 107.89999999999814,
+      "roadWaits": {
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 220,
+          "meanWait": 36.45,
+          "maxWait": 138.1
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 180,
+          "meanWait": 48.84,
+          "maxWait": 142
+        },
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 227,
+          "meanWait": 21.42,
+          "maxWait": 66.9
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 147,
+          "meanWait": 30.77,
+          "maxWait": 109
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 227,
+          "meanWait": 11.89,
+          "maxWait": 54.9
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 6.76,
+          "maxWait": 35
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 46,
+          "meanWait": 9.37,
+          "maxWait": 30.9
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 31,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 218,
+          "meanWait": 18.53,
+          "maxWait": 89.2
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 127,
+          "meanWait": 10.44,
+          "maxWait": 47.2
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 53,
+          "meanWait": 13.64,
+          "maxWait": 39.2
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 53,
+          "meanWait": 10.32,
+          "maxWait": 47.1
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 58,
+          "meanWait": 0.3,
+          "maxWait": 7.8
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 23,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 65,
+          "meanWait": 0.04,
+          "maxWait": 2.6
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 15,
+          "meanWait": 14.53,
+          "maxWait": 42.4
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 2.22,
+          "maxWait": 11.8
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 1.72,
+          "maxWait": 11.3
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 40,
+          "meanWait": 4.18,
+          "maxWait": 25.3
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 11.69,
+          "maxWait": 67.9
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 50,
+          "meanWait": 3.29,
+          "maxWait": 35.5
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 55,
+          "meanWait": 2.26,
+          "maxWait": 27.8
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 53,
+          "meanWait": 3.35,
+          "maxWait": 55
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 58,
+          "meanWait": 7.68,
+          "maxWait": 53.4
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 46,
+          "meanWait": 6.93,
+          "maxWait": 36.1
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 37,
+          "meanWait": 4.03,
+          "maxWait": 13.2
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 25,
+          "meanWait": 9.68,
+          "maxWait": 39.3
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 58,
+          "meanWait": 2.72,
+          "maxWait": 21.8
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 42,
+          "meanWait": 14.05,
+          "maxWait": 40
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 48,
+          "meanWait": 13.36,
+          "maxWait": 95.5
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 9,
+          "meanWait": 0.64,
+          "maxWait": 3.3
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 26,
+          "meanWait": 11.43,
+          "maxWait": 41.3
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 6.33,
+          "maxWait": 10
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 40,
+          "meanWait": 11.16,
+          "maxWait": 56.6
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 44,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0.96,
+          "maxWait": 10.6
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 14,
+          "meanWait": 7.69,
+          "maxWait": 45
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "preOutage": {
         "avgWaitTime": 22.6595238095239,
         "throughputPerMin": 100.8,
@@ -329,6 +667,344 @@
       "maxWaitArterial": 154.29999999999552,
       "p95WaitSideStreet": 47.0000000000004,
       "maxWaitSideStreet": 114.29999999999531,
+      "roadWaits": {
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 240,
+          "meanWait": 17.41,
+          "maxWait": 71.7
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 227,
+          "meanWait": 22.63,
+          "maxWait": 76.4
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 262,
+          "meanWait": 19.74,
+          "maxWait": 112.3
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 52,
+          "meanWait": 3.12,
+          "maxWait": 34
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 231,
+          "meanWait": 17.46,
+          "maxWait": 77.2
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 124,
+          "meanWait": 20.54,
+          "maxWait": 83.7
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 68,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 56,
+          "meanWait": 5.91,
+          "maxWait": 39.5
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 67,
+          "meanWait": 0.99,
+          "maxWait": 15.5
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 27,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 130,
+          "meanWait": 10.22,
+          "maxWait": 62.7
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 72,
+          "meanWait": 9.72,
+          "maxWait": 45.1
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 63,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 60,
+          "meanWait": 0.01,
+          "maxWait": 0.6
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 2.57,
+          "maxWait": 21.8
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 53,
+          "meanWait": 3.43,
+          "maxWait": 18
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 75,
+          "meanWait": 9.13,
+          "maxWait": 84.7
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 250,
+          "meanWait": 12.69,
+          "maxWait": 76.4
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 8.71,
+          "maxWait": 35.4
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 18,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 25,
+          "meanWait": 5.01,
+          "maxWait": 19.8
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 11.99,
+          "maxWait": 58.2
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 21,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 26,
+          "meanWait": 3.83,
+          "maxWait": 13.4
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 59,
+          "meanWait": 6.39,
+          "maxWait": 41.8
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 5.78,
+          "maxWait": 12.9
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 27,
+          "meanWait": 2.75,
+          "maxWait": 8.6
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 16,
+          "meanWait": 3.05,
+          "maxWait": 8.2
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 14,
+          "meanWait": 4.36,
+          "maxWait": 16
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 43,
+          "meanWait": 22.63,
+          "maxWait": 81.1
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 1.02,
+          "maxWait": 5.9
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 71,
+          "meanWait": 4.24,
+          "maxWait": 31.6
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 55,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 2.38,
+          "maxWait": 31
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 65,
+          "meanWait": 16,
+          "maxWait": 55.3
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 17.36,
+          "maxWait": 84.9
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 14,
+          "meanWait": 0.31,
+          "maxWait": 4.3
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 34,
+          "meanWait": 9.36,
+          "maxWait": 23.7
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 4,
+          "meanWait": 2.17,
+          "maxWait": 8.7
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 42,
+          "meanWait": 4.13,
+          "maxWait": 31
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "preOutage": {
         "avgWaitTime": 14.166118421052682,
         "throughputPerMin": 121.6,
@@ -615,6 +1291,344 @@
       "maxWaitArterial": 188.89999999999355,
       "p95WaitSideStreet": 63.00000000000045,
       "maxWaitSideStreet": 149.1999999999958,
+      "roadWaits": {
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 232,
+          "meanWait": 19.51,
+          "maxWait": 69.1
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 120,
+          "meanWait": 12.38,
+          "maxWait": 61.8
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 40,
+          "meanWait": 0.04,
+          "maxWait": 1.7
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 165,
+          "meanWait": 40.2,
+          "maxWait": 120.1
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 267,
+          "meanWait": 10.42,
+          "maxWait": 60.2
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 21,
+          "meanWait": 8.61,
+          "maxWait": 39.4
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 75,
+          "meanWait": 3.97,
+          "maxWait": 40.5
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 262,
+          "meanWait": 35.25,
+          "maxWait": 147.4
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 205,
+          "meanWait": 38.64,
+          "maxWait": 139.5
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 62,
+          "meanWait": 19.04,
+          "maxWait": 58.5
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 60,
+          "meanWait": 5.2,
+          "maxWait": 37.6
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 59,
+          "meanWait": 16.71,
+          "maxWait": 111.6
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 240,
+          "meanWait": 25.24,
+          "maxWait": 90.4
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 59,
+          "meanWait": 8.11,
+          "maxWait": 41.5
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 59,
+          "meanWait": 1.37,
+          "maxWait": 11.1
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 58,
+          "meanWait": 9.9,
+          "maxWait": 34
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 29,
+          "meanWait": 9.03,
+          "maxWait": 37.3
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 55,
+          "meanWait": 4.8,
+          "maxWait": 43.9
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 62,
+          "meanWait": 2.81,
+          "maxWait": 38.2
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 24,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0.32,
+          "maxWait": 2
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 38,
+          "meanWait": 9.39,
+          "maxWait": 33.5
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 76,
+          "meanWait": 10.39,
+          "maxWait": 44.7
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 4.88,
+          "maxWait": 20.7
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 18,
+          "meanWait": 12.48,
+          "maxWait": 35.7
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 80,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 35,
+          "meanWait": 12.82,
+          "maxWait": 53.9
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 72,
+          "meanWait": 3.98,
+          "maxWait": 19.9
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 15,
+          "meanWait": 2.69,
+          "maxWait": 30.6
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 38,
+          "meanWait": 3.8,
+          "maxWait": 50.7
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 17,
+          "meanWait": 6.29,
+          "maxWait": 25.8
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 0.17,
+          "maxWait": 3.4
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 28,
+          "meanWait": 5.79,
+          "maxWait": 25.7
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0.63,
+          "maxWait": 6.9
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 64,
+          "meanWait": 0.03,
+          "maxWait": 1.9
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 54,
+          "meanWait": 17.35,
+          "maxWait": 77.1
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 54,
+          "meanWait": 10.81,
+          "maxWait": 76.6
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 6.27,
+          "maxWait": 8.5
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 4.63,
+          "maxWait": 11.2
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "preOutage": {
         "avgWaitTime": 18.27563291139248,
         "throughputPerMin": 126.4,
@@ -1509,6 +2523,344 @@
       "maxWaitArterial": 123.79999999999724,
       "p95WaitSideStreet": 34.200000000000216,
       "maxWaitSideStreet": 76.49999999999993,
+      "roadWaits": {
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 271,
+          "meanWait": 27.57,
+          "maxWait": 123.8
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 361,
+          "meanWait": 12.52,
+          "maxWait": 92
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 127,
+          "meanWait": 8.72,
+          "maxWait": 47.1
+        },
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 267,
+          "meanWait": 5.1,
+          "maxWait": 34
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 156,
+          "meanWait": 7.26,
+          "maxWait": 56.4
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 257,
+          "meanWait": 5.49,
+          "maxWait": 40.5
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 132,
+          "meanWait": 4.81,
+          "maxWait": 37.4
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 52,
+          "meanWait": 3.99,
+          "maxWait": 30.7
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 101,
+          "meanWait": 6.12,
+          "maxWait": 26.6
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 73,
+          "meanWait": 1.64,
+          "maxWait": 14.8
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 52,
+          "meanWait": 2.62,
+          "maxWait": 28.2
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 181,
+          "meanWait": 20.77,
+          "maxWait": 85.7
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 311,
+          "meanWait": 5.28,
+          "maxWait": 31.3
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 63,
+          "meanWait": 3.66,
+          "maxWait": 29.2
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 3.77,
+          "maxWait": 15
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 87,
+          "meanWait": 6.03,
+          "maxWait": 36.6
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 23,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 137,
+          "meanWait": 5.35,
+          "maxWait": 32.9
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 48,
+          "meanWait": 0.13,
+          "maxWait": 0.9
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 21,
+          "meanWait": 5.33,
+          "maxWait": 45.3
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 60,
+          "meanWait": 3.69,
+          "maxWait": 22.9
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 77,
+          "meanWait": 8.47,
+          "maxWait": 57.7
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 80,
+          "meanWait": 0.46,
+          "maxWait": 7.5
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 145,
+          "meanWait": 0.71,
+          "maxWait": 9.9
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 81,
+          "meanWait": 4.43,
+          "maxWait": 19.6
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 68,
+          "meanWait": 0.08,
+          "maxWait": 0.9
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0.05,
+          "maxWait": 0.6
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 6.86,
+          "maxWait": 26.4
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 122,
+          "meanWait": 0.41,
+          "maxWait": 6.6
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 78,
+          "meanWait": 6.79,
+          "maxWait": 40.3
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 33,
+          "meanWait": 2.28,
+          "maxWait": 10.6
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 72,
+          "meanWait": 2.42,
+          "maxWait": 25.8
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 0.04,
+          "maxWait": 0.8
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 15,
+          "meanWait": 12.73,
+          "maxWait": 37.3
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 40,
+          "meanWait": 2.61,
+          "maxWait": 13.6
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0.67,
+          "maxWait": 7.4
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 21,
+          "meanWait": 3.04,
+          "maxWait": 25.4
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 31,
+          "meanWait": 0.39,
+          "maxWait": 5.4
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 9,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 0.36,
+          "maxWait": 2.5
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 3.48,
+          "maxWait": 13.6
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "preOutage": null,
       "duringOutage": null,
       "postRecovery": null,
@@ -1759,6 +3111,337 @@
       "maxWaitArterial": 216.49999999999199,
       "p95WaitSideStreet": 59.49999999999988,
       "maxWaitSideStreet": 117.29999999999725,
+      "roadWaits": {
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 41,
+          "meanWait": 2.42,
+          "maxWait": 41.2
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 204,
+          "meanWait": 38.22,
+          "maxWait": 159.2
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 203,
+          "meanWait": 65.67,
+          "maxWait": 177.2
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0.67,
+          "maxWait": 7.4
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 16,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 223,
+          "meanWait": 19.99,
+          "maxWait": 89.1
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 121,
+          "meanWait": 5.86,
+          "maxWait": 29.8
+        },
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 225,
+          "meanWait": 19.14,
+          "maxWait": 54.9
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 148,
+          "meanWait": 29.2,
+          "maxWait": 116.1
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 249,
+          "meanWait": 14.83,
+          "maxWait": 50.7
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 36,
+          "meanWait": 0.12,
+          "maxWait": 2
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 9,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 7.95,
+          "maxWait": 36.8
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 4.23,
+          "maxWait": 17.1
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 36,
+          "meanWait": 5.64,
+          "maxWait": 52.1
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 17,
+          "meanWait": 5.27,
+          "maxWait": 13.5
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 11.07,
+          "maxWait": 32.2
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 31,
+          "meanWait": 13.1,
+          "maxWait": 54.3
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 57,
+          "meanWait": 7.47,
+          "maxWait": 29.5
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 58,
+          "meanWait": 0.52,
+          "maxWait": 9.9
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 55,
+          "meanWait": 6.6,
+          "maxWait": 39.2
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 42,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 62,
+          "meanWait": 13.73,
+          "maxWait": 57.6
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 66,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 38,
+          "meanWait": 4.11,
+          "maxWait": 31.3
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 22,
+          "meanWait": 13.4,
+          "maxWait": 35.6
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 2.68,
+          "maxWait": 68.4
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 16.19,
+          "maxWait": 98.2
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 37,
+          "meanWait": 3.17,
+          "maxWait": 18.5
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 32,
+          "meanWait": 12.22,
+          "maxWait": 26.8
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 7.4,
+          "maxWait": 37.5
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 3.22,
+          "maxWait": 15.3
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 45,
+          "meanWait": 1.8,
+          "maxWait": 10
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0.39,
+          "maxWait": 3.2
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0.72,
+          "maxWait": 3.6
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 17,
+          "meanWait": 0.22,
+          "maxWait": 3.7
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 32,
+          "meanWait": 8.89,
+          "maxWait": 40.4
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 0.09,
+          "maxWait": 3.5
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 3.32,
+          "maxWait": 7.6
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 11.3,
+          "maxWait": 15.8
+        }
+      },
       "preOutage": {
         "avgWaitTime": 21.029200000000092,
         "throughputPerMin": 100,
@@ -2045,6 +3728,344 @@
       "maxWaitArterial": 153.0999999999956,
       "p95WaitSideStreet": 43.20000000000015,
       "maxWaitSideStreet": 109.79999999999711,
+      "roadWaits": {
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 258,
+          "meanWait": 21.46,
+          "maxWait": 83.2
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 228,
+          "meanWait": 14.98,
+          "maxWait": 85.4
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 49,
+          "meanWait": 12.02,
+          "maxWait": 67.9
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 32,
+          "meanWait": 1.35,
+          "maxWait": 13.4
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 36,
+          "meanWait": 2.79,
+          "maxWait": 15.9
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 50,
+          "meanWait": 7.53,
+          "maxWait": 50.8
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 61,
+          "meanWait": 7.31,
+          "maxWait": 29.1
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 31,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 284,
+          "meanWait": 28.15,
+          "maxWait": 120.3
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 57,
+          "meanWait": 4.54,
+          "maxWait": 46.5
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 46,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 211,
+          "meanWait": 19.17,
+          "maxWait": 66.1
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 124,
+          "meanWait": 9.33,
+          "maxWait": 73.6
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 32,
+          "meanWait": 0.08,
+          "maxWait": 1.9
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 172,
+          "meanWait": 18.46,
+          "maxWait": 90.2
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 94,
+          "meanWait": 0.03,
+          "maxWait": 1.3
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 57,
+          "meanWait": 2.21,
+          "maxWait": 28.6
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 71,
+          "meanWait": 2.15,
+          "maxWait": 33.4
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 223,
+          "meanWait": 22.34,
+          "maxWait": 104.4
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 2.81,
+          "maxWait": 51.7
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 55,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 16,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 25,
+          "meanWait": 0.05,
+          "maxWait": 1.2
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 40,
+          "meanWait": 20.18,
+          "maxWait": 52.9
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 25,
+          "meanWait": 7.55,
+          "maxWait": 32.4
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 23,
+          "meanWait": 3.26,
+          "maxWait": 17.4
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 46,
+          "meanWait": 6.06,
+          "maxWait": 18.4
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 1.57,
+          "maxWait": 10.4
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 31,
+          "meanWait": 6.44,
+          "maxWait": 26.2
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 4,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 33,
+          "meanWait": 7.14,
+          "maxWait": 31.1
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 2.76,
+          "maxWait": 11.2
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 9,
+          "meanWait": 8.5,
+          "maxWait": 21.1
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 0.36,
+          "maxWait": 4.1
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 18.27,
+          "maxWait": 85.8
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 23,
+          "meanWait": 4.16,
+          "maxWait": 8.6
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0.23,
+          "maxWait": 1.4
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 2.85,
+          "maxWait": 17.6
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 4,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 5.22,
+          "maxWait": 10.7
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 43,
+          "meanWait": 0.02,
+          "maxWait": 0.4
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 39,
+          "meanWait": 5.01,
+          "maxWait": 28.3
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 1,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "preOutage": {
         "avgWaitTime": 14.696855345912002,
         "throughputPerMin": 127.2,
@@ -2331,6 +4352,344 @@
       "maxWaitArterial": 177.79999999999418,
       "p95WaitSideStreet": 76.79999999999991,
       "maxWaitSideStreet": 129.9999999999969,
+      "roadWaits": {
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 220,
+          "meanWait": 18.23,
+          "maxWait": 65.5
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 134,
+          "meanWait": 10.91,
+          "maxWait": 63
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 9,
+          "meanWait": 0.54,
+          "maxWait": 2.9
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 237,
+          "meanWait": 31.99,
+          "maxWait": 113.2
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 70,
+          "meanWait": 12.84,
+          "maxWait": 78.3
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 59,
+          "meanWait": 0.46,
+          "maxWait": 8.4
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 160,
+          "meanWait": 33.9,
+          "maxWait": 108.3
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 244,
+          "meanWait": 8.87,
+          "maxWait": 67.8
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 191,
+          "meanWait": 41.71,
+          "maxWait": 123.2
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 251,
+          "meanWait": 23.16,
+          "maxWait": 88
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 54,
+          "meanWait": 8.15,
+          "maxWait": 65.9
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 10.2,
+          "maxWait": 41.3
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 57,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 8.73,
+          "maxWait": 25.8
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 59,
+          "meanWait": 18.27,
+          "maxWait": 92.8
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 30,
+          "meanWait": 6.17,
+          "maxWait": 22.1
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 36,
+          "meanWait": 3.54,
+          "maxWait": 25.3
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 63,
+          "meanWait": 8.76,
+          "maxWait": 52.7
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 47,
+          "meanWait": 4.46,
+          "maxWait": 26.4
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 42,
+          "meanWait": 11.51,
+          "maxWait": 60.6
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 17,
+          "meanWait": 1.76,
+          "maxWait": 10.3
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 17,
+          "meanWait": 8.18,
+          "maxWait": 28.8
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 25,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0.9,
+          "maxWait": 10.8
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 49,
+          "meanWait": 1.78,
+          "maxWait": 13.3
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 4.7,
+          "maxWait": 14.2
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 23,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 70,
+          "meanWait": 0,
+          "maxWait": 0.2
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 5.86,
+          "maxWait": 47.1
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 36,
+          "meanWait": 22.85,
+          "maxWait": 57.8
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 11.82,
+          "maxWait": 38.9
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 30,
+          "meanWait": 7.35,
+          "maxWait": 22.1
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 43,
+          "meanWait": 0.95,
+          "maxWait": 39.1
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 51,
+          "meanWait": 27.35,
+          "maxWait": 95.3
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 15,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 37,
+          "meanWait": 25.47,
+          "maxWait": 99.1
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 43,
+          "meanWait": 0.01,
+          "maxWait": 0.4
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 16,
+          "meanWait": 3.89,
+          "maxWait": 23
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 4,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 3,
+          "meanWait": 14.33,
+          "maxWait": 35
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 1,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "preOutage": {
         "avgWaitTime": 19.062676056338105,
         "throughputPerMin": 113.6,
@@ -3217,6 +5576,344 @@
       "maxWaitArterial": 155.79999999999544,
       "p95WaitSideStreet": 36.600000000000406,
       "maxWaitSideStreet": 79.39999999999976,
+      "roadWaits": {
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 196,
+          "meanWait": 16.03,
+          "maxWait": 67.6
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 331,
+          "meanWait": 5.91,
+          "maxWait": 37
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 71,
+          "meanWait": 0.41,
+          "maxWait": 7
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 144,
+          "meanWait": 0.86,
+          "maxWait": 12.5
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 77,
+          "meanWait": 4.9,
+          "maxWait": 21.2
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 30,
+          "meanWait": 1.62,
+          "maxWait": 13
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 91,
+          "meanWait": 6.48,
+          "maxWait": 22.6
+        },
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 288,
+          "meanWait": 6.74,
+          "maxWait": 37
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 168,
+          "meanWait": 5.72,
+          "maxWait": 36.3
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 23,
+          "meanWait": 5.68,
+          "maxWait": 46.8
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 273,
+          "meanWait": 32.06,
+          "maxWait": 155.8
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 348,
+          "meanWait": 16.63,
+          "maxWait": 131.2
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 53,
+          "meanWait": 3.13,
+          "maxWait": 28.5
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 50,
+          "meanWait": 0.15,
+          "maxWait": 3.1
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 90,
+          "meanWait": 4.3,
+          "maxWait": 27.9
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 100,
+          "meanWait": 5.49,
+          "maxWait": 30.7
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 248,
+          "meanWait": 7.43,
+          "maxWait": 51.3
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 139,
+          "meanWait": 4.24,
+          "maxWait": 39.4
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 18,
+          "meanWait": 2.7,
+          "maxWait": 16.8
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 14,
+          "meanWait": 4.86,
+          "maxWait": 13.1
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 70,
+          "meanWait": 1.68,
+          "maxWait": 18.9
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 44,
+          "meanWait": 2.13,
+          "maxWait": 23.6
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 41,
+          "meanWait": 7.61,
+          "maxWait": 42.4
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 3.36,
+          "maxWait": 18
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 71,
+          "meanWait": 0.05,
+          "maxWait": 0.9
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 20,
+          "meanWait": 10.28,
+          "maxWait": 40.6
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 47,
+          "meanWait": 5.3,
+          "maxWait": 35.4
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 43,
+          "meanWait": 3.03,
+          "maxWait": 11.4
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 65,
+          "meanWait": 7.98,
+          "maxWait": 70.1
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 52,
+          "meanWait": 8.92,
+          "maxWait": 55.3
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 24,
+          "meanWait": 0.06,
+          "maxWait": 0.7
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 115,
+          "meanWait": 0.06,
+          "maxWait": 1.8
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 70,
+          "meanWait": 2.96,
+          "maxWait": 25.5
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 124,
+          "meanWait": 10.81,
+          "maxWait": 55.8
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 79,
+          "meanWait": 4.62,
+          "maxWait": 38.2
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 27,
+          "meanWait": 0.12,
+          "maxWait": 0.8
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0.04,
+          "maxWait": 0.7
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 18,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0.15,
+          "maxWait": 1.5
+        }
+      },
       "preOutage": null,
       "duringOutage": null,
       "postRecovery": null,
@@ -3429,99 +6126,99 @@
       "controllerMode": "coordinated_adaptive",
       "routingMode": "destination",
       "routing": {
-        "trips": 1285,
-        "meanTripS": 140.84747081713695,
-        "meanTripDelayS": 66.78540572641084,
-        "toExit": 720,
-        "pulledOff": 565,
-        "divertedPct": 0.5447470817120622,
-        "missedTurns": 51,
+        "trips": 1283,
+        "meanTripS": 141.5757599376626,
+        "meanTripDelayS": 67.13107048444652,
+        "toExit": 719,
+        "pulledOff": 564,
+        "divertedPct": 0.6235385814497272,
+        "missedTurns": 46,
         "missedBy": {
-          "wrongLane": 51,
+          "wrongLane": 46,
           "blockedTurn": 0,
           "peelNoRoom": 0
         },
         "rerouted": 0,
         "pulledOffByBlock": {
+          "FRB-5": 12,
+          "JSH-2": 9,
           "STZ-4": 6,
           "GRO-5": 10,
-          "PRE-1": 12,
-          "JSH-7": 28,
+          "PRE-1": 13,
           "LYN-3": 4,
-          "JSH-3N": 5,
-          "GRO-3": 17,
-          "JSH-1N": 2,
-          "DUX-4": 5,
-          "JSH-2": 9,
-          "BRN-1": 13,
-          "DYR-1": 7,
-          "HIL-4": 9,
+          "BRN-1": 11,
           "DUX-2": 6,
-          "HIL-1": 6,
+          "HIL-4": 9,
           "BRN-2": 13,
+          "STZ-2": 12,
+          "HIL-1": 6,
+          "ARC-2": 6,
           "HER-1": 4,
           "PRO-3": 5,
-          "JSH-2S": 5,
-          "STZ-2": 12,
           "PRO-1": 3,
-          "PRO-5": 7,
-          "JSH-5": 10,
-          "ARC-2": 6,
           "PRO-2": 6,
-          "LYN-2": 16,
-          "FRB-1": 5,
-          "LYN-1": 9,
+          "PRO-5": 7,
           "STZ-1": 5,
-          "JSH-3S": 5,
-          "PRE-2": 12,
+          "STZ-5": 11,
+          "BRN-3": 10,
+          "FRB-1": 5,
+          "JSH-3N": 5,
+          "DYR-1": 6,
+          "LYN-2": 15,
           "FRB-2": 6,
+          "DUX-4": 6,
           "GRO-2": 7,
           "BUR-1": 2,
+          "LYN-1": 9,
+          "JSH-1N": 2,
+          "JSH-7": 28,
+          "JSH-3S": 5,
+          "JSH-2S": 5,
           "JSH-6": 9,
-          "BRN-3": 10,
-          "FES-5": 8,
-          "STZ-5": 10,
-          "DUX-1": 8,
-          "GRO-1": 2,
-          "HIL-2": 8,
           "PRE-3": 9,
+          "JSH-5": 10,
+          "HIL-2": 7,
+          "DUX-1": 8,
           "HER-2": 4,
-          "FRB-5": 10,
-          "FES-1": 6,
-          "FES-2": 7,
+          "GRO-3": 16,
+          "FES-5": 9,
           "DXW-1": 3,
-          "BRN-4": 4,
-          "HIL-8": 4,
-          "HIL-5": 8,
+          "FES-1": 6,
           "PRE-4": 3,
+          "FES-2": 7,
+          "HIL-5": 8,
+          "BRN-4": 3,
+          "GRO-1": 2,
+          "PRE-2": 12,
+          "LYN-4": 1,
+          "HIL-8": 3,
           "PAR-1": 3,
-          "SOU-5": 5,
+          "SOU-5": 6,
           "DUX-3": 7,
           "JSH-3": 2,
           "GRO-6": 9,
           "HIL-6": 14,
           "FRB-6": 5,
           "STZ-6": 6,
+          "LUN-1": 1,
+          "HIL-7": 5,
           "PRK-1": 8,
+          "MAL-2": 4,
+          "LYN-0": 4,
+          "FRB-4": 5,
           "FES-4": 5,
           "FRB-3": 6,
-          "LYN-0": 4,
-          "HIL-7": 5,
-          "LYN-4": 2,
-          "LUN-1": 1,
-          "FRB-4": 5,
-          "MAL-2": 4,
-          "SOU-2": 5,
-          "GRO-4": 3,
           "PRE-5": 3,
-          "PRK-2": 6,
-          "SOU-4": 2,
-          "PRE-6": 4,
+          "GRO-4": 3,
           "JSH-4": 6,
-          "JSH-1": 6,
-          "HIL-3": 5,
-          "SOU-1": 6,
+          "SOU-4": 2,
+          "HIL-3": 6,
+          "PRE-6": 4,
+          "SOU-2": 5,
+          "PRK-2": 7,
           "ARC-3": 5,
+          "JSH-1": 6,
+          "SOU-1": 5,
           "STZ-3": 9,
           "LNW-0": 2,
           "ARC-1": 2,
@@ -3529,305 +6226,303 @@
           "PRO-4": 1,
           "LUN-3": 1,
           "DYR-2": 5,
-          "MAL-1": 4,
           "LNW-1": 1,
+          "MAL-1": 4,
           "LUN-2": 2,
           "JSH-2N": 1
         },
-        "missedDriveways": 5,
+        "missedDriveways": 2,
         "missedDrivewaysBy": {
-          "wrongLane": 5,
+          "wrongLane": 2,
           "noGap": 0
         },
         "drivewayFallbacks": {
-          "sameBlock": 4,
+          "sameBlock": 1,
           "nextBlock": 1,
           "exit": 0
         },
         "pulledOffByDriveway": {
+          "FRB-5-A3": 2,
+          "JSH-2-A1": 5,
           "STZ-4-B2": 3,
           "GRO-5-A2": 3,
-          "PRE-1-B2": 3,
-          "JSH-7-B3": 6,
+          "PRE-1-B2": 4,
           "LYN-3-B2": 1,
-          "JSH-3N-A1": 3,
-          "GRO-3-B1": 4,
-          "JSH-1N-A1": 2,
-          "DUX-4-B1": 2,
-          "JSH-2-A1": 5,
           "BRN-1-A2": 2,
-          "DYR-1-A1": 5,
-          "HIL-4-A3": 1,
           "DUX-2-B1": 2,
-          "HIL-1-A1": 4,
+          "HIL-4-A3": 1,
           "DUX-2-A1": 4,
           "BRN-2-A2": 2,
+          "STZ-2-A2": 3,
+          "HIL-1-A1": 4,
+          "ARC-2-B2": 2,
           "HER-1-A1": 2,
           "PRO-3-A1": 2,
-          "JSH-2S-A1": 2,
-          "STZ-2-A2": 3,
           "PRO-1-A1": 2,
-          "JSH-2S-B1": 3,
-          "PRO-5-A2": 2,
-          "JSH-5-A2": 3,
-          "ARC-2-B2": 2,
           "PRO-2-A1": 4,
-          "LYN-2-A1": 4,
-          "FRB-1-B2": 1,
-          "LYN-1-B3": 1,
+          "PRO-5-A2": 2,
           "STZ-1-A1": 3,
-          "HER-1-B1": 2,
-          "JSH-2-B1": 4,
-          "JSH-3S-B1": 2,
-          "BRN-2-B2": 3,
-          "HIL-4-B3": 2,
-          "PRE-2-A2": 4,
+          "STZ-5-A1": 4,
+          "BRN-3-B3": 3,
+          "FRB-1-B2": 1,
+          "JSH-3N-A1": 3,
+          "DYR-1-A1": 4,
+          "LYN-2-A1": 4,
           "FRB-2-A1": 2,
+          "JSH-2-B1": 4,
+          "DUX-4-B1": 2,
           "GRO-2-A1": 3,
-          "GRO-5-B1": 4,
+          "FRB-5-A2": 3,
           "BUR-1-B1": 2,
+          "LYN-1-B3": 1,
+          "BRN-2-B2": 3,
+          "JSH-1N-A1": 2,
+          "JSH-7-B3": 4,
+          "HER-1-B1": 2,
           "LYN-1-A2": 3,
+          "JSH-3S-B1": 2,
+          "GRO-5-B1": 4,
+          "JSH-2S-A1": 2,
           "JSH-6-B1": 6,
           "BRN-3-A3": 4,
-          "LYN-2-A2": 4,
+          "JSH-2S-B1": 3,
+          "PRE-3-A2": 2,
+          "JSH-5-A2": 3,
           "JSH-5-B1": 3,
-          "FES-5-A1": 5,
-          "STZ-5-A1": 4,
-          "STZ-2-B2": 5,
-          "DUX-1-B1": 5,
-          "GRO-1-A1": 1,
+          "PRE-1-A2": 2,
           "HIL-2-A1": 1,
-          "PRE-1-A2": 3,
-          "PRE-3-A2": 3,
+          "LYN-2-A3": 2,
+          "DUX-1-B1": 5,
           "HER-2-A1": 3,
-          "FRB-5-A2": 3,
           "GRO-2-B1": 4,
-          "GRO-3-A1": 2,
-          "FES-1-B2": 1,
-          "FES-2-A2": 2,
+          "GRO-3-B1": 4,
+          "FES-5-B1": 4,
           "DXW-1-A1": 2,
-          "BRN-3-B3": 3,
-          "BRN-4-B1": 3,
-          "HER-2-B1": 1,
-          "HIL-8-A1": 2,
-          "JSH-7-A1": 3,
-          "HIL-5-A1": 1,
-          "HIL-5-B1": 1,
+          "FES-1-B2": 1,
           "PRE-4-A1": 2,
+          "FES-2-A2": 2,
+          "HIL-5-A1": 1,
+          "STZ-2-B2": 5,
+          "BRN-4-B1": 2,
+          "FES-5-A1": 5,
+          "GRO-1-A1": 1,
+          "PRE-2-A2": 5,
+          "JSH-7-A1": 3,
+          "LYN-2-A2": 4,
+          "HIL-5-B1": 1,
+          "LYN-4-B2": 1,
+          "HER-2-B1": 1,
+          "HIL-8-A1": 1,
           "PAR-1-B1": 2,
+          "HIL-4-B3": 2,
+          "DUX-4-A2": 1,
           "JSH-5-B2": 1,
           "SOU-5-A2": 1,
-          "DUX-3-B1": 4,
           "JSH-6-A1": 3,
-          "FRB-5-A3": 1,
-          "JSH-3-A1": 2,
+          "STZ-5-A2": 5,
           "FRB-1-A2": 3,
-          "GRO-6-B1": 1,
-          "LYN-2-A3": 2,
-          "FRB-5-B2": 1,
+          "DUX-3-B1": 4,
+          "JSH-3-A1": 2,
+          "HIL-2-B1": 6,
           "PRO-5-B3": 1,
+          "GRO-6-B1": 1,
+          "BRN-1-A1": 1,
           "HIL-6-A2": 6,
           "FRB-6-A1": 2,
-          "DUX-1-A1": 3,
           "STZ-6-A2": 2,
-          "BRN-1-A1": 1,
-          "JSH-3S-A1": 3,
+          "DUX-1-A1": 3,
           "HIL-5-A2": 3,
-          "JSH-7-A3": 5,
-          "HIL-2-B1": 7,
+          "LUN-1-B1": 1,
+          "HIL-7-B1": 5,
+          "JSH-7-A3": 6,
           "PRK-1-A1": 1,
           "PRK-1-A2": 3,
-          "FES-5-B1": 3,
           "DUX-3-A1": 3,
-          "LYN-2-B3": 2,
-          "FES-4-A1": 4,
-          "DUX-4-A2": 1,
-          "FRB-3-A2": 2,
-          "LYN-0-A2": 1,
-          "HIL-7-B1": 5,
-          "FES-2-B2": 2,
-          "LYN-4-B2": 1,
-          "LUN-1-B1": 1,
-          "FRB-4-A1": 4,
+          "FRB-5-B2": 1,
           "MAL-2-A1": 1,
           "BRN-3-B2": 1,
-          "GRO-3-A2": 2,
-          "JSH-7-B1": 7,
-          "STZ-5-A2": 4,
-          "PRE-3-B2": 4,
-          "LYN-1-B2": 2,
-          "SOU-2-B1": 1,
-          "GRO-5-A1": 2,
-          "STZ-6-B2": 2,
-          "GRO-4-B2": 1,
-          "PRE-5-A1": 2,
-          "PRK-2-B1": 4,
-          "PRE-2-B2": 4,
-          "BRN-2-A3": 3,
-          "SOU-4-A1": 2,
-          "PRE-6-B2": 2,
-          "LYN-2-B1": 1,
-          "FES-2-B1": 2,
-          "ARC-2-B3": 3,
-          "JSH-4-A1": 2,
-          "JSH-1-A1": 4,
+          "FES-2-B2": 2,
           "JSH-7-A2": 4,
-          "FRB-6-B1": 3,
+          "LYN-0-A2": 1,
+          "JSH-3S-A1": 3,
+          "GRO-3-A1": 2,
+          "FRB-4-A1": 4,
+          "GRO-5-A1": 2,
+          "JSH-7-B1": 8,
+          "PRE-2-B2": 4,
+          "GRO-3-A2": 2,
+          "FES-4-A1": 4,
+          "PRE-3-B2": 4,
+          "LYN-2-B3": 2,
+          "STZ-4-A1": 2,
+          "BRN-2-A3": 3,
+          "STZ-6-B2": 2,
+          "FRB-3-A2": 2,
+          "PRE-5-A1": 2,
+          "ARC-2-B3": 3,
+          "GRO-4-B2": 1,
+          "JSH-4-A1": 2,
+          "FES-2-B1": 3,
+          "SOU-4-A1": 2,
           "GRO-6-A2": 2,
-          "HIL-3-B1": 3,
           "HIL-1-B1": 2,
-          "HIL-4-B1": 3,
-          "STZ-2-B1": 3,
-          "BRN-2-B3": 1,
+          "HIL-3-B1": 4,
+          "FRB-6-B1": 3,
+          "PRE-6-B2": 2,
+          "SOU-2-B1": 1,
+          "LYN-2-B1": 1,
+          "LYN-1-B2": 2,
+          "PRK-2-B1": 4,
           "GRO-4-B1": 1,
-          "PRO-3-B1": 3,
           "JSH-5-A1": 3,
-          "HIL-4-A2": 1,
+          "PRO-3-B1": 3,
+          "STZ-2-B1": 3,
           "SOU-2-A1": 4,
-          "PRE-1-A1": 4,
-          "SOU-1-A1": 3,
-          "PRO-5-A1": 2,
           "HIL-6-B2": 2,
           "ARC-3-A3": 2,
-          "FRB-5-A1": 2,
-          "PRE-2-B1": 1,
-          "STZ-4-A2": 1,
+          "PRE-1-A1": 5,
           "PRO-5-B1": 1,
+          "JSH-1-A1": 4,
           "DYR-1-B1": 2,
-          "FRB-5-B1": 3,
+          "SOU-1-A1": 2,
           "STZ-3-A1": 2,
+          "HIL-4-B1": 4,
+          "FRB-5-A1": 3,
+          "PRO-5-A1": 2,
+          "PRE-2-B1": 1,
+          "FRB-5-B1": 3,
           "SOU-1-B1": 3,
-          "LNW-0-B1": 1,
-          "LYN-1-A3": 1,
-          "STZ-3-A2": 1,
-          "STZ-3-B2": 3,
-          "ARC-1-A1": 1,
-          "GRO-3-B3": 2,
           "FES-1-A1": 4,
-          "LYN-1-A1": 2,
-          "PRK-2-A1": 2,
-          "ARC-3-A1": 2,
           "FRB-4-B1": 1,
-          "ARC-2-A2": 1,
-          "PRE-3-A1": 1,
+          "STZ-3-B2": 3,
+          "LNW-0-B1": 1,
           "HIL-3-A1": 2,
+          "STZ-3-A2": 1,
+          "SOU-5-B1": 4,
+          "LYN-1-A1": 2,
           "JSH-4-A2": 3,
-          "PRE-2-A1": 3,
-          "GRO-3-A3": 6,
-          "FRB-2-B1": 1,
+          "BRN-2-B3": 1,
+          "GRO-3-B3": 2,
+          "ARC-3-A1": 2,
+          "PRE-3-A1": 2,
+          "STZ-4-A2": 1,
+          "LYN-0-A1": 2,
+          "ARC-2-A2": 1,
+          "LYN-1-A3": 1,
+          "PRK-2-A1": 3,
+          "ARC-1-A1": 1,
           "FRB-2-B2": 1,
-          "JSH-1S-B1": 4,
-          "STZ-4-A1": 2,
-          "SOU-5-B1": 3,
           "PRK-1-B2": 3,
+          "GRO-3-A3": 5,
+          "GRO-6-B2": 5,
+          "JSH-1S-B1": 4,
+          "PRE-2-A1": 2,
+          "PRO-2-B1": 2,
+          "FRB-2-B1": 1,
+          "PRO-4-A1": 1,
+          "HIL-5-B2": 3,
           "BRN-2-A1": 2,
           "LNW-0-A2": 1,
-          "LYN-2-B2": 3,
+          "JSH-7-B2": 3,
+          "LYN-2-B2": 2,
           "JSH-1-B1": 2,
-          "HIL-5-B2": 3,
-          "PRO-4-A1": 1,
-          "LYN-0-A1": 2,
           "HIL-6-A1": 3,
           "LUN-3-B1": 1,
           "PRE-3-B1": 1,
           "PRE-5-B1": 1,
-          "GRO-6-B2": 5,
-          "GRO-1-B1": 1,
           "DYR-2-B1": 3,
+          "GRO-1-B1": 1,
           "STZ-5-B1": 1,
           "GRO-4-A2": 1,
-          "MAL-1-B1": 2,
-          "JSH-7-B2": 3,
-          "PRO-2-B1": 2,
           "ARC-1-B1": 1,
-          "PRE-1-B1": 2,
           "STZ-2-A1": 1,
-          "BRN-3-B1": 1,
+          "PRE-1-B1": 2,
           "HIL-6-B1": 3,
+          "LNW-1-A1": 1,
+          "MAL-1-B1": 2,
+          "BRN-3-B1": 1,
           "FRB-1-A1": 1,
           "LYN-3-B1": 1,
-          "BRN-1-B2": 2,
-          "ARC-3-A2": 1,
           "GRO-6-A1": 1,
+          "BRN-1-B2": 2,
+          "BRN-1-B3": 4,
           "STZ-5-B2": 1,
-          "BRN-1-B3": 6,
-          "HIL-8-B1": 2,
-          "JSH-3N-B1": 2,
-          "STZ-6-B1": 2,
-          "HIL-4-B2": 1,
-          "JSH-1S-A1": 1,
+          "ARC-3-A2": 1,
           "STZ-1-B2": 1,
-          "GRO-3-B2": 1,
-          "BRN-4-A1": 1,
-          "FES-4-B1": 1,
+          "JSH-1S-A1": 1,
           "DYR-2-A1": 2,
-          "FRB-3-B2": 1,
+          "STZ-6-B1": 2,
           "BRN-2-B1": 2,
-          "MAL-2-A3": 1,
-          "DUX-4-A1": 1,
-          "PRO-5-B2": 1,
-          "PRE-4-A2": 1,
-          "LNW-1-A1": 1,
-          "MAL-2-B3": 1,
-          "FRB-3-A1": 2,
+          "HIL-4-B2": 1,
+          "JSH-3N-B1": 2,
+          "FRB-3-B2": 1,
+          "GRO-3-B2": 1,
+          "FES-4-B1": 1,
+          "HIL-8-B1": 2,
+          "DUX-4-A1": 2,
           "LUN-2-A1": 2,
+          "PRE-4-A2": 1,
           "FRB-3-B1": 1,
-          "BRN-1-A3": 2,
+          "MAL-2-A3": 1,
+          "FRB-3-A1": 2,
+          "MAL-2-B3": 1,
           "SOU-5-B2": 1,
-          "LYN-3-A1": 1,
-          "PRO-1-B1": 1,
-          "JSH-4-B2": 1,
+          "BRN-1-A3": 2,
+          "BRN-4-A1": 1,
+          "DXW-1-B1": 1,
+          "PRO-5-B2": 1,
           "STZ-3-B1": 3,
+          "JSH-4-B2": 1,
+          "PRO-1-B1": 1,
           "FRB-2-A2": 2,
-          "HIL-4-A1": 1,
           "MAL-1-A1": 2,
+          "HIL-4-A1": 1,
           "JSH-2N-A1": 1,
+          "LYN-3-A1": 1,
+          "PAR-1-A1": 1,
+          "LYN-0-B2": 1,
+          "LYN-3-B3": 1,
+          "STZ-1-A2": 1,
+          "BRN-3-A1": 1,
           "DUX-4-B2": 1,
           "MAL-2-B1": 1,
-          "STZ-1-A2": 1,
-          "LYN-3-B3": 1,
-          "DXW-1-B1": 1,
-          "LYN-0-B2": 1,
-          "BRN-3-A1": 1,
-          "GRO-5-B2": 1,
           "PRK-1-B1": 1,
-          "PAR-1-A1": 1,
-          "PRE-6-A2": 2,
+          "GRO-5-B2": 1,
+          "PRE-6-B1": 1,
           "FES-1-B1": 1,
-          "FES-2-A1": 1,
-          "LYN-4-A2": 1
+          "PRE-6-A1": 1
         },
-        "departed": 446,
+        "departed": 448,
         "departedByDriveway": {
           "JSH-6-A1": 7,
-          "FRB-5-A3": 2,
           "JSH-2S-A1": 2,
           "HIL-7-A1": 5,
+          "FRB-5-A3": 2,
           "DUX-1-B1": 6,
           "JSH-1N-B1": 1,
-          "ARC-2-A1": 2,
           "PRE-2-B2": 2,
+          "ARC-2-A1": 2,
           "FES-1-A1": 2,
           "FES-2-B1": 1,
+          "PRE-1-B1": 4,
           "PRE-4-B1": 1,
           "JSH-7-A2": 3,
           "FRB-4-B1": 5,
           "STZ-2-A1": 3,
+          "PRE-4-A2": 2,
           "SOU-1-A1": 2,
           "FRB-5-A1": 1,
+          "ARC-2-A3": 1,
           "HIL-8-A1": 3,
-          "PRE-4-A2": 2,
+          "FES-5-A1": 3,
           "PRK-1-B2": 1,
-          "PRE-1-B1": 4,
           "STZ-4-A1": 2,
           "BRN-2-A2": 2,
-          "ARC-2-A3": 1,
-          "FES-5-A1": 3,
           "HIL-5-B2": 2,
-          "FRB-3-A2": 6,
           "JSH-7-B2": 3,
-          "SOU-4-A1": 1,
           "JSH-3S-B1": 5,
+          "SOU-4-A1": 1,
+          "FRB-3-A2": 6,
           "LYN-0-A1": 3,
           "GRO-6-A1": 1,
           "ARC-2-B3": 1,
@@ -3839,17 +6534,18 @@
           "BRN-3-A1": 2,
           "LYN-2-A3": 1,
           "GRO-7-A1": 1,
-          "DUX-1-A1": 3,
           "LNW-1-B1": 2,
+          "DUX-1-A1": 3,
           "JSH-3S-A1": 6,
-          "PRE-3-B1": 2,
+          "BRN-1-B2": 2,
           "HER-1-B1": 4,
           "FRB-6-A1": 2,
-          "LYN-2-A2": 2,
-          "BRN-1-B2": 2,
           "MAL-1-A1": 3,
+          "LYN-2-A2": 2,
           "DUX-2-A1": 3,
+          "PRE-3-B1": 2,
           "GRO-3-B3": 1,
+          "STZ-3-A2": 3,
           "GRO-4-B2": 2,
           "FRB-6-B1": 3,
           "DYR-1-B1": 2,
@@ -3858,10 +6554,8 @@
           "ARC-3-B2": 2,
           "LYN-3-B2": 2,
           "PRE-6-B2": 1,
-          "JSH-5-A1": 5,
+          "JSH-5-A1": 6,
           "LUN-1-B1": 2,
-          "LYN-4-A2": 1,
-          "STZ-3-A2": 3,
           "BRN-4-B1": 1,
           "BRN-2-B3": 2,
           "PRE-2-B1": 6,
@@ -3870,15 +6564,16 @@
           "GRO-1-A1": 4,
           "JSH-2-A1": 4,
           "SOU-1-B1": 2,
+          "LYN-4-A2": 1,
           "GRO-5-B2": 2,
           "LYN-3-A1": 2,
           "GRO-1-B1": 4,
           "BRN-3-B3": 2,
           "PRE-5-B1": 2,
-          "PRO-3-A1": 2,
-          "LYN-3-B1": 3,
           "HIL-8-B1": 3,
+          "PRO-3-A1": 2,
           "ARC-3-A1": 1,
+          "LYN-3-B1": 3,
           "FRB-2-A1": 2,
           "GRO-3-A2": 1,
           "HIL-7-B1": 2,
@@ -3888,17 +6583,17 @@
           "STZ-1-B2": 2,
           "HIL-4-A2": 3,
           "STZ-5-A2": 1,
-          "LNW-0-A1": 1,
           "STZ-2-B1": 2,
+          "LNW-0-A1": 1,
           "PRE-3-A1": 3,
           "FRB-1-A1": 2,
           "JSH-4-B1": 1,
           "JSH-4-A1": 1,
+          "JSH-7-B3": 3,
           "STZ-6-A2": 1,
           "FES-1-A2": 1,
           "LYN-0-B1": 2,
           "JSH-2S-B1": 3,
-          "JSH-7-B3": 3,
           "GRO-6-B1": 2,
           "FRB-1-B1": 2,
           "HIL-2-A1": 1,
@@ -3907,11 +6602,11 @@
           "STZ-5-A1": 2,
           "FES-1-B2": 2,
           "HIL-6-B1": 1,
-          "PRO-2-A1": 2,
           "HIL-3-A1": 1,
+          "PRO-2-A1": 2,
+          "PRE-1-B2": 1,
           "JSH-3-A1": 1,
           "GRO-4-A1": 2,
-          "PRE-1-B2": 1,
           "FRB-2-B2": 1,
           "DUX-4-B1": 2,
           "DYR-1-A1": 1,
@@ -3926,27 +6621,27 @@
           "JSH-2-B1": 2,
           "SOU-2-B1": 1,
           "JSH-6-B1": 2,
-          "DYR-2-A1": 4,
-          "BRN-1-A3": 1,
-          "LYN-1-B2": 3,
           "PRE-5-A2": 2,
+          "LYN-1-B2": 3,
+          "BRN-1-A3": 1,
+          "DYR-2-A1": 4,
           "HIL-4-A1": 3,
           "LYN-0-A3": 1,
           "HIL-4-B1": 2,
           "JSH-3-B1": 2,
-          "PRK-2-A1": 1,
           "LUN-2-A1": 1,
           "LYN-4-B1": 1,
           "SOU-2-A1": 2,
+          "PRK-2-A1": 1,
           "PRE-5-A1": 3,
           "LNW-0-A2": 2,
           "LYN-2-B1": 2,
           "LYN-0-B3": 1,
           "FES-4-A1": 4,
-          "FRB-3-A1": 3,
           "DUX-4-A2": 1,
           "STZ-6-B2": 1,
           "JSH-1N-A1": 2,
+          "FRB-3-A1": 3,
           "PRK-1-A1": 1,
           "FES-2-A1": 2,
           "JSH-5-B2": 2,
@@ -3970,85 +6665,83 @@
           "ARC-3-B1": 1,
           "PAR-1-B1": 2,
           "STZ-4-A2": 1,
-          "FRB-3-B1": 2,
           "PRO-1-B1": 2,
-          "JSH-1S-A1": 2,
+          "FRB-3-B1": 2,
           "ARC-2-B1": 1,
+          "JSH-1S-A1": 2,
           "LYN-3-A3": 1,
           "STZ-6-B1": 2,
           "BRN-2-B2": 1,
           "GRO-5-B1": 1,
           "LNW-0-B1": 1,
           "PRO-3-B1": 2,
-          "LUN-1-A1": 1,
-          "JSH-1-A2": 1,
           "HIL-2-B1": 2,
+          "JSH-1-A2": 1,
           "PRE-6-B1": 1,
+          "LUN-1-A1": 1,
           "BRN-3-B2": 2,
           "GRO-7-B1": 1,
           "PRO-5-A3": 1,
           "PRE-3-B2": 1,
           "LNW-1-A1": 2,
           "LUN-3-B1": 2,
-          "FRB-4-A1": 2,
           "PRE-2-A2": 2,
+          "FRB-4-A1": 2,
           "GRO-3-A3": 2,
           "DUX-4-B2": 1,
-          "BRN-3-A2": 2,
-          "SOU-5-A3": 1,
           "FES-2-A2": 2,
+          "SOU-5-A3": 1,
+          "BRN-3-A2": 2,
           "STZ-1-B1": 1,
           "LYN-2-A1": 2,
           "BRN-2-B1": 2,
-          "LYN-4-A1": 2,
           "MAL-2-A3": 1,
           "DUX-2-B1": 1,
           "PRE-1-A1": 1,
           "PRK-1-B1": 1,
+          "LYN-4-A1": 2,
           "PRO-4-B1": 1,
           "PRO-5-A1": 1,
           "STZ-3-A1": 2,
           "FRB-5-B1": 1,
-          "JSH-4-B2": 1,
           "PRE-6-A2": 1,
-          "HIL-1-B1": 1,
+          "JSH-4-B2": 1,
           "BUR-1-B1": 1,
+          "HIL-1-B1": 1,
           "DUX-4-A1": 1,
           "PRO-5-A2": 1,
           "FRB-2-A2": 1,
-          "PRE-3-A2": 2,
           "BRN-3-A3": 2,
           "MAL-2-A1": 1,
+          "PRE-3-A2": 2,
           "BRN-4-A1": 1,
           "FRB-5-A2": 1,
-          "BUR-1-A1": 1,
           "HIL-5-A2": 1,
-          "HIL-6-B2": 1,
+          "BUR-1-A1": 1,
           "FES-3-A1": 1,
+          "HIL-6-B2": 1,
           "HER-2-A1": 1,
           "JSH-1-B2": 1,
+          "DUX-3-A1": 1,
           "HIL-5-B1": 1,
-          "DUX-3-A1": 1
+          "GRO-4-A2": 1
         },
-        "departuresWaiting": 2,
-        "meanDrivewayWaitS": 0.8179372197310432,
-        "longestDrivewayWaitS": 16.50000000000375,
-        "departuresWaitingByDriveway": {
-          "GRO-4:S": 1,
-          "JSH-5:S": 1
-        }
+        "departuresWaiting": 0,
+        "meanDrivewayWaitS": 0.9868303571429856,
+        "longestDrivewayWaitS": 0,
+        "departuresWaitingByDriveway": {}
       },
       "diagnostics": {
-        "arrivalsLost": 5,
+        "arrivalsLost": 8,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 72,
+          "longestStillS": 91,
           "longestStill": {
-            "seconds": 72,
-            "carId": 367,
+            "seconds": 91,
+            "carId": 1119,
             "nodeId": "lynnwood_duxbury",
             "place": "Duxbury, lane 1, 893 m",
-            "atS": 524
+            "atS": 535
           },
           "locked": null,
           "starved": null,
@@ -4060,25 +6753,364 @@
       "powerState": "load_shedding",
       "sensorMode": "inductive_loop",
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 22.993696498054607,
-      "avgWaitTimeArterial": 17.827586206896616,
-      "avgWaitTimeSideStreet": 12.732564450474943,
-      "throughputPerMin": 160.625,
-      "throughputPerMinArterial": 141.375,
-      "throughputPerMinSideStreet": 92.125,
-      "pctClearedWithoutStop": 7.937743190661478,
-      "pctClearedWithoutStopArterial": 19.628647214854112,
-      "pctClearedWithoutStopSideStreet": 23.609226594301223,
-      "medianWait": 18.19999999999999,
-      "p95Wait": 64.90000000000059,
-      "maxWait": 140.19999999999632,
-      "p95WaitArterial": 59.60000000000058,
-      "maxWaitArterial": 140.19999999999632,
-      "p95WaitSideStreet": 45.70000000000056,
-      "maxWaitSideStreet": 110.79999999999738,
+      "avgWaitTime": 23.427435697583853,
+      "avgWaitTimeArterial": 18.36022927689602,
+      "avgWaitTimeSideStreet": 12.653287671232912,
+      "throughputPerMin": 160.375,
+      "throughputPerMinArterial": 141.75,
+      "throughputPerMinSideStreet": 91.25,
+      "pctClearedWithoutStop": 6.46921278254092,
+      "pctClearedWithoutStopArterial": 17.372134038800706,
+      "pctClearedWithoutStopSideStreet": 23.013698630136986,
+      "medianWait": 18.599999999999994,
+      "p95Wait": 63.000000000000625,
+      "maxWait": 125.99999999999712,
+      "p95WaitArterial": 57.70000000000055,
+      "maxWaitArterial": 124.29999999999721,
+      "p95WaitSideStreet": 42.000000000000064,
+      "maxWaitSideStreet": 119.79999999999714,
+      "roadWaits": {
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 266,
+          "meanWait": 14.43,
+          "maxWait": 89
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 81,
+          "meanWait": 10.47,
+          "maxWait": 58.7
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 33,
+          "meanWait": 0.54,
+          "maxWait": 8.9
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 185,
+          "meanWait": 17.2,
+          "maxWait": 87.5
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 301,
+          "meanWait": 9.68,
+          "maxWait": 64.8
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 348,
+          "meanWait": 11.16,
+          "maxWait": 103
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 255,
+          "meanWait": 6.42,
+          "maxWait": 42.4
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 147,
+          "meanWait": 7.07,
+          "maxWait": 39.4
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 57,
+          "meanWait": 6.38,
+          "maxWait": 28.6
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 18,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 88,
+          "meanWait": 8.37,
+          "maxWait": 54.2
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 127,
+          "meanWait": 10.61,
+          "maxWait": 52.7
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 101,
+          "meanWait": 4.55,
+          "maxWait": 26.9
+        },
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 246,
+          "meanWait": 15.83,
+          "maxWait": 79.2
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 50,
+          "meanWait": 5.1,
+          "maxWait": 38.4
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 3.57,
+          "maxWait": 14.9
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 2.93,
+          "maxWait": 18.4
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 125,
+          "meanWait": 5.98,
+          "maxWait": 51.9
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 45,
+          "meanWait": 0.13,
+          "maxWait": 0.9
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 58,
+          "meanWait": 3.28,
+          "maxWait": 26.6
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 80,
+          "meanWait": 13.13,
+          "maxWait": 115
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 120,
+          "meanWait": 8.54,
+          "maxWait": 58
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 14,
+          "meanWait": 4.33,
+          "maxWait": 10.7
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 14,
+          "meanWait": 0.24,
+          "maxWait": 3.4
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 0.29,
+          "maxWait": 3.8
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 78,
+          "meanWait": 0.63,
+          "maxWait": 15.3
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 71,
+          "meanWait": 4.25,
+          "maxWait": 30.3
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 122,
+          "meanWait": 0.53,
+          "maxWait": 8.4
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 73,
+          "meanWait": 2.2,
+          "maxWait": 16.2
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 142,
+          "meanWait": 1.53,
+          "maxWait": 37.6
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 80,
+          "meanWait": 5.37,
+          "maxWait": 25.5
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 46,
+          "meanWait": 5.81,
+          "maxWait": 39.7
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 53,
+          "meanWait": 3.16,
+          "maxWait": 35
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 4.16,
+          "maxWait": 13.9
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 36,
+          "meanWait": 11.73,
+          "maxWait": 37.2
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 22,
+          "meanWait": 0.01,
+          "maxWait": 0.3
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 62,
+          "meanWait": 0.09,
+          "maxWait": 0.9
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 34,
+          "meanWait": 4.89,
+          "maxWait": 18.5
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 7,
+          "meanWait": 1.36,
+          "maxWait": 9.5
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 7.43,
+          "maxWait": 13.6
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 9,
+          "meanWait": 0.38,
+          "maxWait": 3.4
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 4,
+          "meanWait": 0,
+          "maxWait": 0
+        }
+      },
       "coordination": {
-        "measuredS": 10230,
-        "marriedShare": 0.088,
+        "measuredS": 14880,
+        "marriedShare": 0.06,
+        "darkS": 150,
         "nodes": {
           "stanza_festival": {
             "routeId": "stanza",
@@ -4094,15 +7126,15 @@
           },
           "pt_janshoba_sb": {
             "routeId": "pretorius",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "pt_janshoba_nb": {
             "routeId": "pretorius",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "pt_grosvenor": {
             "routeId": "pretorius",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "pt_hilda": {
             "routeId": "pretorius",
@@ -4114,15 +7146,15 @@
           },
           "fb_festival": {
             "routeId": "francisbaard",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "fb_hilda": {
             "routeId": "francisbaard",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "fb_grosvenor": {
             "routeId": "francisbaard",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "arcadia_festival": {
             "routeId": "arcadia_west",
@@ -4214,17 +7246,17 @@
             "retunes": 4
           },
           "pretorius": {
-            "meanCycleS": 39.6,
-            "minCycleS": 34.7,
+            "meanCycleS": 39.2,
+            "minCycleS": 34.2,
             "maxCycleS": 45,
             "finalCycleS": 45,
             "retunes": 2
           },
           "francisbaard": {
-            "meanCycleS": 34,
+            "meanCycleS": 34.2,
             "minCycleS": 32.1,
-            "maxCycleS": 36.2,
-            "finalCycleS": 36.2,
+            "maxCycleS": 38.2,
+            "finalCycleS": 38.2,
             "retunes": 3
           },
           "arcadia_west": {
@@ -4280,62 +7312,62 @@
         "recoveryHolds": 1,
         "recoveryHoldS": 300,
         "platoon": {
-          "messages": 1575,
+          "messages": 1595,
           "holds": 0,
           "holdS": 0
         },
         "greenEnds": {
-          "maxOut": 28,
-          "gapOut": 396,
-          "yield": 19,
-          "platoonEarly": 3,
-          "forceOff": 13
+          "gapOut": 388,
+          "yield": 20,
+          "maxOut": 33,
+          "platoonEarly": 8,
+          "forceOff": 2
         }
       },
       "preOutage": {
-        "avgWaitTime": 11.77265822784814,
-        "throughputPerMin": 158,
-        "clearedTotal": 395
+        "avgWaitTime": 12.467282321899766,
+        "throughputPerMin": 151.6,
+        "clearedTotal": 379
       },
       "duringOutage": {
-        "avgWaitTime": 23.663665594855427,
-        "throughputPerMin": 124.4,
-        "clearedTotal": 311
+        "avgWaitTime": 23.616060606060703,
+        "throughputPerMin": 132,
+        "clearedTotal": 330
       },
       "postRecovery": {
-        "avgWaitTime": 30.28894645941298,
-        "throughputPerMin": 193,
-        "clearedTotal": 579
+        "avgWaitTime": 30.55574912891994,
+        "throughputPerMin": 191.33333333333334,
+        "clearedTotal": 574
       },
       "preOutageArterial": {
-        "avgWaitTime": 9.068945868945896,
-        "throughputPerMin": 140.4,
-        "clearedTotal": 351
+        "avgWaitTime": 8.816617210682509,
+        "throughputPerMin": 134.8,
+        "clearedTotal": 337
       },
       "duringOutageArterial": {
-        "avgWaitTime": 15.981684981685042,
-        "throughputPerMin": 109.2,
-        "clearedTotal": 273
+        "avgWaitTime": 17.844755244755333,
+        "throughputPerMin": 114.4,
+        "clearedTotal": 286
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 24.885207100591806,
-        "throughputPerMin": 169,
-        "clearedTotal": 507
+        "avgWaitTime": 24.94266144814101,
+        "throughputPerMin": 170.33333333333334,
+        "clearedTotal": 511
       },
       "preOutageSideStreet": {
-        "avgWaitTime": 7.298507462686583,
-        "throughputPerMin": 80.4,
-        "clearedTotal": 201
+        "avgWaitTime": 8.769500000000031,
+        "throughputPerMin": 80,
+        "clearedTotal": 200
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 14.833663366336701,
-        "throughputPerMin": 80.8,
-        "clearedTotal": 202
+        "avgWaitTime": 13.056796116504932,
+        "throughputPerMin": 82.4,
+        "clearedTotal": 206
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 14.732035928143759,
-        "throughputPerMin": 111.33333333333333,
-        "clearedTotal": 334
+        "avgWaitTime": 14.794135802469144,
+        "throughputPerMin": 108,
+        "clearedTotal": 324
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -4348,30 +7380,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 6.795634920634935,
-          "throughputPerMin": 31.5,
-          "clearedTotal": 252,
-          "waitSumTotal": 1712.5000000000036,
-          "clearedWithoutStopTotal": 104,
-          "pctClearedWithoutStop": 41.269841269841265
+          "avgWaitTime": 6.423137254901974,
+          "throughputPerMin": 31.875,
+          "clearedTotal": 255,
+          "waitSumTotal": 1637.9000000000033,
+          "clearedWithoutStopTotal": 98,
+          "pctClearedWithoutStop": 38.43137254901961
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 11.052340425531975,
-          "throughputPerMin": 29.375,
-          "clearedTotal": 235,
-          "waitSumTotal": 2597.3000000000143,
-          "clearedWithoutStopTotal": 76,
-          "pctClearedWithoutStop": 32.340425531914896
+          "avgWaitTime": 15.830894308943158,
+          "throughputPerMin": 30.75,
+          "clearedTotal": 246,
+          "waitSumTotal": 3894.400000000017,
+          "clearedWithoutStopTotal": 61,
+          "pctClearedWithoutStop": 24.796747967479675
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 8.063758389261753,
-          "throughputPerMin": 37.25,
-          "clearedTotal": 298,
-          "waitSumTotal": 2403.0000000000027,
-          "clearedWithoutStopTotal": 127,
-          "pctClearedWithoutStop": 42.61744966442953
+          "avgWaitTime": 9.680398671096386,
+          "throughputPerMin": 37.625,
+          "clearedTotal": 301,
+          "waitSumTotal": 2913.800000000012,
+          "clearedWithoutStopTotal": 119,
+          "pctClearedWithoutStop": 39.53488372093023
         },
         {
           "id": "arcadia_west",
@@ -4456,12 +7488,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 17.243971631205707,
-          "throughputPerMin": 35.25,
-          "clearedTotal": 282,
-          "waitSumTotal": 4862.800000000009,
-          "clearedWithoutStopTotal": 85,
-          "pctClearedWithoutStop": 30.141843971631204
+          "avgWaitTime": 14.434210526315825,
+          "throughputPerMin": 33.25,
+          "clearedTotal": 266,
+          "waitSumTotal": 3839.5000000000095,
+          "clearedWithoutStopTotal": 83,
+          "pctClearedWithoutStop": 31.203007518796994
         },
         {
           "id": "dyer_mall",
@@ -4492,18 +7524,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 13.985993485342078,
-          "throughputPerMin": 76.75,
-          "clearedTotal": 614,
-          "waitSumTotal": 8587.400000000036,
-          "clearedWithoutStopTotal": 215,
-          "pctClearedWithoutStop": 35.01628664495114
+          "avgWaitTime": 13.877886178861862,
+          "throughputPerMin": 76.875,
+          "clearedTotal": 615,
+          "waitSumTotal": 8534.900000000045,
+          "clearedWithoutStopTotal": 211,
+          "pctClearedWithoutStop": 34.30894308943089
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1862,
-        "totalClearedNetwork": 1363,
-        "onRoadNetwork": 499,
+        "totalSpawned": 1859,
+        "totalClearedNetwork": 1364,
+        "onRoadNetwork": 495,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -4532,6 +7564,9 @@
             "reservice": true,
             "sideWaitCap": false,
             "sideMaxWaitS": 60,
+            "divorceNodes": [],
+            "crossShiftS": 10,
+            "freezeAfterWarmup": false,
             "recoveryHold": true,
             "recoveryHoldS": 300,
             "forceRoutes": false,
@@ -4557,7 +7592,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "ef4b4051fac3d8f4"
+    "rowsHash": "1d01cc8d9c760117"
   },
   "2|coordinated_adaptive|destination|true": {
     "summary": {
@@ -4565,433 +7600,434 @@
       "controllerMode": "coordinated_adaptive",
       "routingMode": "destination",
       "routing": {
-        "trips": 1308,
-        "meanTripS": 145.92974006117876,
-        "meanTripDelayS": 70.90175149492289,
-        "toExit": 750,
-        "pulledOff": 558,
-        "divertedPct": 0.8409785932721712,
+        "trips": 1312,
+        "meanTripS": 143.046341463431,
+        "meanTripDelayS": 67.63840375974897,
+        "toExit": 749,
+        "pulledOff": 563,
+        "divertedPct": 0.8384146341463415,
         "missedTurns": 56,
         "missedBy": {
           "wrongLane": 56,
           "blockedTurn": 0,
           "peelNoRoom": 0
         },
-        "rerouted": 1,
+        "rerouted": 0,
         "pulledOffByBlock": {
           "FES-2": 10,
-          "STZ-3": 10,
-          "LUN-2": 4,
+          "BRN-1": 13,
           "GRO-2": 6,
-          "DUX-2": 6,
-          "GRO-4": 13,
           "PRE-1": 13,
-          "STZ-6": 8,
+          "DUX-2": 6,
+          "GRO-4": 12,
           "BRN-2": 15,
           "JSH-7": 20,
-          "PAR-1": 3,
-          "BRN-1": 12,
-          "JSH-6": 9,
+          "JSH-1S": 4,
+          "STZ-6": 7,
+          "FRB-1": 6,
           "FRB-6": 5,
+          "JSH-6": 8,
           "JSH-5": 7,
           "HIL-5": 6,
-          "FRB-1": 6,
-          "PRE-2": 9,
+          "GRO-3": 16,
+          "PRE-2": 10,
+          "STZ-3": 10,
           "HIL-1": 5,
-          "GRO-3": 17,
           "PRO-2": 6,
-          "SOU-5": 7,
-          "JSH-1": 4,
-          "DUX-4": 6,
-          "HIL-3": 5,
-          "ARC-3": 9,
-          "HIL-8": 7,
           "PRO-4": 3,
-          "DUX-3": 11,
-          "PRE-4": 6,
-          "LUN-1": 3,
-          "FRB-4": 6,
-          "FRB-2": 7,
-          "STZ-4": 5,
-          "PRE-3": 13,
-          "HER-1": 6,
+          "SOU-5": 7,
           "ARC-2": 11,
-          "LNW-0": 2,
-          "LYN-2": 9,
-          "GRO-1": 5,
-          "PRE-5": 7,
-          "LYN-1": 14,
-          "FES-4": 9,
-          "JSH-1N": 5,
+          "ARC-3": 9,
+          "FRB-4": 6,
           "STZ-2": 8,
-          "ARC-1": 1,
-          "LYN-3": 7,
-          "FRB-5": 14,
+          "DUX-3": 12,
+          "HIL-8": 7,
+          "PAR-1": 3,
+          "FRB-2": 8,
+          "LUN-1": 3,
+          "PRE-3": 13,
+          "LYN-2": 10,
+          "JSH-1": 5,
+          "LUN-2": 3,
+          "JSH-1N": 5,
+          "HER-1": 6,
+          "GRO-1": 5,
+          "STZ-4": 5,
+          "LYN-1": 15,
+          "LNW-0": 2,
+          "PRE-4": 6,
+          "PRE-5": 6,
           "FRB-3": 6,
+          "HIL-3": 5,
+          "DUX-4": 5,
           "GRO-7": 3,
+          "LYN-3": 7,
+          "ARC-1": 1,
+          "FRB-5": 15,
+          "JSH-4": 10,
           "JSH-3S": 9,
-          "GRO-6": 7,
-          "JSH-4": 9,
-          "HIL-6": 7,
-          "STZ-5": 6,
-          "SOU-4": 2,
-          "STZ-1": 4,
-          "HIL-4": 8,
-          "LYN-0": 8,
-          "HIL-2": 4,
           "PRO-3": 4,
-          "SOU-1": 3,
-          "MAL-2": 4,
-          "DUX-1": 8,
-          "JSH-2": 5,
+          "FES-4": 9,
+          "HIL-6": 7,
           "BRN-3": 10,
-          "HER-2": 4,
+          "GRO-6": 7,
+          "HIL-2": 4,
+          "JSH-2": 6,
+          "STZ-5": 6,
+          "MAL-2": 4,
+          "SOU-4": 2,
           "DXW-1": 3,
-          "PRO-5": 3,
+          "STZ-1": 4,
+          "SOU-1": 3,
+          "HIL-4": 8,
+          "LYN-0": 9,
+          "DUX-1": 8,
           "PRK-1": 2,
-          "FES-1": 5,
-          "DYR-2": 3,
-          "PRK-2": 8,
-          "FES-5": 2,
-          "LNW-1": 3,
-          "JSH-3": 3,
-          "SOU-2": 6,
           "GRO-5": 3,
+          "HER-2": 4,
+          "FES-1": 5,
+          "PRK-2": 8,
+          "DYR-2": 3,
+          "PRO-5": 3,
+          "SOU-3": 2,
+          "LNW-1": 3,
+          "SOU-2": 6,
+          "FES-5": 3,
+          "JSH-3": 3,
           "HIL-7": 5,
           "PRE-6": 3,
-          "SOU-3": 2,
           "BRN-4": 1,
           "PRO-1": 1,
           "LUN-3": 2,
-          "JSH-1S": 3,
-          "JSH-3N": 4,
+          "JSH-3N": 3,
           "ARC-4": 1,
           "DYR-1": 2,
           "JSH-2S": 1,
           "FES-3": 1
         },
-        "missedDriveways": 9,
+        "missedDriveways": 11,
         "missedDrivewaysBy": {
-          "wrongLane": 8,
-          "noGap": 1
+          "wrongLane": 11,
+          "noGap": 0
         },
         "drivewayFallbacks": {
-          "sameBlock": 6,
-          "nextBlock": 2,
-          "exit": 1
+          "sameBlock": 8,
+          "nextBlock": 3,
+          "exit": 0
         },
         "pulledOffByDriveway": {
           "FES-2-A2": 5,
-          "STZ-3-B2": 2,
-          "LUN-2-B1": 1,
+          "BRN-1-B2": 2,
           "GRO-2-B1": 4,
+          "PRE-1-B1": 6,
           "DUX-2-B1": 2,
           "GRO-4-B1": 4,
-          "PRE-1-B1": 6,
-          "STZ-6-A2": 3,
           "BRN-2-B3": 3,
-          "JSH-7-B2": 2,
-          "PAR-1-A1": 3,
-          "BRN-1-B3": 2,
-          "JSH-6-B1": 4,
-          "FRB-6-A1": 3,
-          "JSH-5-A1": 1,
+          "JSH-7-B2": 3,
+          "JSH-1S-A1": 3,
+          "STZ-6-A2": 3,
           "GRO-2-A1": 2,
+          "FRB-1-A2": 3,
+          "BRN-1-B3": 2,
+          "FRB-6-A1": 3,
+          "JSH-6-B1": 4,
+          "JSH-5-A1": 1,
           "HIL-5-B2": 4,
-          "FRB-1-A2": 1,
-          "PRE-2-B1": 2,
-          "HIL-1-B1": 2,
           "GRO-3-A2": 6,
-          "PRE-2-B2": 2,
-          "HIL-1-A1": 3,
+          "PRE-2-B1": 2,
+          "JSH-7-B3": 3,
+          "STZ-3-B2": 2,
+          "HIL-1-B1": 2,
           "PRO-2-B1": 5,
-          "SOU-5-B2": 2,
-          "JSH-1-A1": 2,
-          "DUX-4-A1": 2,
-          "HIL-3-A1": 3,
-          "ARC-3-A2": 3,
-          "HIL-8-B1": 6,
+          "PRE-2-B2": 3,
+          "HIL-1-A1": 3,
           "PRO-4-A1": 2,
-          "DUX-3-B1": 11,
-          "PRE-4-A1": 1,
-          "LUN-1-B1": 2,
-          "PRE-2-A2": 3,
+          "SOU-5-B2": 2,
+          "ARC-2-A3": 1,
+          "ARC-3-A2": 3,
           "FRB-4-A1": 4,
-          "FRB-2-A2": 2,
-          "STZ-4-A2": 2,
+          "STZ-2-B2": 3,
+          "DUX-3-B1": 12,
+          "HIL-8-B1": 6,
+          "PAR-1-A1": 3,
+          "FRB-2-A2": 3,
+          "LUN-1-B1": 2,
           "GRO-4-A2": 4,
           "PRE-3-B1": 2,
-          "LUN-2-A1": 3,
-          "HER-1-B1": 5,
-          "ARC-2-A3": 1,
-          "LNW-0-B1": 2,
-          "LYN-2-A3": 2,
-          "GRO-1-A1": 3,
-          "JSH-6-A1": 5,
-          "PRE-5-A2": 3,
-          "LYN-1-B1": 1,
-          "FRB-1-A1": 4,
-          "FES-4-A1": 4,
-          "JSH-1N-B1": 2,
-          "STZ-2-B2": 3,
-          "HIL-3-B1": 2,
-          "ARC-3-A3": 4,
-          "JSH-7-A2": 8,
-          "ARC-1-A1": 1,
-          "LYN-3-B1": 2,
-          "FRB-5-B1": 2,
-          "FRB-3-A2": 3,
           "LYN-2-A2": 3,
-          "GRO-7-A1": 1,
-          "FES-4-B1": 5,
-          "STZ-6-B2": 3,
-          "STZ-2-B1": 4,
-          "PRE-4-B2": 2,
-          "LYN-2-B1": 3,
-          "GRO-1-B1": 2,
+          "JSH-1-A1": 2,
+          "LUN-2-A1": 3,
+          "JSH-1N-B1": 2,
+          "HER-1-B1": 5,
+          "GRO-1-A1": 3,
+          "STZ-4-A2": 2,
+          "LYN-1-A3": 2,
+          "JSH-6-A1": 4,
+          "LNW-0-B1": 2,
+          "PRE-4-B2": 3,
+          "PRE-5-A2": 2,
+          "ARC-3-A3": 4,
+          "FRB-3-A2": 3,
+          "HIL-3-A1": 3,
           "PRO-2-A1": 1,
-          "DUX-2-A1": 4,
-          "SOU-5-A2": 2,
-          "JSH-3S-B1": 6,
+          "STZ-6-B2": 2,
+          "JSH-7-A2": 7,
+          "LYN-1-B1": 2,
+          "DUX-4-A1": 1,
+          "FRB-1-A1": 2,
+          "GRO-7-A1": 1,
+          "PRE-2-A2": 3,
+          "LYN-3-B1": 2,
+          "ARC-1-A1": 1,
+          "GRO-1-B1": 2,
           "GRO-3-B3": 2,
-          "JSH-7-B3": 3,
-          "GRO-6-B2": 3,
+          "FRB-5-B1": 4,
           "JSH-4-A1": 3,
-          "HIL-6-A2": 3,
+          "JSH-3S-B1": 6,
+          "LYN-2-B1": 3,
+          "LYN-2-A3": 2,
+          "PRO-3-A1": 1,
+          "STZ-2-B1": 4,
+          "JSH-1-A2": 3,
+          "FES-4-A1": 4,
+          "PRE-4-A1": 1,
+          "FES-4-B1": 5,
+          "ARC-2-A1": 4,
+          "GRO-3-B1": 2,
+          "PRE-3-B2": 4,
+          "SOU-5-A2": 2,
+          "HIL-6-A2": 2,
+          "BRN-3-A1": 3,
+          "GRO-3-A3": 3,
+          "GRO-6-B2": 3,
+          "BRN-1-A3": 2,
+          "JSH-7-A1": 2,
+          "HIL-2-A1": 2,
+          "FRB-5-B3": 3,
+          "JSH-2-A1": 3,
           "BRN-2-A2": 1,
           "STZ-5-A2": 2,
-          "PRE-3-B2": 4,
-          "GRO-3-A3": 3,
-          "SOU-4-A1": 2,
-          "STZ-1-B2": 1,
-          "JSH-7-A1": 2,
-          "GRO-3-A1": 2,
-          "FRB-5-B2": 2,
-          "HIL-4-A2": 2,
-          "BRN-1-A1": 3,
-          "LYN-0-B1": 2,
-          "HIL-2-A1": 2,
-          "ARC-2-A2": 3,
-          "FES-2-A1": 2,
-          "PRO-3-B1": 3,
-          "PRO-3-A1": 1,
-          "FRB-2-B1": 4,
-          "JSH-1-A2": 2,
-          "STZ-3-A2": 6,
-          "SOU-1-A1": 2,
+          "HIL-3-B1": 2,
           "MAL-2-A3": 2,
-          "ARC-2-A1": 4,
-          "DUX-1-A1": 4,
-          "JSH-2-A1": 2,
-          "JSH-1N-A1": 3,
-          "ARC-2-B1": 2,
-          "LYN-0-A2": 2,
-          "BRN-1-A3": 2,
-          "PRE-1-B2": 2,
+          "SOU-4-A1": 2,
+          "GRO-3-A1": 1,
           "LYN-1-A1": 3,
-          "HIL-6-B1": 3,
-          "GRO-3-B1": 2,
-          "BRN-2-B2": 3,
-          "BRN-3-A2": 3,
-          "FRB-5-B3": 3,
-          "LYN-0-A1": 3,
-          "STZ-5-A1": 2,
-          "FES-2-B2": 3,
-          "DUX-1-B1": 4,
-          "SOU-1-B1": 1,
-          "BRN-1-B1": 3,
-          "HER-2-A1": 4,
           "DXW-1-A1": 2,
+          "ARC-2-A2": 3,
+          "STZ-1-B2": 1,
+          "PRO-3-B1": 3,
+          "SOU-1-A1": 2,
+          "HIL-4-A2": 2,
           "GRO-6-B1": 2,
-          "HIL-5-A2": 1,
-          "BRN-3-A1": 2,
-          "PRO-5-B1": 2,
-          "PRK-1-B2": 1,
-          "FES-1-A1": 4,
-          "JSH-5-B1": 3,
-          "PRE-4-A2": 3,
-          "HIL-4-A3": 3,
-          "FRB-5-A2": 3,
-          "BRN-3-B1": 2,
-          "DYR-2-A1": 2,
-          "FRB-3-B2": 1,
-          "PRE-5-B2": 2,
-          "JSH-7-B1": 4,
-          "PRE-5-B1": 1,
-          "SOU-5-A1": 2,
-          "JSH-4-B1": 2,
-          "PRK-2-A1": 6,
-          "FES-5-A1": 2,
-          "JSH-2-B1": 3,
-          "BRN-2-A3": 5,
-          "LNW-1-A1": 2,
+          "FRB-2-B1": 3,
+          "FES-2-A1": 2,
           "GRO-4-B2": 3,
-          "DUX-4-A2": 2,
-          "JSH-3-A1": 2,
-          "SOU-2-A1": 5,
+          "BRN-3-A2": 2,
+          "HIL-6-B1": 3,
+          "PRE-1-B2": 2,
+          "ARC-2-B1": 2,
+          "LYN-0-B1": 2,
+          "STZ-3-A2": 6,
+          "HIL-5-A2": 1,
+          "LYN-0-A2": 2,
+          "FRB-5-B2": 2,
+          "DUX-1-B1": 4,
+          "LYN-0-A1": 3,
+          "BRN-1-A1": 3,
+          "DUX-2-A1": 4,
+          "JSH-1N-A1": 3,
+          "STZ-5-A1": 2,
+          "PRK-1-B2": 1,
+          "SOU-1-B1": 1,
           "GRO-5-A2": 1,
-          "STZ-5-B2": 1,
-          "HER-1-A1": 1,
+          "FES-2-B2": 3,
+          "HER-2-A1": 4,
+          "JSH-4-B1": 2,
+          "FES-1-A1": 4,
+          "DUX-1-A1": 4,
+          "PRK-2-A1": 6,
+          "PRE-4-A2": 2,
+          "DYR-2-A1": 2,
+          "PRO-5-B1": 2,
+          "SOU-3-A1": 1,
+          "PRE-5-B2": 2,
+          "PRE-5-B1": 1,
+          "LNW-1-A1": 2,
+          "BRN-2-A3": 5,
+          "SOU-2-A1": 5,
+          "FES-5-A1": 3,
+          "BRN-1-B1": 3,
+          "HIL-4-A3": 3,
+          "DUX-4-A2": 2,
+          "JSH-5-B1": 3,
+          "LUN-1-A1": 1,
+          "GRO-7-B1": 2,
+          "FRB-5-A2": 2,
+          "SOU-5-A1": 2,
           "BRN-2-A1": 2,
+          "JSH-3-A1": 2,
+          "FRB-3-B2": 1,
+          "BRN-2-B2": 3,
+          "JSH-2-B1": 3,
+          "STZ-5-B2": 1,
+          "JSH-7-B1": 4,
+          "PRE-1-A2": 4,
           "PRE-3-A2": 3,
           "HIL-7-B1": 2,
-          "LYN-3-B3": 1,
-          "PRE-6-A1": 2,
-          "DUX-4-B2": 1,
-          "PRE-1-A2": 4,
-          "SOU-3-A1": 1,
+          "PRE-6-A1": 1,
           "JSH-7-A3": 1,
-          "LNW-1-B1": 1,
+          "BRN-3-B1": 2,
+          "GRO-5-B1": 1,
+          "FRB-5-A1": 2,
+          "LYN-3-B3": 1,
+          "LYN-3-A3": 2,
           "HIL-8-A1": 1,
-          "LUN-1-A1": 1,
-          "BRN-4-A1": 1,
           "HIL-7-A1": 3,
+          "HIL-5-B1": 1,
+          "BRN-4-A1": 1,
           "LYN-3-B2": 1,
           "PRE-5-A1": 1,
-          "GRO-6-A1": 1,
-          "LYN-3-A3": 2,
-          "GRO-7-B1": 2,
-          "LYN-1-B2": 3,
-          "LYN-2-A1": 1,
           "BRN-3-A3": 1,
-          "HIL-5-B1": 1,
-          "JSH-4-B2": 2,
-          "FRB-5-A1": 2,
-          "FRB-4-B1": 2,
-          "BRN-2-B1": 1,
+          "HER-1-A1": 1,
           "STZ-3-B1": 1,
-          "FRB-5-A3": 2,
-          "FRB-3-A1": 1,
-          "PRO-1-B1": 1,
-          "STZ-1-A1": 1,
-          "LUN-3-A1": 1,
-          "STZ-3-A1": 1,
-          "FRB-6-B1": 2,
-          "PRE-1-A1": 1,
+          "LYN-1-B2": 3,
+          "LNW-1-B1": 1,
+          "BRN-2-B1": 1,
+          "LYN-2-A1": 2,
           "DUX-4-B1": 1,
-          "GRO-5-B1": 1,
-          "JSH-1S-A1": 2,
-          "LUN-3-B1": 1,
-          "JSH-3N-A1": 2,
-          "HIL-6-A1": 1,
-          "LYN-3-A1": 1,
-          "GRO-3-B2": 2,
-          "FES-1-B2": 1,
-          "LYN-1-A2": 4,
           "SOU-5-B1": 1,
-          "PRK-1-B1": 1,
+          "JSH-4-B2": 2,
+          "GRO-6-A1": 1,
+          "FRB-3-A1": 1,
+          "FRB-5-A3": 2,
+          "STZ-3-A1": 1,
+          "FRB-4-B1": 2,
+          "HIL-6-A1": 2,
+          "STZ-1-A1": 1,
+          "FRB-6-B1": 2,
+          "PRO-1-B1": 1,
+          "LYN-1-A2": 3,
+          "LUN-3-A1": 1,
+          "JSH-3N-A1": 2,
+          "DUX-4-B2": 1,
+          "LYN-3-A1": 1,
+          "PRE-1-A1": 1,
           "DXW-1-B1": 1,
-          "ARC-4-B1": 1,
-          "PRK-2-B1": 2,
-          "BRN-1-B2": 1,
-          "LYN-1-B3": 2,
+          "LUN-3-B1": 1,
           "PRE-3-A1": 4,
+          "PRK-1-B1": 1,
+          "LYN-1-B3": 2,
+          "PRK-2-B1": 2,
+          "STZ-2-A2": 1,
+          "ARC-4-B1": 1,
+          "FES-1-B2": 1,
+          "DYR-1-A1": 1,
+          "GRO-3-B2": 2,
           "HIL-4-B2": 1,
-          "PRE-6-A2": 1,
           "STZ-4-B1": 1,
+          "PRE-6-A2": 2,
           "JSH-5-B2": 2,
-          "DYR-1-B1": 1,
           "JSH-2S-B1": 1,
+          "DYR-1-B1": 1,
+          "JSH-4-A2": 3,
           "ARC-2-B2": 1,
           "STZ-5-B1": 1,
+          "LYN-0-B2": 1,
           "JSH-3S-A1": 3,
           "FES-3-A1": 1,
-          "LYN-0-B2": 1,
-          "FRB-2-A1": 1,
-          "STZ-2-A2": 1,
-          "BRN-3-B3": 1,
-          "GRO-6-A2": 1,
-          "JSH-4-A2": 2,
           "GRO-5-A1": 1,
-          "STZ-4-A1": 1,
-          "FRB-3-B1": 1,
-          "HIL-4-A1": 1,
-          "ARC-3-A1": 2,
-          "STZ-6-A1": 1,
-          "FRB-1-B2": 1,
-          "MAL-2-A2": 1,
-          "SOU-2-B1": 1,
-          "STZ-6-B1": 1,
+          "HIL-2-B1": 2,
+          "FRB-2-A1": 1,
+          "GRO-6-A2": 1,
           "BRN-3-B2": 1,
           "PRO-5-A3": 1,
-          "PRE-2-A1": 2,
-          "HIL-2-B1": 2,
+          "HIL-4-A1": 1,
+          "STZ-6-A1": 1,
+          "FRB-1-B2": 1,
+          "ARC-3-A1": 2,
+          "MAL-2-A2": 1,
+          "BRN-3-B3": 1,
+          "STZ-4-A1": 1,
           "BRN-1-A2": 1,
-          "STZ-1-A2": 2,
-          "JSH-5-A2": 1,
-          "PRO-4-B1": 1,
-          "DYR-1-A1": 1,
-          "JSH-3N-B1": 2,
+          "STZ-6-B1": 1,
+          "FRB-3-B1": 1,
+          "PRE-2-A1": 2,
           "DYR-2-B1": 1,
-          "GRO-4-A1": 2,
-          "LYN-1-A3": 1,
+          "SOU-2-B1": 1,
+          "STZ-1-A2": 2,
           "SOU-3-B1": 1,
-          "MAL-2-B3": 1,
-          "HIL-4-B3": 1,
+          "JSH-3N-B1": 1,
+          "PRO-4-B1": 1,
+          "GRO-4-A1": 1,
+          "JSH-5-A2": 1,
           "STZ-4-B2": 1,
+          "MAL-2-B3": 1,
+          "JSH-1S-B1": 1,
+          "HIL-4-B3": 1,
+          "FRB-2-B2": 1,
           "JSH-3-B1": 1,
-          "JSH-1S-B1": 1
+          "LYN-0-A3": 1
         },
-        "departed": 460,
+        "departed": 462,
         "departedByDriveway": {
           "LNW-1-B1": 3,
           "SOU-2-B1": 2,
           "PRK-2-A1": 3,
           "GRO-4-B2": 2,
           "LYN-1-A3": 3,
-          "STZ-3-B1": 2,
           "BRN-2-A1": 1,
+          "STZ-3-B1": 2,
           "HIL-6-A2": 3,
           "DUX-1-A1": 8,
           "PRE-2-B2": 1,
-          "JSH-2-A1": 3,
-          "BUR-1-B1": 1,
           "HIL-6-A1": 2,
+          "JSH-2-A1": 3,
           "MAL-1-B1": 3,
+          "LYN-3-B1": 1,
           "FES-2-B1": 2,
+          "BUR-1-B1": 1,
           "STZ-3-A1": 2,
           "JSH-2S-A1": 3,
-          "FRB-4-A1": 5,
-          "JSH-5-A2": 5,
           "PRE-2-A2": 3,
+          "FRB-4-A1": 5,
           "HIL-1-B1": 4,
-          "LYN-3-B1": 1,
+          "JSH-5-A2": 5,
           "PAR-1-A1": 1,
           "PRE-3-A2": 4,
           "BRN-3-A2": 1,
           "SOU-3-B1": 2,
-          "HIL-8-B1": 5,
-          "LYN-0-A1": 1,
+          "HIL-8-B1": 6,
           "FRB-2-A1": 2,
           "BRN-4-A1": 2,
           "STZ-1-A1": 3,
+          "LYN-0-A1": 1,
           "FES-1-B1": 1,
           "FRB-3-A1": 2,
+          "JSH-1S-A1": 3,
           "GRO-4-B1": 3,
           "PRK-1-A2": 1,
           "FRB-1-A2": 1,
-          "JSH-1S-A1": 3,
           "PRE-4-B1": 3,
           "HIL-2-B1": 4,
           "JSH-5-B2": 3,
           "ARC-2-A1": 3,
           "FRB-5-B3": 2,
           "GRO-6-B1": 1,
-          "STZ-2-A2": 2,
           "FES-2-A2": 3,
           "FRB-5-B2": 1,
-          "FES-2-B2": 1,
-          "PRO-4-B1": 1,
           "JSH-7-B1": 3,
+          "FES-2-B2": 1,
+          "STZ-2-A2": 2,
+          "PRO-4-B1": 1,
+          "GRO-2-A1": 3,
           "JSH-1-A2": 2,
           "HIL-4-B3": 2,
-          "GRO-2-A1": 3,
           "HIL-6-B1": 4,
           "JSH-6-B1": 1,
           "HIL-5-A1": 2,
-          "STZ-2-B2": 2,
-          "LYN-2-A2": 1,
           "DXW-1-A1": 1,
+          "LYN-2-A2": 1,
+          "STZ-2-B2": 2,
           "GRO-3-A2": 2,
           "GRO-7-A1": 4,
           "BRN-1-A1": 2,
@@ -4999,8 +8035,8 @@
           "JSH-3S-A1": 6,
           "FRB-2-A2": 2,
           "JSH-7-A3": 5,
-          "LYN-1-B1": 4,
           "DUX-3-B1": 2,
+          "LYN-1-B1": 4,
           "BRN-2-B1": 2,
           "JSH-7-B2": 6,
           "ARC-3-B1": 2,
@@ -5013,57 +8049,57 @@
           "LYN-1-B3": 1,
           "HIL-3-A1": 2,
           "BRN-3-A1": 3,
+          "FRB-3-A2": 2,
           "PRE-2-B1": 3,
           "FRB-6-A1": 3,
-          "FRB-3-A2": 2,
+          "HIL-4-A1": 3,
           "GRO-1-A1": 3,
           "GRO-6-A1": 1,
-          "HIL-4-A1": 3,
           "HIL-8-A1": 1,
           "SOU-1-A1": 1,
           "JSH-1N-A1": 3,
           "STZ-4-B1": 1,
           "LUN-1-A1": 3,
+          "HER-2-A1": 3,
           "MAL-1-A1": 2,
           "JSH-3-B1": 2,
-          "HER-1-B1": 2,
           "DUX-2-A1": 2,
-          "HER-2-A1": 3,
-          "GRO-1-B1": 3,
           "PRE-1-B2": 2,
+          "GRO-1-B1": 3,
           "JSH-7-A2": 5,
           "FRB-1-B1": 2,
           "PRO-2-A1": 3,
           "DUX-2-B1": 1,
-          "JSH-4-B2": 1,
-          "DXW-1-B1": 1,
           "JSH-7-A1": 6,
+          "JSH-4-B2": 1,
+          "HER-1-B1": 2,
+          "DXW-1-B1": 1,
           "SOU-1-B1": 1,
-          "LYN-0-B2": 1,
           "GRO-2-B1": 2,
           "HIL-5-B1": 2,
           "JSH-4-B1": 3,
           "SOU-5-B1": 1,
+          "LYN-0-B2": 1,
           "JSH-2-B1": 5,
           "STZ-6-A1": 1,
           "JSH-3N-B1": 1,
           "STZ-4-B2": 1,
-          "PRK-2-B1": 2,
           "FES-3-B1": 1,
+          "PRK-2-B1": 2,
           "PRE-1-B1": 4,
           "FRB-5-A2": 1,
           "JSH-1-B1": 1,
           "LYN-2-B3": 2,
-          "PRE-5-B1": 3,
           "SOU-2-A1": 2,
+          "PRE-5-B1": 3,
           "FES-5-A1": 3,
+          "PRO-2-B1": 2,
           "PRE-4-A1": 3,
           "FRB-6-B1": 5,
           "LYN-3-B3": 1,
+          "HIL-7-B1": 4,
           "PRE-1-A2": 2,
           "STZ-6-B1": 1,
-          "HIL-7-B1": 4,
-          "PRO-2-B1": 2,
           "BRN-1-B2": 2,
           "GRO-5-A2": 1,
           "MAL-2-B2": 2,
@@ -5073,8 +8109,8 @@
           "JSH-6-A1": 4,
           "PRE-5-A1": 3,
           "SOU-5-A3": 2,
-          "PRE-4-A2": 1,
           "HIL-6-B2": 1,
+          "PRE-4-A2": 1,
           "LYN-1-A1": 2,
           "PRE-2-A1": 3,
           "DUX-4-A2": 2,
@@ -5092,9 +8128,9 @@
           "FRB-4-B1": 4,
           "BRN-2-A3": 1,
           "BRN-2-B2": 2,
+          "GRO-4-A2": 1,
           "GRO-3-B2": 1,
           "ARC-2-B3": 2,
-          "GRO-4-A2": 1,
           "BRN-3-B3": 1,
           "HIL-1-A1": 1,
           "GRO-3-B1": 4,
@@ -5106,10 +8142,10 @@
           "LNW-1-A1": 1,
           "ARC-2-A3": 2,
           "HIL-5-B2": 1,
-          "PRE-5-B2": 1,
           "STZ-4-A2": 3,
           "ARC-3-A1": 1,
           "ARC-2-A2": 1,
+          "PRE-5-B2": 1,
           "FES-4-B1": 1,
           "LYN-0-A2": 1,
           "DUX-1-B1": 1,
@@ -5119,18 +8155,18 @@
           "DYR-2-A1": 1,
           "SOU-5-B3": 1,
           "LYN-1-A2": 2,
-          "GRO-4-A1": 1,
+          "GRO-4-A1": 2,
           "LUN-1-B1": 3,
-          "FRB-2-B1": 1,
           "JSH-3S-B1": 1,
           "PRE-3-B1": 1,
+          "FRB-2-B1": 1,
           "BRN-1-B1": 2,
           "JSH-4-A2": 1,
           "DYR-1-B1": 2,
           "PRO-1-B1": 1,
-          "LYN-2-B1": 2,
           "PRO-1-A1": 1,
           "PRE-6-A2": 1,
+          "LYN-2-B1": 2,
           "SOU-4-B1": 1,
           "ARC-3-A3": 1,
           "FES-1-A1": 1,
@@ -5139,11 +8175,11 @@
           "PRE-3-A1": 3,
           "MAL-2-B3": 1,
           "FES-1-A2": 1,
-          "STZ-3-B2": 1,
           "BRN-1-A2": 1,
           "LYN-4-B2": 1,
           "SOU-5-B2": 1,
           "HER-2-B1": 1,
+          "STZ-3-B2": 1,
           "MAL-2-A3": 1,
           "JSH-5-A1": 1,
           "LUN-2-B1": 1,
@@ -5159,26 +8195,24 @@
           "HIL-4-A2": 1,
           "LYN-3-B2": 1
         },
-        "departuresWaiting": 3,
-        "meanDrivewayWaitS": 0.6715217391305206,
-        "longestDrivewayWaitS": 10.700000000002433,
+        "departuresWaiting": 1,
+        "meanDrivewayWaitS": 0.6060606060606781,
+        "longestDrivewayWaitS": 7.900000000001796,
         "departuresWaitingByDriveway": {
-          "HIL-8:S": 1,
-          "GRO-4:N": 1,
           "LYN-3:E": 1
         }
       },
       "diagnostics": {
-        "arrivalsLost": 1,
+        "arrivalsLost": 2,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 105,
+          "longestStillS": 67,
           "longestStill": {
-            "seconds": 105,
-            "carId": 1058,
+            "seconds": 67,
+            "carId": 823,
             "nodeId": "lynnwood_janshoba",
-            "place": "Lynnwood Road, eastbound, lane 1, 337 m",
-            "atS": 504
+            "place": "Lynnwood Road, westbound, lane 0, 798 m",
+            "atS": 484
           },
           "locked": null,
           "starved": null,
@@ -5190,25 +8224,364 @@
       "powerState": "load_shedding",
       "sensorMode": "inductive_loop",
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 24.78394495412851,
-      "avgWaitTimeArterial": 19.86376811594207,
-      "avgWaitTimeSideStreet": 12.76918767507008,
-      "throughputPerMin": 163.5,
-      "throughputPerMinArterial": 146.625,
-      "throughputPerMinSideStreet": 89.25,
-      "pctClearedWithoutStop": 7.415902140672783,
-      "pctClearedWithoutStopArterial": 15.26001705029838,
-      "pctClearedWithoutStopSideStreet": 23.52941176470588,
-      "medianWait": 20.000000000000014,
-      "p95Wait": 64.30000000000062,
-      "maxWait": 125.29999999999715,
-      "p95WaitArterial": 61.3000000000006,
-      "maxWaitArterial": 125.29999999999715,
-      "p95WaitSideStreet": 41.60000000000049,
-      "maxWaitSideStreet": 78.89999999999979,
+      "avgWaitTime": 22.954573170731788,
+      "avgWaitTimeArterial": 18.15289115646264,
+      "avgWaitTimeSideStreet": 12.195549374130787,
+      "throughputPerMin": 164,
+      "throughputPerMinArterial": 147,
+      "throughputPerMinSideStreet": 89.875,
+      "pctClearedWithoutStop": 9.146341463414634,
+      "pctClearedWithoutStopArterial": 17.9421768707483,
+      "pctClearedWithoutStopSideStreet": 23.9221140472879,
+      "medianWait": 18.499999999999993,
+      "p95Wait": 62.80000000000062,
+      "maxWait": 125.69999999999713,
+      "p95WaitArterial": 58.20000000000056,
+      "maxWaitArterial": 125.69999999999713,
+      "p95WaitSideStreet": 40.3000000000003,
+      "maxWaitSideStreet": 68.1999999999997,
+      "roadWaits": {
+        "pretorius": {
+          "name": "Pretorius Street",
+          "scope": "arterial",
+          "vehicles": 283,
+          "meanWait": 11.29,
+          "maxWait": 49.7
+        },
+        "conn_festival": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 95,
+          "meanWait": 10.41,
+          "maxWait": 47.2
+        },
+        "stanza": {
+          "name": "Stanza Bopape Street",
+          "scope": "arterial",
+          "vehicles": 248,
+          "meanWait": 9.6,
+          "maxWait": 66.4
+        },
+        "south": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 74,
+          "meanWait": 0.82,
+          "maxWait": 14.8
+        },
+        "conn_hilda_south": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 147,
+          "meanWait": 1.65,
+          "maxWait": 19.2
+        },
+        "prospect": {
+          "name": "Prospect Street",
+          "scope": "side",
+          "vehicles": 81,
+          "meanWait": 5.17,
+          "maxWait": 19.9
+        },
+        "conn_festival_south": {
+          "name": "Festival",
+          "scope": "side",
+          "vehicles": 32,
+          "meanWait": 4.65,
+          "maxWait": 19.4
+        },
+        "conn_jan_shoba_sb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 194,
+          "meanWait": 12.56,
+          "maxWait": 53.7
+        },
+        "conn_jan_shoba_sb_merge": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 75,
+          "meanWait": 0.05,
+          "maxWait": 0.8
+        },
+        "conn_jan_shoba": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 358,
+          "meanWait": 12.9,
+          "maxWait": 98.8
+        },
+        "burnett": {
+          "name": "Burnett Street",
+          "scope": "side",
+          "vehicles": 102,
+          "meanWait": 6.02,
+          "maxWait": 32.1
+        },
+        "francisbaard": {
+          "name": "Francis Baard Street",
+          "scope": "arterial",
+          "vehicles": 327,
+          "meanWait": 9.3,
+          "maxWait": 69.2
+        },
+        "conn_grosvenor": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 128,
+          "meanWait": 10.35,
+          "maxWait": 48
+        },
+        "lynnwood": {
+          "name": "Lynnwood Road",
+          "scope": "arterial",
+          "vehicles": 281,
+          "meanWait": 13.87,
+          "maxWait": 125.7
+        },
+        "conn_dyer": {
+          "name": "Dyer Road",
+          "scope": "side",
+          "vehicles": 56,
+          "meanWait": 3.29,
+          "maxWait": 30.4
+        },
+        "dyer_mall": {
+          "name": "Mall Road",
+          "scope": "side",
+          "vehicles": 50,
+          "meanWait": 0.13,
+          "maxWait": 2.6
+        },
+        "conn_duxbury_south": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 24,
+          "meanWait": 7.06,
+          "maxWait": 60.9
+        },
+        "conn_duxbury_east": {
+          "name": "Duxbury",
+          "scope": "side",
+          "vehicles": 71,
+          "meanWait": 8.23,
+          "maxWait": 46.7
+        },
+        "arcadia_west": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 16,
+          "meanWait": 1.84,
+          "maxWait": 11.1
+        },
+        "conn_arcadia_oneway": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 13,
+          "meanWait": 5.84,
+          "maxWait": 12.5
+        },
+        "conn_hilda": {
+          "name": "Hilda",
+          "scope": "side",
+          "vehicles": 135,
+          "meanWait": 7.3,
+          "maxWait": 64.7
+        },
+        "park": {
+          "name": "Park Street",
+          "scope": "side",
+          "vehicles": 43,
+          "meanWait": 5.38,
+          "maxWait": 23
+        },
+        "conn_grosvenor_south": {
+          "name": "Grosvenor",
+          "scope": "side",
+          "vehicles": 91,
+          "meanWait": 6.72,
+          "maxWait": 40.5
+        },
+        "conn_jan_shoba_nb": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 161,
+          "meanWait": 6.61,
+          "maxWait": 42.3
+        },
+        "slip_burnett_janshoba_northbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 18,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "arcadia": {
+          "name": "Arcadia Street",
+          "scope": "side",
+          "vehicles": 73,
+          "meanWait": 2.82,
+          "maxWait": 29.5
+        },
+        "conn_burnett_east": {
+          "name": "Burnett",
+          "scope": "side",
+          "vehicles": 21,
+          "meanWait": 8.29,
+          "maxWait": 31.7
+        },
+        "lunnon": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 43,
+          "meanWait": 4.46,
+          "maxWait": 18
+        },
+        "duxbury_west": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 119,
+          "meanWait": 0.06,
+          "maxWait": 1.6
+        },
+        "duxbury": {
+          "name": "Duxbury Road",
+          "scope": "side",
+          "vehicles": 73,
+          "meanWait": 6.02,
+          "maxWait": 48.8
+        },
+        "conn_park_east": {
+          "name": "Park",
+          "scope": "side",
+          "vehicles": 15,
+          "meanWait": 5.42,
+          "maxWait": 47.4
+        },
+        "conn_prospect_e_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 6,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_east": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 19,
+          "meanWait": 0.04,
+          "maxWait": 0.7
+        },
+        "south_janshoba_divided": {
+          "name": "South Street",
+          "scope": "side",
+          "vehicles": 55,
+          "meanWait": 4.98,
+          "maxWait": 26.4
+        },
+        "conn_south_east": {
+          "name": "South",
+          "scope": "side",
+          "vehicles": 26,
+          "meanWait": 0.06,
+          "maxWait": 0.9
+        },
+        "conn_arcadia_east": {
+          "name": "Arcadia",
+          "scope": "side",
+          "vehicles": 46,
+          "meanWait": 2.1,
+          "maxWait": 22.5
+        },
+        "conn_jan_shoba_nb_south": {
+          "name": "Jan Shoba",
+          "scope": "arterial",
+          "vehicles": 52,
+          "meanWait": 13.64,
+          "maxWait": 50.7
+        },
+        "conn_herold": {
+          "name": "Herold Street",
+          "scope": "side",
+          "vehicles": 77,
+          "meanWait": 7.81,
+          "maxWait": 44.7
+        },
+        "lunnon_west": {
+          "name": "Lunnon Road",
+          "scope": "side",
+          "vehicles": 26,
+          "meanWait": 0.14,
+          "maxWait": 1
+        },
+        "conn_lunnon_e_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_off": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 10,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_off": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 5,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "slip_lynnwood_duxbury_eastbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_e_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 12,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_w_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 2,
+          "meanWait": 5.85,
+          "maxWait": 11.7
+        },
+        "slip_duxbury_janshoba_southbound": {
+          "name": "",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_lunnon_e_on": {
+          "name": "Lunnon",
+          "scope": "side",
+          "vehicles": 8,
+          "meanWait": 0,
+          "maxWait": 0
+        },
+        "conn_prospect_w_on": {
+          "name": "Prospect",
+          "scope": "side",
+          "vehicles": 11,
+          "meanWait": 0.27,
+          "maxWait": 3
+        }
+      },
       "coordination": {
-        "measuredS": 10230,
-        "marriedShare": 0.088,
+        "measuredS": 14880,
+        "marriedShare": 0.06,
+        "darkS": 150,
         "nodes": {
           "stanza_festival": {
             "routeId": "stanza",
@@ -5224,15 +8597,15 @@
           },
           "pt_janshoba_sb": {
             "routeId": "pretorius",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "pt_janshoba_nb": {
             "routeId": "pretorius",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "pt_grosvenor": {
             "routeId": "pretorius",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "pt_hilda": {
             "routeId": "pretorius",
@@ -5244,15 +8617,15 @@
           },
           "fb_festival": {
             "routeId": "francisbaard",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "fb_hilda": {
             "routeId": "francisbaard",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "fb_grosvenor": {
             "routeId": "francisbaard",
-            "marriedShare": 0.455
+            "marriedShare": 0.312
           },
           "arcadia_festival": {
             "routeId": "arcadia_west",
@@ -5344,17 +8717,17 @@
             "retunes": 4
           },
           "pretorius": {
-            "meanCycleS": 40.7,
+            "meanCycleS": 39.5,
             "minCycleS": 37.6,
-            "maxCycleS": 45,
-            "finalCycleS": 45,
+            "maxCycleS": 41.3,
+            "finalCycleS": 41.2,
             "retunes": 2
           },
           "francisbaard": {
-            "meanCycleS": 33.6,
+            "meanCycleS": 34.3,
             "minCycleS": 30.6,
-            "maxCycleS": 37.3,
-            "finalCycleS": 37.3,
+            "maxCycleS": 38.3,
+            "finalCycleS": 38.3,
             "retunes": 2
           },
           "arcadia_west": {
@@ -5410,61 +8783,62 @@
         "recoveryHolds": 1,
         "recoveryHoldS": 300,
         "platoon": {
-          "messages": 1572,
-          "holds": 1,
-          "holdS": 0.6
+          "messages": 1577,
+          "holds": 0,
+          "holdS": 0
         },
         "greenEnds": {
-          "gapOut": 392,
+          "gapOut": 390,
           "yield": 23,
-          "forceOff": 22,
-          "maxOut": 32
+          "platoonEarly": 7,
+          "forceOff": 3,
+          "maxOut": 34
         }
       },
       "preOutage": {
-        "avgWaitTime": 14.060217983651274,
-        "throughputPerMin": 146.8,
-        "clearedTotal": 367
+        "avgWaitTime": 12.854430379746868,
+        "throughputPerMin": 158,
+        "clearedTotal": 395
       },
       "duringOutage": {
-        "avgWaitTime": 25.635977337110564,
-        "throughputPerMin": 141.2,
-        "clearedTotal": 353
+        "avgWaitTime": 24.556060606060726,
+        "throughputPerMin": 132,
+        "clearedTotal": 330
       },
       "postRecovery": {
-        "avgWaitTime": 30.96564625850348,
-        "throughputPerMin": 196,
-        "clearedTotal": 588
+        "avgWaitTime": 28.85076660988084,
+        "throughputPerMin": 195.66666666666666,
+        "clearedTotal": 587
       },
       "preOutageArterial": {
-        "avgWaitTime": 10.627300613496965,
-        "throughputPerMin": 130.4,
-        "clearedTotal": 326
+        "avgWaitTime": 10.17415730337082,
+        "throughputPerMin": 142.4,
+        "clearedTotal": 356
       },
       "duringOutageArterial": {
-        "avgWaitTime": 18.920886075949426,
-        "throughputPerMin": 126.4,
-        "clearedTotal": 316
+        "avgWaitTime": 18.1356401384084,
+        "throughputPerMin": 115.6,
+        "clearedTotal": 289
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 26.095480225988737,
+        "avgWaitTime": 23.511487758945435,
         "throughputPerMin": 177,
         "clearedTotal": 531
       },
       "preOutageSideStreet": {
-        "avgWaitTime": 9.019148936170245,
-        "throughputPerMin": 75.2,
-        "clearedTotal": 188
+        "avgWaitTime": 7.426020408163283,
+        "throughputPerMin": 78.4,
+        "clearedTotal": 196
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 14.69138755980867,
-        "throughputPerMin": 83.6,
-        "clearedTotal": 209
+        "avgWaitTime": 14.240298507462764,
+        "throughputPerMin": 80.4,
+        "clearedTotal": 201
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 13.725867507886496,
-        "throughputPerMin": 105.66666666666667,
-        "clearedTotal": 317
+        "avgWaitTime": 13.822360248447254,
+        "throughputPerMin": 107.33333333333333,
+        "clearedTotal": 322
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -5477,30 +8851,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 8.90200000000003,
-          "throughputPerMin": 31.25,
-          "clearedTotal": 250,
-          "waitSumTotal": 2225.5000000000073,
-          "clearedWithoutStopTotal": 91,
-          "pctClearedWithoutStop": 36.4
+          "avgWaitTime": 9.60483870967746,
+          "throughputPerMin": 31,
+          "clearedTotal": 248,
+          "waitSumTotal": 2382.0000000000105,
+          "clearedWithoutStopTotal": 101,
+          "pctClearedWithoutStop": 40.725806451612904
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 10.381786941580796,
-          "throughputPerMin": 36.375,
-          "clearedTotal": 291,
-          "waitSumTotal": 3021.1000000000117,
-          "clearedWithoutStopTotal": 85,
-          "pctClearedWithoutStop": 29.20962199312715
+          "avgWaitTime": 11.289045936395796,
+          "throughputPerMin": 35.375,
+          "clearedTotal": 283,
+          "waitSumTotal": 3194.80000000001,
+          "clearedWithoutStopTotal": 81,
+          "pctClearedWithoutStop": 28.621908127208478
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 9.66230529595017,
-          "throughputPerMin": 40.125,
-          "clearedTotal": 321,
-          "waitSumTotal": 3101.6000000000045,
-          "clearedWithoutStopTotal": 110,
-          "pctClearedWithoutStop": 34.26791277258567
+          "avgWaitTime": 9.298776758409804,
+          "throughputPerMin": 40.875,
+          "clearedTotal": 327,
+          "waitSumTotal": 3040.700000000006,
+          "clearedWithoutStopTotal": 106,
+          "pctClearedWithoutStop": 32.415902140672785
         },
         {
           "id": "arcadia_west",
@@ -5585,12 +8959,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 18.503942652329783,
-          "throughputPerMin": 34.875,
-          "clearedTotal": 279,
-          "waitSumTotal": 5162.6000000000095,
-          "clearedWithoutStopTotal": 73,
-          "pctClearedWithoutStop": 26.16487455197133
+          "avgWaitTime": 13.86975088967976,
+          "throughputPerMin": 35.125,
+          "clearedTotal": 281,
+          "waitSumTotal": 3897.400000000013,
+          "clearedWithoutStopTotal": 90,
+          "pctClearedWithoutStop": 32.028469750889684
         },
         {
           "id": "dyer_mall",
@@ -5621,18 +8995,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 15.866126418152422,
-          "throughputPerMin": 77.125,
-          "clearedTotal": 617,
-          "waitSumTotal": 9789.400000000045,
-          "clearedWithoutStopTotal": 185,
-          "pctClearedWithoutStop": 29.983792544570502
+          "avgWaitTime": 14.155288461538516,
+          "throughputPerMin": 78,
+          "clearedTotal": 624,
+          "waitSumTotal": 8832.900000000034,
+          "clearedWithoutStopTotal": 200,
+          "pctClearedWithoutStop": 32.05128205128205
         }
       ],
       "carAccounting": {
         "totalSpawned": 1839,
-        "totalClearedNetwork": 1402,
-        "onRoadNetwork": 437,
+        "totalClearedNetwork": 1406,
+        "onRoadNetwork": 433,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -5661,6 +9035,9 @@
             "reservice": true,
             "sideWaitCap": false,
             "sideMaxWaitS": 60,
+            "divorceNodes": [],
+            "crossShiftS": 10,
+            "freezeAfterWarmup": false,
             "recoveryHold": true,
             "recoveryHoldS": 300,
             "forceRoutes": false,
@@ -5686,6 +9063,6 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "c2673d25bf4879c7"
+    "rowsHash": "93ce38fe0b9db16b"
   }
 }

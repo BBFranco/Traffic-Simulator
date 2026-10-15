@@ -308,6 +308,7 @@ function carryTripStats(from, to) {
     to.stoppedForSignal = from.stoppedForSignal;
     to.trip = from.trip;
     to.waitByKey = from.waitByKey;
+    to.waitByRoad = from.waitByRoad;
     to.stoppedKeys = from.stoppedKeys;
     to.waitSeenS = from.waitSeenS;
     to.stopCount = from.stopCount;
@@ -316,6 +317,7 @@ function carryTripStats(from, to) {
     to.stopMark = from.stopCount;
     // Wait in the junction box belongs to the road it is turning off.
     to.turnFromKey = from.road.statsKey;
+    to.turnFromRoadId = from.road.roadId;
     return to;
 }
 
@@ -902,9 +904,15 @@ export class SimulationEngine {
      * on it shares, so _attributeWaits() reads it straight off `car.road`.
      */
     _stampStatsKeys() {
-        for (const carriageway of this.carriageways) carriageway.road.statsKey = carriageway.arterial.scope === 'side' ? 'side' : carriageway.arterial.id;
+        for (const carriageway of this.carriageways) {
+            carriageway.road.statsKey = carriageway.arterial.scope === 'side' ? 'side' : carriageway.arterial.id;
+            carriageway.road.roadId = carriageway.arterial.id;
+        }
         for (const connector of this.layout.connectors) {
-            for (const dir of Object.values(this.connectorDirs.get(connector.id))) dir.road.statsKey = connector.scope === 'arterial' ? 'arterialConnectors' : 'side';
+            for (const dir of Object.values(this.connectorDirs.get(connector.id))) {
+                dir.road.statsKey = connector.scope === 'arterial' ? 'arterialConnectors' : 'side';
+                dir.road.roadId = connector.id;
+            }
         }
     }
 
@@ -1135,6 +1143,8 @@ export class SimulationEngine {
          */
         this.coordinationGroups = new Map();
         this.coordinationGroupOfNode = new Map();
+        /** Ablation (coordination.freezeAfterWarmup): group id -> the frozen self-tuner state a rebuild restores. */
+        this.frozenTuning = new Map();
         /** What coordinated adaptive did over the run - the report's coordination section (runHeadless.js's summary.coordination). */
         this.coordinationStats = new CoordinationStats();
         this.rng.reseed(seed);
@@ -1179,6 +1189,8 @@ export class SimulationEngine {
         this.allWaitTimesTotal = [];
         // The same per scope: each vehicle's wait on the arterials / the side streets, if it used them (waitDistribution()).
         this.allWaitTimesByScope = { arterial: [], sideStreet: [] };
+        /** roadId -> { n, waitSum, maxWait } over the vehicles that used each road, with the wait built up there. */
+        this.roadWaits = new Map();
 
         this.arterialState.clear();
         this.carriagewayState.clear();
@@ -1395,6 +1407,8 @@ export class SimulationEngine {
         }
         this.allWaitTimesTotal = [];
         this.allWaitTimesByScope = { arterial: [], sideStreet: [] };
+        this.roadWaits = new Map();
+        this._freezeTuners();
         this.routingStats = newRoutingStats();
         this.lockupWatch.resetRecord();
     }
@@ -2178,6 +2192,12 @@ export class SimulationEngine {
         return chains;
     }
 
+    /** Warm-up over: with `coordination.freezeAfterWarmup`, every self-tuner stops re-planning where it has settled. */
+    _freezeTuners() {
+        if (!this.coordination?.freezeAfterWarmup) return;
+        for (const [groupId, group] of this.coordinationGroups) if (group.tuner) this.frozenTuning.set(groupId, group.tuner.freeze());
+    }
+
     /** One coordination group's plan, bus, self-tuner and controllers - registered for its junctions. */
     _buildCoordinationGroup(group) {
         const { nodeInfos, targetSpeedMps, coordinatedPhase } = group;
@@ -2186,19 +2206,33 @@ export class SimulationEngine {
         const turnFor = (node) => this._turnStagesAt(this.nodesInfo.get(node.id));
         const coord = this.coordination;
         // Selective coordination from the planned demand to start with; self-tuning re-decides it from measured flows.
-        const { marriage } = group;
+        // Ablation (coord.divorceNodes): those junctions never marry - out of every marriage decision, so out of the common cycle too.
+        const forced = new Set(coord.divorceNodes ?? []);
+        const strip = (m) => ({ nodes: new Set([...m.nodes].filter((nodeId) => !forced.has(nodeId))), links: m.links });
+        const marriage = forced.size ? strip(group.marriage) : group.marriage;
+        if (forced.size) {
+            const marry = group.marry ?? ((q, previousLinks) => chooseMarried(nodeInfos, q, targetSpeedMps, coord, previousLinks));
+            group = { ...group, marry: (q, previousLinks) => strip(marry(q, previousLinks)) };
+        }
         const unmarriedPlan = group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, {});
         const marriedCycleS = marriedCriticalCycle(unmarriedPlan, marriage.nodes);
-        const plan = marriedCycleS != null && marriedCycleS !== unmarriedPlan.commonCycleS
+        let plan = marriedCycleS != null && marriedCycleS !== unmarriedPlan.commonCycleS
             ? group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, { commonCycleS: marriedCycleS })
             : unmarriedPlan;
         const bus = coord.platoonMessages ? new CoordinationBus() : null;
         const tuner = coord.selfTuning
             ? new SelfTuner({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS: this.simTimeS, coord, planner: group.planner, marry: group.marry, coordinatedPhase })
             : null;
+        // A rebuild (power back) under the freeze ablation: the settled state, not the planned demand.
+        const frozen = tuner && this.frozenTuning.get(group.id);
+        if (frozen) {
+            tuner.restore(frozen);
+            plan = tuner.planNow();
+        }
+        const marriedNodes = frozen ? tuner.marriage.nodes : marriage.nodes;
         for (const info of nodeInfos) {
             const holding = this.simTimeS < (this.recoveryHoldUntilS ?? -Infinity);
-            const controller = new CoordinatedAdaptiveController(plan.nodes.get(info.node.id), this.simTimeS, { coord, married: !holding && marriage.nodes.has(info.node.id) });
+            const controller = new CoordinatedAdaptiveController(plan.nodes.get(info.node.id), this.simTimeS, { coord, married: !holding && marriedNodes.has(info.node.id) });
             if (tuner) {
                 controller.onGreenEnd = (end) => {
                     const stage = controller.layout.stages[end.stageIndex];
@@ -2214,13 +2248,15 @@ export class SimulationEngine {
             info.radarSamples = [[], []];
             info.platoonView = bus ? bus.viewFor(info.node.id) : null;
         }
-        const entry = { id: group.id, coordinatedPhase, bus, tuner, nodeInfos, targetSpeedMps, marriedNodes: marriage.nodes, commonCycleS: plan.commonCycleS };
+        const entry = { id: group.id, coordinatedPhase, bus, tuner, nodeInfos, targetSpeedMps, marriedNodes, commonCycleS: plan.commonCycleS };
         this.coordinationGroups.set(group.id, entry);
         for (const info of nodeInfos) this.coordinationGroupOfNode.set(info.node.id, entry);
     }
 
     /** Per tick: stale platoon messages dropped, self-tuning's new plan handed out on its re-tuning boundary, and the run's coordination record sampled. */
     _tickCoordination(dt) {
+        // Dark under load shedding: no groups exist, but every coordinated junction was unmarried for the tick - counted, so the married share is of the whole window.
+        if (this.powerState === 'load_shedding' && this.coordinationStats.tracking) this.coordinationStats.sampleDark(dt);
         const holding = this.simTimeS < (this.recoveryHoldUntilS ?? -Infinity);
         const holdEnds = !holding && this.recoveryHoldUntilS != null;
         if (holdEnds) this.recoveryHoldUntilS = null;
@@ -5409,11 +5445,12 @@ export class SimulationEngine {
             if (info.controllerType === 'roundabout' && info.roundaboutOccupants.delete(car.id)) this.accounting.roundaboutOverruns += 1;
         }
         this.nodeWaitMarkS.delete(car.id);
-        this._addWait(car, car.road.statsKey);
+        this._addWait(car, car.road.statsKey, car.road.roadId);
         this._recordInBucket(this.totalStats, car.totalWaitS, car.everStopped);
         let arterialWaitS = 0;
         let usedArterial = false;
         let stoppedOnArterial = false;
+        for (const [roadId, waitS] of car.waitByRoad ?? []) this._recordRoadWait(roadId, waitS);
         for (const [key, waitS] of car.waitByKey) {
             const stopped = car.stoppedKeys?.has(key) ?? false;
             this._recordInBucket(this._statsFor(key), waitS, stopped);
@@ -5433,6 +5470,15 @@ export class SimulationEngine {
         this.liveMetrics?.onVehicleClear(car);
     }
 
+    /** A vehicle that used `roadId` cleared: once into that road's count, with the wait it built up on it (the report's per-road waits - recording only). */
+    _recordRoadWait(roadId, waitS) {
+        const road = this.roadWaits.get(roadId) ?? { n: 0, waitSum: 0, maxWait: 0 };
+        road.n += 1;
+        road.waitSum += waitS;
+        if (waitS > road.maxWait) road.maxWait = waitS;
+        this.roadWaits.set(roadId, road);
+    }
+
     _recordInBucket(bucket, waitS, stopped) {
         bucket.clearedTotal += 1;
         bucket.waitSumTotal += waitS;
@@ -5442,7 +5488,7 @@ export class SimulationEngine {
 
     /** Each car's wait since last tick goes to the scope of the road it built up on (WAIT_ACCOUNTING). */
     _attributeWaits() {
-        const attribute = (car) => this._addWait(car, car.turnPath && car.turnFromKey ? car.turnFromKey : car.road.statsKey);
+        const attribute = (car) => (car.turnPath && car.turnFromKey ? this._addWait(car, car.turnFromKey, car.turnFromRoadId) : this._addWait(car, car.road.statsKey, car.road.roadId));
         for (const state of this.carriagewayState.values()) for (const lane of state.lanes) lane.cars.forEach(attribute);
         for (const state of this.connectorState.values()) {
             for (const lane of state.fwd.lanes) lane.cars.forEach(attribute);
@@ -5451,13 +5497,17 @@ export class SimulationEngine {
         this.turningCars.forEach(attribute);
     }
 
-    _addWait(car, key) {
+    _addWait(car, key, roadId) {
         const waitByKey = (car.waitByKey ??= new Map());
+        const waitByRoad = (car.waitByRoad ??= new Map());
         const soFarS = waitByKey.get(key);
         if (soFarS === undefined) waitByKey.set(key, 0);
+        const roadSoFarS = waitByRoad.get(roadId);
+        if (roadSoFarS === undefined) waitByRoad.set(roadId, 0);
         const deltaS = car.totalWaitS - (car.waitSeenS ?? 0);
         if (deltaS <= 0) return;
         waitByKey.set(key, (soFarS ?? 0) + deltaS);
+        waitByRoad.set(roadId, (roadSoFarS ?? 0) + deltaS);
         car.stoppedKeys ??= new Set();
         car.stoppedKeys.add(key);
         car.waitSeenS = car.totalWaitS;

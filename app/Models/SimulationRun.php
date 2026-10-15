@@ -71,6 +71,7 @@ use Illuminate\Database\Eloquent\Model;
     'diversion_pct',
     'routing_stats',
     'coordination_stats',
+    'road_waits',
     'diagnostics',
     'raw_config_json',
 ])]
@@ -85,6 +86,7 @@ class SimulationRun extends Model
             'raw_config_json' => 'array',
             'routing_stats' => 'array',
             'coordination_stats' => 'array',
+            'road_waits' => 'array',
             'diagnostics' => 'array',
             'warmup_drifting' => 'array',
             'warmup_ticks' => 'integer',
