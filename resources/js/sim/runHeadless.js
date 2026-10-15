@@ -15,6 +15,7 @@
 import { buildLayout } from './corridor.js';
 import { SimulationEngine, WAIT_ACCOUNTING } from './engine.js';
 import { controllerConfigFor } from './controllers/phasePlan.js';
+import { sensorSpecHash } from './sensorSpecs.js';
 import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
@@ -45,6 +46,8 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
  * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
  *                             { platoonMessages: false, selfTuning: false } for the layer ablation
+ * @param sensorSpecSet        sensorSpecs.js set: 'field' (the hardware models, default) or 'legacy' (the pre-overhaul sensors)
+ * @param sensorErrors         sensitivity runs only: switch on the specs' miss / false-call / crosstalk / count-noise models
  * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
  *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
@@ -62,6 +65,8 @@ export function runHeadless({
     routingMode = null,
     websterTurnWeight = false,
     coordination = {},
+    sensorSpecSet = undefined,
+    sensorErrors = false,
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -86,6 +91,8 @@ export function runHeadless({
         routingMode,
         websterTurnWeight,
         coordination,
+        sensorSpecSet,
+        sensorErrors,
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
@@ -363,6 +370,10 @@ function buildSummary({
         diagnostics: measuredDiagnostics(engine, accountingAtMeasureStart),
         powerState: powerOutageStartTick != null ? 'load_shedding' : 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
+        /** Which sensor configuration produced the run (sensorSpecs.js) - null for the controllers that read no sensors. */
+        sensorSpec: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive'
+            ? { set: engine.sensorSpecSet, hash: sensorSpecHash(engine.sensorSpec, engine.sensorErrorsOn), errorsOn: engine.sensorErrorsOn }
+            : null,
         corridorConfig: corridorConfig.id,
         avgWaitTime,
         avgWaitTimeArterial,
@@ -421,6 +432,8 @@ function buildSummary({
             seed,
             controllerMode,
             sensorMode,
+            sensorSpecSet: engine.sensorSpecSet,
+            sensorErrors: engine.sensorErrors,
             warmupTicks,
             powerOutageStartTick,
             powerOutageEndTick,

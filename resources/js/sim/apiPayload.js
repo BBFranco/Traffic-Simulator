@@ -26,6 +26,9 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, warmup
         batch_kind: batchKind,
         power_state: summary.powerState,
         sensor_mode: summary.sensorMode,
+        // The sensor configuration the run resolved to (sensorSpecs.js) - null for controllers that read no sensors.
+        sensor_spec_set: summary.sensorSpec?.set ?? null,
+        sensor_spec_hash: summary.sensorSpec?.hash ?? null,
         corridor_config: summary.corridorConfig,
         avg_wait_time: summary.avgWaitTime,
         avg_wait_time_arterial: summary.avgWaitTimeArterial,

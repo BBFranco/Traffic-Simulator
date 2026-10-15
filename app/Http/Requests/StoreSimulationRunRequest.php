@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\BatchKind;
 use App\Enums\ControllerMode;
 use App\Enums\RoutingMode;
+use App\Enums\SensorSpecSet;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -36,6 +37,8 @@ class StoreSimulationRunRequest extends FormRequest
             // Null (fixed-time never reads sensors) or one of the four real modes -
             // 'none' is a UI-only option and never a valid stored run.
             'runs.*.sensor_mode' => ['nullable', 'in:inductive_loop,radar,camera,magnetometer'],
+            'runs.*.sensor_spec_set' => ['nullable', Rule::enum(SensorSpecSet::class)],
+            'runs.*.sensor_spec_hash' => ['nullable', 'string', 'regex:/^[0-9a-f]{16}$/'],
             'runs.*.corridor_config' => ['required', 'string', 'max:255'],
             'runs.*.avg_wait_time' => ['required', 'numeric', 'min:0'],
             'runs.*.avg_wait_time_arterial' => ['required', 'numeric', 'min:0'],

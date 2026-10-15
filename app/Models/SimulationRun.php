@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Model;
     'controller_mode',
     'power_state',
     'sensor_mode',
+    'sensor_spec_set',
+    'sensor_spec_hash',
     'corridor_config',
     'warmup_ticks',
     'warmup_stationary',

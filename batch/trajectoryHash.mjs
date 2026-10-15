@@ -31,7 +31,7 @@ export function everyCar(engine) {
 /**
  * Builds and resets an engine the same way fingerprint.mjs always has.
  */
-export function startEngine({ config, seed, controllerMode, loadShedding = false, routingMode = null }) {
+export function startEngine({ config, seed, controllerMode, loadShedding = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined }) {
     const layout = buildLayout(config);
     const engine = new SimulationEngine(layout);
     const arterialModes = {};
@@ -45,7 +45,8 @@ export function startEngine({ config, seed, controllerMode, loadShedding = false
         seed,
         arterialModes,
         demand,
-        sensorMode: 'inductive_loop',
+        sensorMode,
+        sensorSpecSet,
         batteryBackedSensors: true,
         power: { loadShedding, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
         routingMode,
@@ -57,8 +58,8 @@ export function startEngine({ config, seed, controllerMode, loadShedding = false
  * Runs `ticks` ticks and returns the 16-hex trajectory hash. `onTick(engine, tick, cars)` lets
  * callers observe each tick (fingerprint.mjs's stuck-car check, the live-metrics collector).
  */
-export function hashRun({ config, seed, controllerMode, loadShedding = false, routingMode = null, ticks = 6000, dt = 0.1, onStart = null, onTick = null }) {
-    const { layout, engine } = startEngine({ config, seed, controllerMode, loadShedding, routingMode });
+export function hashRun({ config, seed, controllerMode, loadShedding = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined, ticks = 6000, dt = 0.1, onStart = null, onTick = null }) {
+    const { layout, engine } = startEngine({ config, seed, controllerMode, loadShedding, routingMode, sensorMode, sensorSpecSet });
     onStart?.(engine, layout);
     const hash = createHash('sha1');
     for (let tick = 0; tick < ticks; tick += 1) {

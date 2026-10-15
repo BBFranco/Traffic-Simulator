@@ -18,6 +18,19 @@ for (const seed of [1, 2]) {
     for (const loadShedding of [false, true]) HASH_MATRIX.push({ seed, controllerMode: 'coordinated_adaptive', loadShedding, routingMode: null });
 }
 HASH_MATRIX.push({ seed: 1, controllerMode: 'coordinated_adaptive', loadShedding: false, routingMode: 'destination' });
+// The other sensor modes (added 2026-10-15, sensor overhaul step 0) - every case above runs the default inductive_loop.
+// Only the actuated controllers read sensors. Radar's keys captured before its noise left the main RNG are kept in
+// trajectoryHash.radarPreSubstream.json, the record of that one deliberate change.
+for (const sensorMode of ['magnetometer', 'radar', 'camera']) {
+    for (const seed of [1, 2]) {
+        for (const controllerMode of ['adaptive', 'coordinated_adaptive']) HASH_MATRIX.push({ seed, controllerMode, loadShedding: false, routingMode: null, sensorMode });
+    }
+}
+// The 'legacy' sensor spec set must keep reproducing the pre-overhaul sensors: these keys hold the step-0 hashes
+// (radar's from after its noise moved to its own streams - the one deliberate change, see trajectoryHash.radarPreSubstream.json).
+for (const sensorMode of ['inductive_loop', 'magnetometer', 'radar', 'camera']) {
+    for (const controllerMode of ['adaptive', 'coordinated_adaptive']) HASH_MATRIX.push({ seed: 1, controllerMode, loadShedding: false, routingMode: null, sensorMode, sensorSpecSet: 'legacy' });
+}
 
 /** runHeadless() cases whose summary must stay byte-identical: warm-up, outage window, both routing modes. */
 export const SUMMARY_MATRIX = [];
@@ -28,6 +41,7 @@ for (const seed of [1, 2]) {
     SUMMARY_MATRIX.push({ seed, controllerMode: 'fixed', routingMode: 'destination', outage: false });
 }
 for (const seed of [1, 2]) SUMMARY_MATRIX.push({ seed, controllerMode: 'coordinated_adaptive', routingMode: 'destination', outage: true });
+for (const sensorMode of ['magnetometer', 'radar', 'camera']) SUMMARY_MATRIX.push({ seed: 1, controllerMode: 'adaptive', routingMode: 'destination', outage: true, sensorMode });
 
 export function caseKey(c) {
     return Object.values(c).join('|');
@@ -37,7 +51,7 @@ export function summaryArgs(c, corridorConfig) {
     return {
         seed: c.seed,
         controllerMode: c.controllerMode,
-        sensorMode: 'inductive_loop',
+        sensorMode: c.sensorMode ?? 'inductive_loop',
         warmupTicks: 1200,
         powerOutageStartTick: c.outage ? 1500 : null,
         powerOutageEndTick: c.outage ? 3000 : null,

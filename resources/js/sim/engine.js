@@ -24,7 +24,7 @@ import {
     VEHICLE_TYPES,
     TRUCK_VEHICLE_TYPES,
 } from './car.js';
-import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall, mobilShouldChangeLane, mobilIsSafe, COORDINATED_DEFAULTS, IDM_DEFAULTS } from './equations.js';
+import { nextPoissonArrival, fluctuatingDemand, mobilShouldChangeLane, mobilIsSafe, COORDINATED_DEFAULTS, IDM_DEFAULTS } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
 import { AdaptiveController, MAX_TURN_GREEN_S } from './controllers/adaptive.js';
 import { MIN_TURN_GREEN_S } from './controllers/phasePlan.js';
@@ -51,7 +51,9 @@ import {
     ROUNDABOUT_OCCUPANT_TIMEOUT_S,
 } from './controllers/roundabout.js';
 import { carShapeFor } from './carShapes.js';
-import { readQueueLength, detectQueuePresence, detectPresenceAtStopLine, detectAtAdvancePuck, queueReachesAdvancePuck, sensorAvailable } from './sensors.js';
+import { observeDetector, emptyFrame, applyErrors, countWithNoise, sensorAvailable } from './sensors.js';
+import { sensorSpecFor, latencyTicks, DEFAULT_SENSOR_SPEC_SET } from './sensorSpecs.js';
+import { isOtherCallSufficient } from './demandEstimator.js';
 import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection } from './corridor.js';
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
@@ -157,6 +159,13 @@ const EVENT_SEED_SALT = 0x9e3779b9;
  */
 const ARRIVAL_SEED_SALT = 0x85ebca6b;
 const TRIP_SEED_SALT = 0xc2b2ae35;
+
+/**
+ * Sensor measurement noise (sensors.js) - one stream per sensor type, junction and detector, seeded from the run
+ * seed, never the main RNG: a noisy sensor perturbs what the controller sees, not how the traffic is generated.
+ * Created on first draw, so the order detectors are built in never shifts any sequence.
+ */
+const SENSOR_SEED_SALT = 0x27d4eb2f;
 
 /** _routeArc()'s answer for a car already on its destination block. */
 const ON_DESTINATION_BLOCK = { kind: 'onBlock' };
@@ -733,11 +742,13 @@ export class SimulationEngine {
                     arterial,
                     controller: null,
                     controllerType: null,
-                    // Per-phase "how long has this approach had an uninterrupted call" - only
-                    // consumed by _isOtherCallSufficient() (debounce for narrow sensors, maxCallWaitS for wide ones).
+                    // Per-phase "how long has this approach had an uninterrupted call" - the demand estimator's
+                    // memory (demandEstimator.js: debounce for presence-only sensors, maxCallWaitS for counting ones).
                     callPersistenceS: [0, 0],
-                    /** Per-phase radar count samples over the last `callDebounceS` - see _isOtherCallSufficient(). */
-                    radarSamples: [[], []],
+                    /** Per-phase count samples for a spec's count filter (demandEstimator.js). */
+                    countSamples: [[], []],
+                    /** Detector key -> its sampling/latency state - see _sampleDetectors(). */
+                    detectors: new Map(),
                     /** The arterial direction(s) through this junction - one gate each (signal phase 0). */
                     arterialGates: [],
                     /** The cross-street direction(s) through it (phase 1). */
@@ -1132,7 +1143,7 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, coordination = {} }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false }) {
         /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
         this.websterTurnWeight = websterTurnWeight;
         /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
@@ -1149,12 +1160,18 @@ export class SimulationEngine {
         this.coordinationStats = new CoordinationStats();
         this.rng.reseed(seed);
         this.eventRng.reseed(seed ^ EVENT_SEED_SALT);
+        this.sensorSeed = seed;
+        this.sensorRngs = new Map();
         this._resetRouting(seed, routingMode);
         this.randomEvents = randomEvents;
         resetCarIdCounter();
         this.simTimeS = 0;
         this.recoveryHoldUntilS = null;
-        this.sensorMode = sensorMode;
+        /** Which sensorSpecs.js set the sensors run under ('field' hardware models, or 'legacy' - the pre-overhaul reproduction). */
+        this.sensorSpecSet = sensorSpecSet;
+        /** Sensitivity runs only: switch on the specs' miss / false-call / crosstalk / count-noise models. */
+        this.sensorErrors = sensorErrors;
+        this.setSensorMode(sensorMode);
         this.batteryBackedSensors = batteryBackedSensors;
         this.truckRatio = truckRatio;
         this.busRatio = busRatio;
@@ -1305,6 +1322,10 @@ export class SimulationEngine {
 
     setSensorMode(mode) {
         this.sensorMode = mode;
+        this.sensorSpec = sensorSpecFor(mode, this.sensorSpecSet ?? DEFAULT_SENSOR_SPEC_SET);
+        this.sensorErrorsOn = !!(this.sensorSpec.errorsAlwaysOn || this.sensorErrors);
+        // A different sensor type: nothing the old one sampled or delayed carries over.
+        for (const info of this.nodesInfo?.values() ?? []) if (info.detectors) info.detectors = new Map();
     }
 
     setBatteryBackedSensors(value) {
@@ -1435,14 +1456,16 @@ export class SimulationEngine {
         for (const info of this.nodesInfo.values()) {
             if (info.controllerType === 'adaptive') {
                 const { controller } = info;
-                const detected = controller.inTurn ? this._turnLaneDetected(info, controller.phase) : this._vehicleDetectedAtStopLine(info, controller.phase);
-                const otherCallSufficient = this._isOtherCallSufficient(info, controller.phase, dt);
-                controller.tick(dt, detected, otherCallSufficient, [this._turnLaneCalled(info, 0), this._turnLaneCalled(info, 1)]);
+                const frames = this._sampleDetectors(info, dt);
+                const detected = controller.inTurn ? this._turnLaneDetected(frames, controller.phase) : this._vehicleDetected(frames, controller.phase);
+                const otherCallSufficient = this._isOtherCallSufficient(info, frames, controller.phase, dt);
+                controller.tick(dt, detected, otherCallSufficient, [this._turnLaneCalled(frames, 0), this._turnLaneCalled(frames, 1)]);
             } else if (info.controllerType === 'coordinatedAdaptive') {
                 const { controller } = info;
-                const detected = controller.inTurn ? this._turnLaneDetected(info, controller.phase) : this._vehicleDetectedAtStopLine(info, controller.phase);
-                const otherCallSufficient = this._isOtherCallSufficient(info, controller.phase, dt);
-                const turnCalls = [this._turnLaneCalled(info, 0), this._turnLaneCalled(info, 1)];
+                const frames = this._sampleDetectors(info, dt);
+                const detected = controller.inTurn ? this._turnLaneDetected(frames, controller.phase) : this._vehicleDetected(frames, controller.phase);
+                const otherCallSufficient = this._isOtherCallSufficient(info, frames, controller.phase, dt);
+                const turnCalls = [this._turnLaneCalled(frames, 0), this._turnLaneCalled(frames, 1)];
                 controller.tick(dt, this.simTimeS, detected, otherCallSufficient, turnCalls, info.platoonView, info.callPersistenceS[1 - controller.layout.coordinatedPhase]);
             } else if (info.controllerType === 'greenWave') {
                 info.controller.tick(dt, this.simTimeS);
@@ -2245,7 +2268,8 @@ export class SimulationEngine {
             info.controllerType = 'coordinatedAdaptive';
             info.controller = controller;
             info.callPersistenceS = [0, 0];
-            info.radarSamples = [[], []];
+            info.countSamples = [[], []];
+            info.detectors = new Map();
             info.platoonView = bus ? bus.viewFor(info.node.id) : null;
         }
         const entry = { id: group.id, coordinatedPhase, bus, tuner, nodeInfos, targetSpeedMps, marriedNodes, commonCycleS: plan.commonCycleS };
@@ -2392,7 +2416,8 @@ export class SimulationEngine {
             info.controllerType = 'adaptive';
             info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null));
             info.callPersistenceS = [0, 0];
-            info.radarSamples = [[], []];
+            info.countSamples = [[], []];
+            info.detectors = new Map();
         } else {
             // Defensive fallback only - green_wave is intercepted one level up in
             // _rebuildControllersForArterial and never reaches here while power is
@@ -4520,106 +4545,118 @@ export class SimulationEngine {
     }
 
     /**
-     * Gap-out detection: the stop-line detector every sensor mode has (sensors.js's detectPresenceAtStopLine()), plus -
-     * magnetometer only - its advance puck, so a car still approaching keeps the green open (sensors.js's
-     * detectAtAdvancePuck()).
+     * Every detector at an actuated junction, sampled once per tick whether or not its frame is read this
+     * tick - so latency and sampling run on an unbroken clock. Returns the frames the controller sees (after
+     * each spec's latency and, when on, its error model): `phase[p]` one per approach road `p` serves,
+     * `turn[p]` one per protected-turn lane group.
      */
-    _vehicleDetectedAtStopLine(info, phase) {
-        return this._phaseApproaches(info, phase).some((a) => this._actuates(a));
+    _sampleDetectors(info, dt) {
+        const spec = this.sensorSpec;
+        const delay = latencyTicks(spec, dt);
+        const groups = {
+            phase: [this._phaseApproaches(info, 0), this._phaseApproaches(info, 1)],
+            turn: [this._turnLaneApproaches(info, 0), this._turnLaneApproaches(info, 1)],
+        };
+        const states = { phase: [[], []], turn: [[], []] };
+        for (const kind of ['phase', 'turn']) {
+            for (const p of [0, 1]) {
+                for (const approach of groups[kind][p]) {
+                    let det = info.detectors.get(approach.key);
+                    if (!det) {
+                        det = { key: approach.key, history: [], sample: null, lastSampleS: -Infinity };
+                        info.detectors.set(approach.key, det);
+                    }
+                    const due = spec.samplePeriodS == null || this.simTimeS - det.lastSampleS >= spec.samplePeriodS - 1e-9;
+                    if (due) {
+                        det.sample = observeDetector(spec, approach.cars, approach.gateDistanceM);
+                        det.lastSampleS = this.simTimeS;
+                    }
+                    det.history.push(det.sample);
+                    if (det.history.length > delay + 1) det.history.shift();
+                    states[kind][p].push(det);
+                }
+            }
+        }
+        const reported = (det) => (det.history.length > delay ? det.history[0] : emptyFrame(spec));
+        const errorsOn = this.sensorErrorsOn && (spec.errors.missP || spec.errors.falseCallP || spec.errors.crosstalkP);
+        const all = errorsOn ? [...states.phase[0], ...states.phase[1], ...states.turn[0], ...states.turn[1]] : null;
+        const frameOf = (det) => {
+            const frame = reported(det);
+            const out = errorsOn ? applyErrors(spec, frame, this._sensorRng(info, det.key), all.some((other) => other !== det && reported(other).presence)) : frame;
+            return { ...out, key: det.key };
+        };
+        return {
+            phase: states.phase.map((dets) => dets.map(frameOf)),
+            turn: states.turn.map((dets) => dets.map(frameOf)),
+        };
     }
 
-    /** Does an approach's traffic actuate the gap timer this tick - see _vehicleDetectedAtStopLine(). */
-    _actuates({ cars, gateDistanceM }) {
-        if (detectPresenceAtStopLine(cars, gateDistanceM)) return true;
-        return this.sensorMode === 'magnetometer' && detectAtAdvancePuck(cars, gateDistanceM);
+    /** The shared gap-out rule's input: did any detector on road `phase`'s approaches actuate this tick (stop-line zone or an advance zone). */
+    _vehicleDetected(frames, phase) {
+        return frames.phase[phase].some((f) => f.actuated);
     }
 
     /** The cars in the lane(s) road `phase`'s protected turn serves, per gate with its stop-line distance - what its detectors watch. */
     _turnLaneApproaches(info, phase) {
-        return (info.turnStages[phase]?.gates ?? []).map((gate) => ({
+        return (info.turnStages[phase]?.gates ?? []).map((gate, i) => ({
             cars: this._gateLanes(gate)
                 .flatMap((lane) => lane.cars)
                 .filter((car) => isTurnOnlyLane(gate.slotLaneUse?.[car.lane] ?? [], gate.turnPhase.movement)),
             gateDistanceM: gate.stopLineDistanceM,
+            key: `turn${phase}:${i}`,
         }));
     }
 
     /** Is a vehicle waiting in road `phase`'s turn lane(s), as the junction's sensors see it - what calls its turn stage. */
-    _turnLaneCalled(info, phase) {
-        return this._turnLaneApproaches(info, phase).some((a) => detectQueuePresence(a.cars, a.gateDistanceM, this.sensorMode));
+    _turnLaneCalled(frames, phase) {
+        return frames.turn[phase].some((f) => f.presence);
     }
 
-    /** Stop-line detector over road `phase`'s turn lane(s), for the turn stage's gap-out - see _vehicleDetectedAtStopLine(). */
-    _turnLaneDetected(info, phase) {
-        return this._turnLaneApproaches(info, phase).some((a) => this._actuates(a));
+    /** The turn lane(s)' detectors, for the turn stage's gap-out - see _vehicleDetected(). */
+    _turnLaneDetected(frames, phase) {
+        return frames.turn[phase].some((f) => f.actuated);
     }
 
-    /**
-     * Is the phase that would receive the next green already worth taking green away for?
-     * `inductive_loop`/`magnetometer` have detection windows too short to ever count up to
-     * `minCallToSwitch` real vehicles (8m/15m holds maybe 1-3 car lengths) - counting is simply
-     * not a capability those sensors have, so instead of a threshold that can never trip, a call
-     * just has to persist for `callDebounceS` uninterrupted seconds to count as sufficient. Wider
-     * sensors (radar/camera) keep the queue-depth threshold, which they can actually see, with two
-     * guards: a call held `maxCallWaitS` is served whatever its depth (a short queue isn't stranded
-     * until maxGreen), and radar's count is averaged over `callDebounceS` so a single noisy +1 tick
-     * can't trip the threshold early.
-     */
-    _isOtherCallSufficient(info, currentPhase, dt) {
-        const otherPhase = 1 - currentPhase;
-        const params = info.controller.params;
-        info.callPersistenceS[currentPhase] = 0; // never "waiting" on itself while it holds green
-        if (this.sensorMode === 'inductive_loop' || this.sensorMode === 'magnetometer') {
-            const present = this._sensedQueueForApproach(info, otherPhase) > 0;
-            info.callPersistenceS[otherPhase] = present ? info.callPersistenceS[otherPhase] + dt : 0;
-            // Magnetometer: a queue standing back over its advance puck is a real call at once - no need to wait out the debounce.
-            if (this.sensorMode === 'magnetometer' && this._phaseApproaches(info, otherPhase).some((a) => queueReachesAdvancePuck(a.cars, a.gateDistanceM))) return true;
-            return info.callPersistenceS[otherPhase] >= params.callDebounceS;
-        }
-
-        const queue = this._sensedQueueForApproach(info, otherPhase);
-        const present = this._phaseApproaches(info, otherPhase).some((a) => detectQueuePresence(a.cars, a.gateDistanceM, this.sensorMode));
-        info.callPersistenceS[otherPhase] = present ? info.callPersistenceS[otherPhase] + dt : 0;
-        if (info.callPersistenceS[otherPhase] >= params.maxCallWaitS) return true;
-
-        if (this.sensorMode !== 'radar') return hasSufficientCall(queue, params);
-
-        const samples = info.radarSamples[otherPhase];
-        info.radarSamples[currentPhase] = [];
-        samples.push({ tS: this.simTimeS, queue });
-        while (samples.length && samples[0].tS <= this.simTimeS - params.callDebounceS) samples.shift();
-        const windowCovered = info.callPersistenceS[otherPhase] >= params.callDebounceS;
-        const meanQueue = samples.reduce((sum, s) => sum + s.queue, 0) / samples.length;
-        return windowCovered && hasSufficientCall(Math.round(meanQueue), params);
+    /** The common demand estimate (demandEstimator.js) on the waiting phase's frames. */
+    _isOtherCallSufficient(info, frames, currentPhase, dt) {
+        return isOtherCallSufficient({
+            state: info,
+            currentPhase,
+            frames: frames.phase[1 - currentPhase],
+            readCount: (frame) => (this.sensorErrorsOn ? countWithNoise(this.sensorSpec, frame, this._sensorRng(info, frame.key), true) : frame.count),
+            outputs: this.sensorSpec.outputs,
+            params: info.controller.params,
+            dt,
+            simTimeS: this.simTimeS,
+        });
     }
 
     /**
-     * Sense whatever traffic is actually approaching this node on `phase`'s
-     * road - both directions of a two-way road, summed rather than picking one,
-     * since the phase serves both.
+     * The cars on each road direction `phase` (0 the arterial, 1 the cross street) serves at `info`'s junction, with that direction's stop-line
+     * distance there, and `key` - which detector at the junction watches them (its noise stream, _sensorRng()).
      */
-    _sensedQueueForApproach(info, phase) {
-        return this._phaseApproaches(info, phase).reduce(
-            (sum, a) => sum + readQueueLength(a.cars, a.gateDistanceM, this.sensorMode, this.rng),
-            0
-        );
-    }
-
-    /** The cars on each road direction `phase` (0 the arterial, 1 the cross street) serves at `info`'s junction, with that direction's stop-line distance there. */
     _phaseApproaches(info, phase) {
         const gates = phase === 0 ? info.arterialGates : info.crossGates;
         const own = phase === 0
-            ? gates.map((gate) => ({ cars: this._gateLanes(gate).flatMap((l) => l.cars), gateDistanceM: gate.stopLineDistanceM }))
-            : gates.map((gate) => ({
+            ? gates.map((gate, i) => ({ cars: this._gateLanes(gate).flatMap((l) => l.cars), gateDistanceM: gate.stopLineDistanceM, key: `${phase}:${i}` }))
+            : gates.map((gate, i) => ({
                   cars: this.connectorState.get(gate.connector.id)[gate.dirKey].lanes.flatMap((l) => l.cars),
                   gateDistanceM: gate.stopLineDistanceM,
+                  key: `${phase}:${i}`,
               }));
         // A gate right at a joined road's start queues on the road before it - in that road's frame.
-        const fed = gates.flatMap((gate) => {
+        const fed = gates.flatMap((gate, i) => {
             const join = this.feedersByGate.get(gate);
-            return join ? [{ cars: join.from.lanes().flatMap((l) => l.cars), gateDistanceM: join.from.lengthM + gate.stopLineDistanceM }] : [];
+            return join ? [{ cars: join.from.lanes().flatMap((l) => l.cars), gateDistanceM: join.from.lengthM + gate.stopLineDistanceM, key: `${phase}:fed:${i}` }] : [];
         });
         return [...own, ...fed];
+    }
+
+    /** The noise stream of detector `detectorKey` at `info`'s junction for the current sensor type - see SENSOR_SEED_SALT. */
+    _sensorRng(info, detectorKey) {
+        const key = `${this.sensorMode}|${info.node.id}|${detectorKey}`;
+        if (!this.sensorRngs.has(key)) this.sensorRngs.set(key, new SeededRandom((this.sensorSeed ^ SENSOR_SEED_SALT ^ hashKey(key)) >>> 0));
+        return this.sensorRngs.get(key);
     }
 
     /** The live lanes of the road a gate is on - an arterial direction's or a connector direction's. */
@@ -4719,8 +4756,8 @@ export class SimulationEngine {
 
     /**
      * Ground-truth (never RNG-touching) read of everything the hover tooltip
-     * shows - unlike `_sensedQueueForApproach()`, safe to call on every mouse
-     * move without perturbing the seeded run (radar's noise draws from `rng`).
+     * shows - unlike reading a detector frame's count, safe to call on every mouse
+     * move without perturbing the seeded run (count noise draws from the sensor streams).
      */
     signalDebugInfo(nodeId) {
         const info = this.nodesInfo.get(nodeId);
@@ -4885,7 +4922,7 @@ export class SimulationEngine {
             const { minGreen, maxGreen, gapOutS, minCallToSwitch, callDebounceS, maxCallWaitS } = controller.params;
             const otherQueue = phase === 0 ? crossQueue : arterialQueue; // ground truth, for the human reading this
             const otherName = phase === 0 ? 'cross street' : 'arterial';
-            const usesNarrowSensor = this.sensorMode === 'inductive_loop' || this.sensorMode === 'magnetometer';
+            const usesNarrowSensor = !this.sensorSpec.outputs.count;
             const gapRemaining = gapOutS - controller.secondsSinceLastDetection;
 
             if (phaseElapsed < minGreen) return `≥ ${(minGreen - phaseElapsed).toFixed(1)}s (holding minimum green)`;

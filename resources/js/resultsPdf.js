@@ -33,6 +33,7 @@ import { currentTheme } from './theme.js';
 import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { MAX_WARMUP_TICKS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
 import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS } from './sim/equations.js';
+import { SENSOR_SPEC_SETS, latencyTicks } from './sim/sensorSpecs.js';
 import { LayoutRenderer, setRendererTheme } from './sim/renderer.js';
 
 const SCOPES = [
@@ -1150,6 +1151,15 @@ function thresholdNotes(data) {
     ];
 }
 
+/** The sensor observation models (sim/sensorSpecs.js's field set) - what each adaptive variant could see. */
+function sensorNotes() {
+    const f = SENSOR_SPEC_SETS.field;
+    const lag = (mode) => `${f[mode].latency.ms} ms -> ${latencyTicks(f[mode], 0.1)} tick(s)`;
+    return [
+        `Sensor models (field specs, 2026-10-15): variants differ only in what they observe; the demand estimate and gap-out rule are shared. Every sensor's gap-out zone is the 0-${f.inductive_loop.gapOut.lengthM} m behind the stop line. Loop: an ${f.inductive_loop.call.lengthM} m long presence loop, no count (${lag('inductive_loop')}). Magnetometer: stop-bar pucks over the same ${f.magnetometer.call.lengthM} m plus an advance puck ${f.magnetometer.advance[0].centreM} m back (assumed placement) that extends the green and reports a queue reaching it (${lag('magnetometer')}, radio slot wait). Radar (UMRR-11 Type 132, medium range): stopped-vehicle count and speed over ${f.radar.queue.lengthM} m, count smoothed over ${f.radar.outputs.count.filter.windowS} s (${lag('radar')}, 3 x 55 ms cycles). Camera: stopped-vehicle count and speed over ${f.camera.queue.lengthM} m (${lag('camera')}). Latency rounds up to whole ticks. This is an errors-disabled baseline: miss, false-call, crosstalk and count-noise rates are zero, so the comparison isolates observation geometry and information content rather than representing physical sensors in full; assumed error rates are for sensitivity runs only. Batches before 2026-10-15 used the earlier sensor model (their sensor spec reads "not recorded" in the batch line), so their per-sensor results are not comparable with these.`,
+    ];
+}
+
 function drawMethodNotes(report, data, number) {
     const minRecoveredRuns = data.minRecoveredRuns ?? 10;
     // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
@@ -1171,6 +1181,7 @@ function drawMethodNotes(report, data, number) {
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total scope only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
         ...thresholdNotes(data),
+        ...sensorNotes(),
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
 

@@ -641,6 +641,8 @@ class ResultsController extends Controller
                 'controller_mode' => $run->controller_mode,
                 'power_state' => $run->power_state,
                 'sensor_mode' => $run->sensor_mode,
+                'sensor_spec_set' => $run->sensor_spec_set,
+                'sensor_spec_hash' => $run->sensor_spec_hash,
                 'corridor_config' => $run->corridor_config,
                 'avg_wait_time' => $run->avg_wait_time,
                 'avg_wait_time_arterial' => $run->avg_wait_time_arterial,
@@ -814,6 +816,35 @@ class ResultsController extends Controller
             ->join('; ');
     }
 
+    /**
+     * The sensor configurations a batch's actuated runs resolved to: spec set(s) and, per sensor, the resolved-spec hash.
+     * Runs from before this was recorded carry none - reported as not recorded, never assumed.
+     */
+    private function sensorSpecs(string $batchId): array
+    {
+        $configs = SimulationRun::query()
+            ->where('batch_id', $batchId)
+            ->whereIn('controller_mode', [ControllerMode::Adaptive->value, ControllerMode::CoordinatedAdaptive->value])
+            ->distinct()
+            ->get(['sensor_mode', 'sensor_spec_set', 'sensor_spec_hash']);
+        $recorded = $configs->whereNotNull('sensor_spec_set');
+        if ($configs->isEmpty()) {
+            return ['label' => null, 'sets' => [], 'hashes' => []];
+        }
+        if ($recorded->isEmpty()) {
+            return ['label' => 'sensor specs not recorded', 'sets' => [], 'hashes' => []];
+        }
+
+        $sets = $recorded->pluck('sensor_spec_set')->unique()->values()->all();
+        $partly = $recorded->count() < $configs->count() ? ', partly not recorded' : '';
+
+        return [
+            'label' => 'sensor specs '.implode('+', $sets).$partly,
+            'sets' => $sets,
+            'hashes' => $recorded->mapWithKeys(fn (SimulationRun $run) => [$run->sensor_mode => $run->sensor_spec_hash])->all(),
+        ];
+    }
+
     private function batchStamp(Builder $query): ?array
     {
         $latest = (clone $query)->latest('id')->first();
@@ -845,12 +876,14 @@ class ResultsController extends Controller
             ->first(['raw_config_json'])?->raw_config_json ?? [];
         $outageEndTicks = $outageConfig['powerOutageEndTick'] ?? null;
         $waitAccounting = $config['waitAccounting'] ?? 'turn-reset (pre-2026-10-04)';
+        $sensorSpecs = $this->sensorSpecs($latest->batch_id);
 
         return [
             'label' => collect([
                 "code {$commit}",
                 "wait accounting {$waitAccounting}",
                 $controllerLabel,
+                $sensorSpecs['label'],
                 RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
                 isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,
                 $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,
@@ -873,6 +906,7 @@ class ResultsController extends Controller
                 ? null
                 : round(($config['durationTicks'] - $outageEndTicks) * ($config['dt'] ?? 0.1)),
             'controllerConfig' => $controllers,
+            'sensorSpecs' => $sensorSpecs,
             // The coordination layers and thresholds the batch's coordinated adaptive runs used (marriage gates, platoon, tuning, levers).
             'coordination' => SimulationRun::query()
                 ->where('batch_id', $latest->batch_id)
