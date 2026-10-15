@@ -38,7 +38,7 @@ import {
 } from './definitions.js';
 
 /** Controllers that are traffic lights - the ones load shedding turns dark. */
-const SIGNAL_TYPES = new Set(['fixed', 'adaptive', 'greenWave']);
+const SIGNAL_TYPES = new Set(['fixed', 'adaptive', 'greenWave', 'coordinatedAdaptive']);
 /** Sparkline length: 2 minutes of 1 Hz samples. */
 export const SPARK_POINTS = 120;
 /** The throughput-over-time chart keeps one point per this many seconds. */

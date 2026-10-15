@@ -5,9 +5,10 @@
  * batch-run button (build step 17) so the two never drift apart.
  *
  * Fixed-time and green wave don't vary by sensor (fixed-time never reads one;
- * green wave times off distance/speed, not a sensed queue), so only adaptive
- * is tested against all four real sensor modes:
- *   2 power states x (1 fixed + 1 green wave + 4 adaptive) = 12 conditions.
+ * green wave times off distance/speed, not a sensed queue), so only the two
+ * actuated modes - adaptive and coordinated adaptive - are tested against all
+ * four real sensor modes:
+ *   2 power states x (1 fixed + 1 green wave + 4 adaptive + 4 coordinated adaptive) = 20 conditions.
  */
 export const SENSOR_MODES = ['inductive_loop', 'radar', 'camera', 'magnetometer'];
 
@@ -18,6 +19,9 @@ export function buildExperimentalMatrix() {
         conditions.push({ key: `green_wave_${powerState}`, controllerMode: 'green_wave', sensorMode: 'inductive_loop', powerState });
         for (const sensorMode of SENSOR_MODES) {
             conditions.push({ key: `adaptive_${powerState}_${sensorMode}`, controllerMode: 'adaptive', sensorMode, powerState });
+        }
+        for (const sensorMode of SENSOR_MODES) {
+            conditions.push({ key: `coordinated_adaptive_${powerState}_${sensorMode}`, controllerMode: 'coordinated_adaptive', sensorMode, powerState });
         }
     }
     return conditions;

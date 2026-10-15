@@ -45,18 +45,21 @@ import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
 const data = JSON.parse(document.getElementById('results-data').textContent);
 
+/** The modes that read a sensor - broken out per sensor model as well as averaged. */
+const SENSOR_SPLIT_MODES = ['adaptive', 'coordinated_adaptive'];
+
 /** Fast lookup: "mode|power" -> aggregate row. Rebuilt after the batch-run button refreshes `data`. */
 let byKey;
 
-/** Fast lookup: "sensor|power" -> aggregate row, adaptive's rows only (the only mode that varies by sensor). */
+/** Fast lookup: "mode|sensor|power" -> aggregate row, the actuated modes' rows only (the only ones that vary by sensor). */
 let byKeyBySensor;
 
 function rebuildByKey() {
     byKey = new Map(data.aggregates.map((row) => [`${row.controller_mode}|${row.power_state}`, row]));
     byKeyBySensor = new Map(
         data.aggregatesBySensor
-            .filter((row) => row.controller_mode === 'adaptive' && row.sensor_mode)
-            .map((row) => [`${row.sensor_mode}|${row.power_state}`, row])
+            .filter((row) => SENSOR_SPLIT_MODES.includes(row.controller_mode) && row.sensor_mode)
+            .map((row) => [`${row.controller_mode}|${row.sensor_mode}|${row.power_state}`, row])
     );
     return byKey;
 }
@@ -70,18 +73,18 @@ function selectedItsTarget() {
 }
 
 /**
- * Which adaptive sensor mode the dropdown has selected, or null for the blended average / a
- * non-adaptive target - in which case the charts keep reading the blended `data.aggregates` row.
+ * Which sensor mode the dropdown has selected for `mode`, or null for the blended average / another
+ * target - in which case the charts keep reading the blended `data.aggregates` row.
  */
-function selectedAdaptiveSensor() {
-    const { mode, sensor } = selectedItsTarget();
-    return mode === 'adaptive' && sensor && sensor !== 'average' ? sensor : null;
+function selectedSensorFor(mode) {
+    const target = selectedItsTarget();
+    return target.mode === mode && SENSOR_SPLIT_MODES.includes(mode) && target.sensor && target.sensor !== 'average' ? target.sensor : null;
 }
 
-/** The aggregate row backing a mode's bar at a given power state - adaptive's row follows the dropdown's sensor pick. */
+/** The aggregate row backing a mode's bar at a given power state - an actuated mode's row follows the dropdown's sensor pick. */
 function rowForModeAndPower(mode, power) {
-    const sensor = selectedAdaptiveSensor();
-    return mode === 'adaptive' && sensor ? byKeyBySensor.get(`${sensor}|${power}`) : byKey.get(`${mode}|${power}`);
+    const sensor = selectedSensorFor(mode);
+    return sensor ? byKeyBySensor.get(`${mode}|${sensor}|${power}`) : byKey.get(`${mode}|${power}`);
 }
 
 /** The "Scope" dropdown's raw selection - 'total' | 'arterial' | 'side_street'. */
@@ -170,21 +173,19 @@ function groupedBarChart(canvasId, metric, { unit, tickSuffix = '' }) {
 }
 
 /**
- * The line chart's Adaptive series for `metric` ('throughput_per_min' or 'avg_wait_time'):
+ * An actuated mode's line-chart series for `metric` ('throughput_per_min' or 'avg_wait_time'):
  * the selected sensor's own recorded curve, or - for the blended "average of sensors" target -
- * a point-wise average across whichever adaptive sensor curves were actually captured (there's
- * no literal run backing a blended curve, unlike the scalar aggregates() average, so it's
- * computed here instead of stored).
+ * a point-wise average across whichever of that mode's sensor curves were actually captured
+ * (there's no literal run backing a blended curve, unlike the scalar aggregates() average, so
+ * it's computed here instead of stored).
  */
-function adaptiveRecoverySeries(timeline, metric) {
+function sensorRecoverySeries(timeline, metric, mode) {
     const key = scopedMetric(metric);
-    const target = selectedItsTarget();
-    if (target.mode === 'adaptive' && target.sensor && target.sensor !== 'average') {
-        return timeline.series[`adaptive|${target.sensor}`]?.[key] ?? null;
-    }
+    const sensor = selectedSensorFor(mode);
+    if (sensor) return timeline.series[`${mode}|${sensor}`]?.[key] ?? null;
 
     const sensorSeries = Object.keys(timeline.series)
-        .filter((seriesKey) => seriesKey.startsWith('adaptive|'))
+        .filter((seriesKey) => seriesKey.startsWith(`${mode}|`))
         .map((seriesKey) => timeline.series[seriesKey][key]);
     if (!sensorSeries.length) return null;
 
@@ -217,7 +218,8 @@ function buildRecoveryLineChart(canvasId, metric, { tooltipUnit }) {
     const seriesByMode = {
         fixed: timeline.series['fixed|']?.[scopedKey],
         green_wave: timeline.series['green_wave|']?.[scopedKey],
-        adaptive: adaptiveRecoverySeries(timeline, metric),
+        adaptive: sensorRecoverySeries(timeline, metric, 'adaptive'),
+        coordinated_adaptive: sensorRecoverySeries(timeline, metric, 'coordinated_adaptive'),
     };
 
     const options = baseOptions({
@@ -1090,7 +1092,7 @@ function applyItsTargetFilter() {
 function highlightMatchingRecentRuns() {
     const { mode, sensor } = selectedItsTarget();
     document.querySelectorAll('[data-run-controller-mode]').forEach((row) => {
-        const sensorMatches = mode !== 'adaptive' || sensor === 'average' || row.dataset.runSensorMode === sensor;
+        const sensorMatches = !SENSOR_SPLIT_MODES.includes(mode) || sensor === 'average' || row.dataset.runSensorMode === sensor;
         const matches = row.dataset.runControllerMode === mode && sensorMatches;
         row.classList.toggle('bg-sky-50', matches);
         row.classList.toggle('dark:bg-sky-500/10', matches);

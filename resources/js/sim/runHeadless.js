@@ -22,7 +22,7 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
 
 /**
  * @param seed                 integer PRNG seed
- * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' - applied to every arterial in the corridor
+ * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' | 'coordinated_adaptive' - applied to every arterial in the corridor
  * @param sensorMode           'none' | 'inductive_loop' | 'radar' | 'camera' | 'magnetometer'
  * @param warmupTicks          ticks run BEFORE anything is measured, discarded from every stat - the
  *                             standard traffic-sim warm-up: long enough for queue lengths/wait times to
@@ -43,6 +43,8 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  * @param routingMode          'random' | 'destination' - overrides the corridor's own `routing.mode` for this run;
  *                             null keeps the corridor's (random when it has no `routing` section)
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
+ * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
+ *                             { platoonMessages: false, selfTuning: false } for the layer ablation
  * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
  *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
@@ -59,6 +61,7 @@ export function runHeadless({
     sampleEverySeconds = 1,
     routingMode = null,
     websterTurnWeight = false,
+    coordination = {},
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -82,6 +85,7 @@ export function runHeadless({
         power: { loadShedding: false, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
         routingMode,
         websterTurnWeight,
+        coordination,
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
@@ -336,6 +340,8 @@ function buildSummary({
               };
 
     const waitDistribution = engine.waitDistributionTotal();
+    const arterialWaits = engine.waitDistribution('arterial');
+    const sideStreetWaits = engine.waitDistribution('sideStreet');
 
     return {
         seed,
@@ -359,6 +365,10 @@ function buildSummary({
         medianWait: waitDistribution.medianWait,
         p95Wait: waitDistribution.p95Wait,
         maxWait: waitDistribution.maxWait,
+        p95WaitArterial: arterialWaits.p95Wait,
+        maxWaitArterial: arterialWaits.maxWait,
+        p95WaitSideStreet: sideStreetWaits.p95Wait,
+        maxWaitSideStreet: sideStreetWaits.maxWait,
         preOutage: segments.preOutage,
         duringOutage: segments.duringOutage,
         postRecovery: segments.postRecovery,
@@ -404,7 +414,11 @@ function buildSummary({
             dt,
             routingMode: engine.routingMode,
             waitAccounting: WAIT_ACCOUNTING,
-            controllerConfig: controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+            controllerConfig: {
+                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+                // Which coordination layers ran (and their thresholds) - so an ablation run never reads as the full mode.
+                ...(controllerMode === 'coordinated_adaptive' ? { coordination: { ...engine.coordination } } : {}),
+            },
             /** Which destination tiers the corridor carried (routing.blocks) - null without a routing section. */
             routingTiersHash: tiersHash(layout.routing),
             /** Sensitivity-sweep settings (batch/runBatch.mjs) - 1 and null on an ordinary batch. */

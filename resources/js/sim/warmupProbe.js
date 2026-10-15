@@ -43,13 +43,14 @@ export const MAX_WARMUP_TICKS = (PROBE_DURATION_TICKS / 2) * WARMUP_SAFETY_MARGI
 /** Rounded up to whole simulated minutes at dt = 0.1 s. */
 const WARMUP_ROUNDING_TICKS = 600;
 
-/** The runs a probe makes: one per controller, normal power. */
-export function probeConditions() {
+/** The runs a probe makes: one per controller, normal power - only the batch's own controllers when it runs a subset. */
+export function probeConditions(controllers = null) {
     return [
         { controllerMode: 'fixed', sensorMode: 'inductive_loop' },
         { controllerMode: 'green_wave', sensorMode: 'inductive_loop' },
         { controllerMode: 'adaptive', sensorMode: 'inductive_loop' },
-    ];
+        { controllerMode: 'coordinated_adaptive', sensorMode: 'inductive_loop' },
+    ].filter((condition) => !controllers || controllers.includes(condition.controllerMode));
 }
 
 /** Tick-by-tick mean of several runs' `Map(tick -> value)` series, over the runs that have a value at that tick. */

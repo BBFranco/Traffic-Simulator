@@ -69,6 +69,10 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, warmup
         median_wait_time: summary.medianWait,
         p95_wait_time: summary.p95Wait,
         max_wait_time: summary.maxWait,
+        p95_wait_time_arterial: summary.p95WaitArterial ?? null,
+        max_wait_time_arterial: summary.maxWaitArterial ?? null,
+        p95_wait_time_side_street: summary.p95WaitSideStreet ?? null,
+        max_wait_time_side_street: summary.maxWaitSideStreet ?? null,
         // Destination routing only (null under random turning): trips, their delay over free flow, and what didn't go to plan.
         trips: summary.routing?.trips ?? null,
         mean_trip_time: summary.routing?.meanTripS ?? null,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BatchKind;
+use App\Enums\ControllerMode;
 use App\Enums\RoutingMode;
 use App\Models\SimulationRun;
 use App\Models\SimulationRunRecoveryTick;
@@ -33,7 +34,7 @@ use Illuminate\View\View;
  */
 class ResultsController extends Controller
 {
-    private const CONTROLLER_MODES = ['fixed', 'adaptive', 'green_wave'];
+    private const CONTROLLER_MODES = ['fixed', 'adaptive', 'green_wave', 'coordinated_adaptive'];
 
     private const POWER_STATES = ['normal', 'load_shedding'];
 
@@ -71,6 +72,9 @@ class ResultsController extends Controller
         'p95_wait_time',
         'max_wait_time',
     ];
+
+    /** The tail of the wait distribution, kept per scope too (`_arterial`/`_side_street`) - the median is Total only. */
+    private const SCOPED_DISTRIBUTION_METRICS = ['p95_wait_time', 'max_wait_time'];
 
     /** Recovery metrics - a run that never recovers stores null, so each also gets a recovered-run count. */
     private const RECOVERY_METRICS = ['time_to_recovery_seconds', 'time_to_recovery_wait_seconds'];
@@ -215,8 +219,8 @@ class ResultsController extends Controller
      */
     private function viewModel(array $payload): array
     {
-        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
-        $modeColours = ['fixed' => '#ea580c', 'adaptive' => '#8b5cf6', 'green_wave' => '#059669'];
+        $modeLabels = $this->modeLabels();
+        $modeColours = collect(ControllerMode::cases())->mapWithKeys(fn (ControllerMode $mode): array => [$mode->value => $mode->colour()])->all();
         $powerLabels = ['normal' => 'Normal power', 'load_shedding' => 'Load shedding'];
         $sensorLabels = [
             'none' => 'None (timer only)',
@@ -289,13 +293,13 @@ class ResultsController extends Controller
 
         $comparisonKey = fn (array $c) => $c['mode'].'|'.($c['sensor_mode'] ?? '');
         $comparisonLabel = function (array $c) use ($modeLabels, $sensorLabels) {
-            if ($c['mode'] !== 'adaptive') {
+            if (! ControllerMode::from($c['mode'])->splitsBySensor()) {
                 return $modeLabels[$c['mode']];
             }
 
             return $c['sensor_mode'] === 'average'
-                ? 'Adaptive — avg. of sensors'
-                : 'Adaptive — '.$sensorLabels[$c['sensor_mode']];
+                ? "{$modeLabels[$c['mode']]} — avg. of sensors"
+                : "{$modeLabels[$c['mode']]} — {$sensorLabels[$c['sensor_mode']]}";
         };
 
         $comparisonOptions = [];
@@ -307,12 +311,14 @@ class ResultsController extends Controller
             $comparisonOptions[$key] = ['key' => $key, 'label' => $comparisonLabel($c), 'mode' => $c['mode'], 'sensor_mode' => $c['sensor_mode']];
         }
         usort($comparisonOptions, function ($a, $b) use ($sensorOrder) {
+            // Adaptive's average then its sensors, coordinated adaptive's the same, then the rest.
             $rank = function ($o) use ($sensorOrder) {
-                if ($o['mode'] === 'adaptive' && $o['sensor_mode'] === 'average') {
-                    return -1;
+                $block = ['adaptive' => 0, 'coordinated_adaptive' => 10][$o['mode']] ?? null;
+                if ($block === null) {
+                    return 100;
                 }
 
-                return $o['mode'] === 'adaptive' ? array_search($o['sensor_mode'], $sensorOrder, true) : 100;
+                return $block + ($o['sensor_mode'] === 'average' ? -1 : array_search($o['sensor_mode'], $sensorOrder, true));
             };
 
             return $rank($a) <=> $rank($b);
@@ -600,6 +606,14 @@ class ResultsController extends Controller
      * @return array<string, mixed>
      */
     /** Random turning and destination routing are separate datasets - the page shows one at a time. */
+    /**
+     * @return array<string, string>
+     */
+    private function modeLabels(): array
+    {
+        return collect(ControllerMode::cases())->mapWithKeys(fn (ControllerMode $mode): array => [$mode->value => $mode->label()])->all();
+    }
+
     private function routingModeFilter(): RoutingMode
     {
         return RoutingMode::tryFrom((string) request()->query('routing')) ?? RoutingMode::Random;
@@ -755,10 +769,10 @@ class ResultsController extends Controller
             return null;
         }
 
-        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $modeLabels = $this->modeLabels();
         $shown = 5;
         $label = $runs->take($shown)->map(function (SimulationRun $run) use ($modeLabels, $where): string {
-            $sensor = $run->controller_mode === 'adaptive' ? " ({$run->sensor_mode})" : '';
+            $sensor = ControllerMode::from($run->controller_mode)->splitsBySensor() ? " ({$run->sensor_mode})" : '';
 
             return sprintf('%s%s, %s, seed %d at %s', $modeLabels[$run->controller_mode] ?? $run->controller_mode, $sensor, str_replace('_', ' ', $run->power_state), $run->seed, $where($run->diagnostics['lockup']));
         })->join('; ');
@@ -777,7 +791,7 @@ class ResultsController extends Controller
             return null;
         }
 
-        $modeLabels = ['fixed' => 'Fixed-time', 'adaptive' => 'Adaptive', 'green_wave' => 'Green wave'];
+        $modeLabels = $this->modeLabels();
         $scopeLabels = ['total' => 'total', 'arterial' => 'main arterial', 'sideStreet' => 'side streets'];
 
         return collect($drifting)
@@ -937,8 +951,15 @@ class ResultsController extends Controller
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $clauses[] = "avg({$column}) as {$column}";
         }
+        foreach (self::SCOPED_DISTRIBUTION_METRICS as $metric) {
+            foreach (['_arterial', '_side_street'] as $suffix) {
+                $clauses[] = "avg({$metric}{$suffix}) as {$metric}{$suffix}";
+            }
+        }
         // max_wait_time above is the mean of each run's own max - this is the single worst wait in any run.
-        $clauses[] = 'max(max_wait_time) as worst_wait_time';
+        foreach (array_keys(self::SCOPES) as $suffix) {
+            $clauses[] = "max(max_wait_time{$suffix}) as worst_wait_time{$suffix}";
+        }
         foreach (self::RECOVERY_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
                 $column = $metric.$suffix;
@@ -1034,7 +1055,16 @@ class ResultsController extends Controller
         foreach (self::TOTAL_ONLY_METRICS as $column) {
             $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
         }
-        $result['worst_wait_time'] = $row->worst_wait_time === null ? null : round((float) $row->worst_wait_time, 1);
+        foreach (self::SCOPED_DISTRIBUTION_METRICS as $metric) {
+            foreach (['_arterial', '_side_street'] as $suffix) {
+                $column = $metric.$suffix;
+                $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
+            }
+        }
+        foreach (array_keys(self::SCOPES) as $suffix) {
+            $column = "worst_wait_time{$suffix}";
+            $result[$column] = $row->$column === null ? null : round((float) $row->$column, 1);
+        }
         // avg() skips runs that never recovered, so the mean alone hides how many it's built on.
         foreach (self::RECOVERY_METRICS as $metric) {
             foreach (array_keys(self::SCOPES) as $suffix) {
@@ -1102,7 +1132,7 @@ class ResultsController extends Controller
         $comparisons = [];
 
         foreach (self::SCOPES as $suffix => $scope) {
-            foreach (['adaptive', 'green_wave'] as $mode) {
+            foreach (['adaptive', 'green_wave', 'coordinated_adaptive'] as $mode) {
                 foreach (self::POWER_STATES as $power) {
                     $subject = $lookup["{$mode}|{$power}"] ?? null;
                     $baseline = $lookup['fixed|'.$power] ?? null;
@@ -1110,35 +1140,31 @@ class ResultsController extends Controller
                         continue;
                     }
 
+                    $splitsBySensor = ControllerMode::from($mode)->splitsBySensor();
                     $comparisons[] = $this->buildComparison(
                         $mode,
-                        $mode === 'adaptive' ? 'average' : null,
+                        $splitsBySensor ? 'average' : null,
                         $power,
                         $scope,
                         $suffix,
                         $subject,
                         $baseline,
-                        $seedDeltas[$mode === 'adaptive' ? "adaptive|average|{$power}" : "{$mode}||{$power}"] ?? []
+                        $seedDeltas[$splitsBySensor ? "{$mode}|average|{$power}" : "{$mode}||{$power}"] ?? []
                     );
                 }
             }
 
-            $bySensor = [];
-            foreach ($aggregatesBySensor as $row) {
-                if ($row['controller_mode'] !== 'adaptive' || $row['sensor_mode'] === null) {
-                    continue;
-                }
-                $bySensor["{$row['sensor_mode']}|{$row['power_state']}"] = $row;
-            }
+            $sensorRows = collect($aggregatesBySensor)
+                ->filter(fn (array $row): bool => $row['sensor_mode'] !== null && ControllerMode::from($row['controller_mode'])->splitsBySensor());
 
-            foreach ($bySensor as $key => $subject) {
-                [$sensor, $power] = explode('|', $key);
+            foreach ($sensorRows as $subject) {
+                ['controller_mode' => $mode, 'sensor_mode' => $sensor, 'power_state' => $power] = $subject;
                 $baseline = $lookup['fixed|'.$power] ?? null;
                 if (! $baseline) {
                     continue;
                 }
 
-                $comparisons[] = $this->buildComparison('adaptive', $sensor, $power, $scope, $suffix, $subject, $baseline, $seedDeltas["adaptive|{$sensor}|{$power}"] ?? []);
+                $comparisons[] = $this->buildComparison($mode, $sensor, $power, $scope, $suffix, $subject, $baseline, $seedDeltas["{$mode}|{$sensor}|{$power}"] ?? []);
             }
         }
 

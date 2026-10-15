@@ -50,7 +50,7 @@ class SimulatorComposer
             'inductive_loop' => ['label' => 'Inductive loop', 'sees' => 'Binary occupancy at the stop line, per approach.', 'power' => 'Low', 'tone' => 'emerald'],
             'radar' => ['label' => 'Radar', 'sees' => 'Approach speed plus rough volume.', 'power' => 'Moderate', 'tone' => 'amber'],
             'camera' => ['label' => 'Camera', 'sees' => 'Precise queue length and vehicle count per approach.', 'power' => 'High', 'tone' => 'rose'],
-            'magnetometer' => ['label' => 'Magnetometer', 'sees' => 'Vehicle presence and count only. Cheap.', 'power' => 'Very low', 'tone' => 'emerald'],
+            'magnetometer' => ['label' => 'Magnetometer', 'sees' => 'Stop-bar puck plus an advance puck 30 m back: holds green for cars still approaching, and switches at once for a queue that long. Cheap.', 'power' => 'Very low', 'tone' => 'emerald'],
         ];
     }
 
@@ -81,6 +81,7 @@ class SimulatorComposer
             'fixed' => 'Fixed-time',
             'adaptive' => 'Adaptive',
             'green_wave' => 'Green wave',
+            'coordinated_adaptive' => 'Coordinated adaptive',
             'none' => 'Free flow',
         ];
     }

@@ -13,6 +13,11 @@ for (const seed of [1, 2, 3]) {
     }
 }
 for (const seed of [1, 2]) HASH_MATRIX.push({ seed, controllerMode: 'fixed', loadShedding: false, routingMode: 'destination' });
+// Coordinated adaptive (added 2026-10-14) - every layer on; its keys were captured on their own, the rest untouched.
+for (const seed of [1, 2]) {
+    for (const loadShedding of [false, true]) HASH_MATRIX.push({ seed, controllerMode: 'coordinated_adaptive', loadShedding, routingMode: null });
+}
+HASH_MATRIX.push({ seed: 1, controllerMode: 'coordinated_adaptive', loadShedding: false, routingMode: 'destination' });
 
 /** runHeadless() cases whose summary must stay byte-identical: warm-up, outage window, both routing modes. */
 export const SUMMARY_MATRIX = [];
@@ -22,6 +27,7 @@ for (const seed of [1, 2]) {
     }
     SUMMARY_MATRIX.push({ seed, controllerMode: 'fixed', routingMode: 'destination', outage: false });
 }
+for (const seed of [1, 2]) SUMMARY_MATRIX.push({ seed, controllerMode: 'coordinated_adaptive', routingMode: 'destination', outage: true });
 
 export function caseKey(c) {
     return Object.values(c).join('|');

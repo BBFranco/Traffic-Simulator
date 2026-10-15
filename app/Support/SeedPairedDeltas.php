@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\ControllerMode;
 use App\Models\SimulationRun;
 use Illuminate\Support\Collection;
 
@@ -44,16 +45,17 @@ class SeedPairedDeltas
         $pairKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}";
         $baselines = $runs->where('controller_mode', 'fixed')->keyBy($pairKey);
 
+        $splitsBySensor = fn (SimulationRun $run): bool => ControllerMode::from($run->controller_mode)->splitsBySensor();
         $subjects = $runs->where('controller_mode', '!=', 'fixed')
-            // Only adaptive varies by sensor - green wave runs carry a sensor mode they never read.
-            ->groupBy(fn (SimulationRun $run): string => $run->controller_mode === 'adaptive'
-                ? "adaptive|{$run->sensor_mode}|{$run->power_state}"
+            // Only the actuated modes vary by sensor - green wave runs carry a sensor mode they never read.
+            ->groupBy(fn (SimulationRun $run): string => $splitsBySensor($run)
+                ? "{$run->controller_mode}|{$run->sensor_mode}|{$run->power_state}"
                 : "{$run->controller_mode}||{$run->power_state}");
-        // Adaptive across its sensors: the sensors' mean per seed, paired like any single condition.
-        $adaptiveAverage = $runs->where('controller_mode', 'adaptive')
-            ->groupBy(fn (SimulationRun $run): string => "adaptive|average|{$run->power_state}");
+        // An actuated mode across its sensors: the sensors' mean per seed, paired like any single condition.
+        $sensorAverages = $runs->filter($splitsBySensor)
+            ->groupBy(fn (SimulationRun $run): string => "{$run->controller_mode}|average|{$run->power_state}");
 
-        return $subjects->merge($adaptiveAverage)
+        return $subjects->merge($sensorAverages)
             ->map(fn (Collection $group): array => collect($columns)
                 ->mapWithKeys(fn (string $column): array => [$column => $this->pairedDelta($group, $baselines, $pairKey, $column)])
                 ->filter()

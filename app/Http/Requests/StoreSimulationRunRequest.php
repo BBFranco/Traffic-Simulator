@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\BatchKind;
+use App\Enums\ControllerMode;
 use App\Enums\RoutingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,7 +29,7 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.batch_id' => ['required', 'uuid'],
             'runs.*.batch_started_at' => ['nullable', 'date'],
             'runs.*.seed' => ['required', 'integer'],
-            'runs.*.controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
+            'runs.*.controller_mode' => ['required', Rule::enum(ControllerMode::class)],
             'runs.*.routing_mode' => ['sometimes', Rule::enum(RoutingMode::class)],
             'runs.*.batch_kind' => ['sometimes', Rule::enum(BatchKind::class)],
             'runs.*.power_state' => ['required', 'in:normal,load_shedding'],
@@ -74,6 +75,10 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.median_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.p95_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.max_wait_time' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.p95_wait_time_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.max_wait_time_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.p95_wait_time_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.max_wait_time_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.trips' => ['nullable', 'integer', 'min:0'],
             'runs.*.mean_trip_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.mean_trip_delay' => ['nullable', 'numeric', 'min:0'],

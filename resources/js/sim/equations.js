@@ -203,6 +203,35 @@ export const ADAPTIVE_DEFAULTS = {
     maxCallWaitS: 10, // seconds - wide-window sensors (radar, camera): a call below minCallToSwitch that has been held this long is served anyway, so a short queue isn't stranded until maxGreen
 };
 
+/**
+ * Coordinated adaptive (controllers/coordinatedAdaptive.js) on top of ADAPTIVE_DEFAULTS - the
+ * actuation rules are adaptive's; these are the coordination layers'. Like the adaptive
+ * thresholds, engineering defaults rather than a cited formula.
+ */
+export const COORDINATED_DEFAULTS = {
+    platoonMessages: true, // layer 2 - upstream junctions tell the next one what they just released
+    selfTuning: true, // layer 3 - the common cycle and splits re-tuned from measured flows
+    reservice: true, // a cross street that calls again inside its own window is served again, rather than waiting a whole cycle
+    sideWaitCap: false, // lever 1, off: probed 2026-10-15 - never fired on the outage queue it was aimed at (those junctions were divorced). A cross street whose call has waited sideMaxWaitS overrides the coordination: served at once, and not forced off
+    sideMaxWaitS: 60, // seconds - about one common cycle: a call older than this has already sat through a whole red it should have been served in
+    recoveryHold: true, // lever 3: after power returns every junction runs as plain adaptive for recoveryHoldS, flushing the outage queues, then marries back in
+    recoveryHoldS: 300, // seconds
+    selective: true, // SCATS-style marriage: only junctions on a link with strong arterial flow coordinate - the rest run plain adaptive
+    marryFlowPerLaneMin: 6, // veh/min per lane - mean busiest-lane arterial flow at a link's two ends that marries them
+    divorceRatio: 0.8, // a married link divorces only once its flow falls below this share of marryFlowPerLaneMin (hysteresis)
+    marryMaxTravelS: 30, // seconds - a link longer than this at the progression speed never marries: its platoons disperse first
+    platoonMinCars: 3, // vehicles - a message platoon this big is worth holding or bringing the arterial green forward for
+    platoonLookaheadS: 4, // seconds - after its yield point the arterial holds while a platoon is due this soon
+    platoonExtendMaxS: 10, // seconds - the most a platoon can extend the arterial past its yield point, per cycle
+    earlyStartLeadS: 2, // seconds - a cross green that has thinned out ends early for a platoon due within amber + all-red + this
+    earlyStartGapS: 1.5, // seconds - "thinned out": no detection on the cross green for this long (under gapOutS)
+    retuneEveryCycles: 3, // common cycles between self-tuning updates
+    retuneSmoothing: 0.3, // EWMA weight of the newest measured flow
+    retuneMaxStepS: 6, // seconds - the most the common cycle moves per update
+    busyGapS: 1, // seconds - a green that ends with its stop-line detector actuated this recently was still discharging a queue
+    saturatedBoost: 0.15, // measured flow of a stage that ran out of green (forced off still busy) is scaled up by this - served flow under-reads demand there
+};
+
 // ---------------------------------------------------------------------
 // Fluctuating corridor demand
 //

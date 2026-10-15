@@ -74,12 +74,14 @@ export const MODE_COLOURS = {
     fixed: '#ea580c',
     adaptive: '#8b5cf6',
     green_wave: '#059669',
+    coordinated_adaptive: '#f43f5e',
 };
 
 export const MODE_LABELS = {
     fixed: 'Fixed-time',
     adaptive: 'Adaptive',
     green_wave: 'Green wave',
+    coordinated_adaptive: 'Coordinated adaptive',
 };
 
 export const POWER_LABELS = {

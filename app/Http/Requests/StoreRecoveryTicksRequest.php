@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\ControllerMode;
 use App\Enums\RoutingMode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -21,7 +22,7 @@ class StoreRecoveryTicksRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
+            'controller_mode' => ['required', Rule::enum(ControllerMode::class)],
             // Null (fixed and green-wave never vary by sensor) or one of the four real modes.
             'sensor_mode' => ['nullable', 'in:inductive_loop,radar,camera,magnetometer'],
             'corridor_config' => ['required', 'string', 'max:255'],

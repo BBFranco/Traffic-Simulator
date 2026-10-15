@@ -35,7 +35,7 @@ import { ALL_RED_S, YELLOW_S, buildStages, fixedTimeGreens, floorWithinCycle, st
  * corridor, the pure d / v0 chain was worse than no offsets at all (arterial wait 37.8 s vs
  * 25.3 s), while adding this lag brought it to 18.0 s against fixed-time's ~30.5 s.
  */
-function startFromRestLagS(targetSpeedMps) {
+export function startFromRestLagS(targetSpeedMps) {
     return targetSpeedMps / (2 * IDM_DEFAULTS.a);
 }
 
@@ -106,6 +106,22 @@ export class GreenWaveController {
  * @returns Map<nodeId, GreenWaveController>
  */
 export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps) {
+    const { nodes } = planCoordination(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps);
+    const controllers = new Map();
+    for (const [nodeId, nodePlan] of nodes) controllers.set(nodeId, new GreenWaveController(nodePlan));
+    return controllers;
+}
+
+/**
+ * The arterial's coordination plan - common cycle, per-node offsets and splits - without building
+ * controllers, so green wave and coordinated adaptive run on the same background timing.
+ * Same parameters as buildGreenWaveControllers(), plus `commonCycleS` to impose the common cycle
+ * (self-tuning's rate-limited one) instead of taking the critical junction's.
+ *
+ * @returns { criticalCycleS, commonCycleS, nodes: Map<nodeId, { offsetS, cycleLengthS, stages, stageGreens, ownCycleS }> }
+ *          nodes in arterial order; offsetS is where the node's first stage opens; criticalCycleS the longest own cycle
+ */
+export function planCoordination(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, { commonCycleS = null } = {}) {
     const plans = nodeInfos.map((info) => {
         const turn = turnFor(info.node);
         const stages = buildStages(turn);
@@ -123,9 +139,10 @@ export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDem
     // cycles, so no junction is squeezed below what it would run alone. (Taking the longest bare
     // Webster cycle instead left a junction whose minimum greens lengthen its own cycle - Lynnwood /
     // Duxbury - squeezing those minimums out of its through greens.)
-    const cycleLengthS = Math.max(...plans.map((p) => p.ownCycleS));
+    const criticalCycleS = Math.max(...plans.map((p) => p.ownCycleS));
+    const cycleLengthS = commonCycleS ?? criticalCycleS;
 
-    const controllers = new Map();
+    const nodes = new Map();
     let offsetS = 0;
     nodeInfos.forEach((info, i) => {
         if (i > 0) {
@@ -140,9 +157,9 @@ export function buildGreenWaveControllers(nodeInfos, arterialDemandFor, crossDem
         const stageGreens = splitCommonCycle(nodeCycleS, stages, ratios);
         // The offset is where the arterial's through green opens, so a lead turn stage in front of it starts earlier.
         const leadS = stages[0].turn ? stageGreens[0] + YELLOW_S + ALL_RED_S : 0;
-        controllers.set(info.node.id, new GreenWaveController({ offsetS: offsetS - leadS, cycleLengthS: nodeCycleS, stages, stageGreens }));
+        nodes.set(info.node.id, { offsetS: offsetS - leadS, cycleLengthS: nodeCycleS, stages, stageGreens, ownCycleS });
     });
-    return controllers;
+    return { criticalCycleS, commonCycleS: cycleLengthS, nodes };
 }
 
 /**

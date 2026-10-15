@@ -145,7 +145,7 @@ async function postRecoveryTicks(url, payload) {
 /** Measures the corridor's warm-up (sim/warmupProbe.js), printing each probe's per-scope verdict. */
 function probeWarmup(corridorConfig, args) {
     const probes = [];
-    for (const condition of probeConditions()) {
+    for (const condition of probeConditions(args.controllers)) {
         console.log(`Warm-up probe: ${condition.controllerMode}, normal power, from empty, ${PROBE_REPLICATIONS} seeds averaged...`);
         const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration, routingMode: args.routing });
         for (const [scope, v] of Object.entries(probe.scopes)) {

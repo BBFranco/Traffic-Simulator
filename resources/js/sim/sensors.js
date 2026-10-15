@@ -76,6 +76,30 @@ export function detectPresenceAtStopLine(groundTruthCars, stopLineDistanceM, win
     );
 }
 
+/**
+ * Magnetometer advance puck: wireless magnetometers are installed as a stop-bar puck plus advance pucks upstream,
+ * which the loop setup here doesn't have - the one thing that makes the two sensor modes see traffic differently.
+ * ASSUMPTION, not a datasheet figure: one advance puck 30 m upstream (about 2 s at 50-60 km/h, the usual
+ * extension-detector spacing), sensing a ~2 m zone around itself.
+ */
+export const MAGNETOMETER_ADVANCE_M = 30;
+const ADVANCE_PUCK_ZONE_M = 2;
+
+function overAdvancePuck(car, stopLineDistanceM) {
+    const upstreamM = stopLineDistanceM - car.distanceM;
+    return Math.abs(upstreamM - MAGNETOMETER_ADVANCE_M) <= ADVANCE_PUCK_ZONE_M / 2;
+}
+
+/** Any vehicle over the magnetometer's advance puck - moving or stopped. A car still approaching extends the green. */
+export function detectAtAdvancePuck(groundTruthCars, stopLineDistanceM) {
+    return groundTruthCars.some((c) => overAdvancePuck(c, stopLineDistanceM));
+}
+
+/** A stopped vehicle over the advance puck: the queue reaches back 30 m (4-5 cars) - a call worth switching for at once. */
+export function queueReachesAdvancePuck(groundTruthCars, stopLineDistanceM) {
+    return groundTruthCars.some((c) => c.stoppedNow && overAdvancePuck(c, stopLineDistanceM));
+}
+
 export function sensorAvailable(mode, powerState, batteryBackedSensors) {
     if (powerState !== 'load_shedding') return true;
     // Cameras and radar are too power-hungry to battery-back; they always drop

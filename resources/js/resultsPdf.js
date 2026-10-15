@@ -42,14 +42,24 @@ const SCOPES = [
 
 const SENSOR_ORDER = ['inductive_loop', 'radar', 'camera', 'magnetometer'];
 
-// Adaptive keeps its violet family so every sensor still reads as "adaptive" next to the
-// orange fixed-time baseline and green-wave's green.
+// Each actuated mode keeps its own family so every sensor still reads as that mode next to the
+// orange fixed-time baseline and green-wave's green: adaptive violet, coordinated adaptive rose.
+// Validated (dataviz validate_palette.js) in report order: all 12 bars pass.
 const SENSOR_COLOURS = {
-    inductive_loop: '#5b21b6',
-    radar: '#a78bfa',
-    camera: '#c026d3',
-    magnetometer: '#6366f1',
+    adaptive: {
+        inductive_loop: '#5b21b6',
+        radar: '#a78bfa',
+        camera: '#c026d3',
+        magnetometer: '#6366f1',
+    },
+    coordinated_adaptive: {
+        inductive_loop: '#9d174d',
+        radar: '#f472b6',
+        camera: '#be123c',
+        magnetometer: '#fb7185',
+    },
 };
+const SENSOR_MODE_LABELS = { adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive' };
 
 const PAGE = { width: 210, height: 297, margin: 14 };
 const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
@@ -103,25 +113,41 @@ function buildVariants(data) {
     const byKey = new Map(data.aggregates.map((row) => [`${row.controller_mode}|${row.power_state}`, row]));
     const bySensor = new Map(
         data.aggregatesBySensor
-            .filter((row) => row.controller_mode === 'adaptive' && row.sensor_mode)
-            .map((row) => [`${row.sensor_mode}|${row.power_state}`, row])
+            .filter((row) => SENSOR_COLOURS[row.controller_mode] && row.sensor_mode)
+            .map((row) => [`${row.controller_mode}|${row.sensor_mode}|${row.power_state}`, row])
     );
-    const sensors = SENSOR_ORDER.filter((sensor) => data.powerStates.some((power) => bySensor.has(`${sensor}|${power}`)));
-    const adaptiveSeriesKeys = Object.keys(data.recoveryTimeline?.series ?? {}).filter((key) => key.startsWith('adaptive|'));
+
+    /** An actuated mode's blended average, then one variant per sensor it was run with. */
+    const sensorFamily = (mode) => {
+        const label = SENSOR_MODE_LABELS[mode];
+        const sensors = SENSOR_ORDER.filter((sensor) => data.powerStates.some((power) => bySensor.has(`${mode}|${sensor}|${power}`)));
+        return [
+            {
+                id: `${mode}|average`,
+                mode,
+                sensor: 'average',
+                label: `${label} (avg. of sensors)`,
+                colour: MODE_COLOURS[mode],
+                row: (p) => byKey.get(`${mode}|${p}`),
+                seriesKeys: Object.keys(data.recoveryTimeline?.series ?? {}).filter((key) => key.startsWith(`${mode}|`)),
+            },
+            ...sensors.map((sensor) => ({
+                id: `${mode}|${sensor}`,
+                mode,
+                sensor,
+                label: `${label} - ${SENSOR_LABELS[sensor] ?? sensor}`,
+                colour: SENSOR_COLOURS[mode][sensor] ?? MODE_COLOURS[mode],
+                row: (p) => bySensor.get(`${mode}|${sensor}|${p}`),
+                seriesKeys: [`${mode}|${sensor}`],
+            })),
+        ];
+    };
 
     const variants = [
         { id: 'fixed|', mode: 'fixed', sensor: null, label: 'Fixed-time', colour: MODE_COLOURS.fixed, row: (p) => byKey.get(`fixed|${p}`), seriesKeys: ['fixed|'] },
-        { id: 'adaptive|average', mode: 'adaptive', sensor: 'average', label: 'Adaptive (avg. of sensors)', colour: MODE_COLOURS.adaptive, row: (p) => byKey.get(`adaptive|${p}`), seriesKeys: adaptiveSeriesKeys },
-        ...sensors.map((sensor) => ({
-            id: `adaptive|${sensor}`,
-            mode: 'adaptive',
-            sensor,
-            label: `Adaptive - ${SENSOR_LABELS[sensor] ?? sensor}`,
-            colour: SENSOR_COLOURS[sensor] ?? MODE_COLOURS.adaptive,
-            row: (p) => bySensor.get(`${sensor}|${p}`),
-            seriesKeys: [`adaptive|${sensor}`],
-        })),
+        ...sensorFamily('adaptive'),
         { id: 'green_wave|', mode: 'green_wave', sensor: null, label: 'Green wave', colour: MODE_COLOURS.green_wave, row: (p) => byKey.get(`green_wave|${p}`), seriesKeys: ['green_wave|'] },
+        ...sensorFamily('coordinated_adaptive'),
     ];
 
     return variants.filter((variant) => data.powerStates.some((power) => variant.row(power)));
@@ -574,7 +600,7 @@ function drawCover(report, data, variants, corridorLayout) {
         );
     }
 
-    report.heading('Controller variants in this report', 'Colour follows the variant on every chart. Adaptive is broken out per sensor model as well as the blended average across sensors.');
+    report.heading('Controller variants in this report', 'Colour follows the variant on every chart. Adaptive and coordinated adaptive are each broken out per sensor model as well as the blended average across sensors.');
     // Two columns keep the legend short enough to leave the layout on the cover.
     const rowsPerColumn = Math.ceil(variants.length / 2);
     variants.forEach((variant, i) => {
@@ -767,20 +793,32 @@ function segmentedTable(report, variants, scope) {
     });
 }
 
-function distributionTable(report, data, variants) {
+/** One scope's wait distribution: P95 and max per scope; the median is recorded for the total scope only. */
+function distributionTable(report, data, variants, scope) {
+    const m = (metric) => `${metric}${scope.suffix}`;
+    const withMedian = scope.suffix === '';
     const body = [];
     variants.forEach((variant) => {
         data.powerStates.forEach((power) => {
             const row = variant.row(power);
             if (!row) return;
-            body.push([variant.label, POWER_LABELS[power] ?? power, fmt(row.avg_wait_time), fmt(row.median_wait_time), fmt(row.p95_wait_time), fmt(row.max_wait_time), fmt(row.worst_wait_time)]);
+            body.push([
+                variant.label,
+                POWER_LABELS[power] ?? power,
+                fmt(row[m('avg_wait_time')]),
+                ...(withMedian ? [fmt(row.median_wait_time)] : []),
+                fmt(row[m('p95_wait_time')]),
+                fmt(row[m('max_wait_time')]),
+                fmt(row[m('worst_wait_time')]),
+            ]);
         });
     });
 
+    const head = ['Variant', 'Power', 'Mean (s)', ...(withMedian ? ['Median (s)'] : []), 'P95 (s)', 'Max, run mean (s)', 'Max, worst run (s)'];
     report.table({
-        head: [['Variant', 'Power', 'Mean (s)', 'Median (s)', 'P95 (s)', 'Max, run mean (s)', 'Max, worst run (s)']],
+        head: [head],
         body,
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+        columnStyles: Object.fromEntries(head.slice(2).map((_, i) => [i + 2, { halign: 'right' }])),
     });
 }
 
@@ -853,7 +891,7 @@ function drawRecoveryTimes(report, variants, scope) {
 
 /** Destination routing batches only: trips, their delay over free flow, and how often a trip didn't go to plan. */
 function drawRoutingTrips(report, rows) {
-    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive' };
+    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive' };
     report.heading(
         'Destination routing - trips',
         'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Avg wait: the average wait over these runs (total scope). Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure - so it sits next to Avg wait. It is therefore excluded from the wait comparisons, and it grows where queues stand across driveway exits, so it is larger under load shedding and dark-network delay is understated. Still in driveways: cars that had not got out when the run ended. Lost arrivals: map-edge demand turned away by a full entry.'
@@ -881,7 +919,7 @@ function drawRoutingTrips(report, rows) {
 /** The warm-up probe's per-controller settle times (from empty, normal power) - how much cushion the warm-up leaves each. */
 function warmupSettleNote(settle) {
     if (!settle) return null;
-    const labels = { fixed: 'fixed-time', green_wave: 'green wave', adaptive: 'adaptive (inductive loop)' };
+    const labels = { fixed: 'fixed-time', green_wave: 'green wave', adaptive: 'adaptive (inductive loop)', coordinated_adaptive: 'coordinated adaptive (inductive loop)' };
     const minutes = (value) => (value == null ? 'never' : `${value} min`);
     const parts = Object.entries(settle).map(
         ([mode, scopes]) => `${labels[mode] ?? mode} ${minutes(scopes.total)} (main arterial ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)})`
@@ -908,7 +946,7 @@ function drawMethodNotes(report, data) {
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at the full ${data.batchStamp?.postRestoreWindowS ?? '-'} s after power returned - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
-        `The wait-time distribution (median / P95 / max) is recorded for the total scope only. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them.`,
+        `The wait-time distribution: P95 and max per scope, the median for the total scope only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
     ].forEach((note) => report.paragraph(`•  ${note}`));
 }
 
@@ -951,8 +989,11 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         SCOPES.forEach((scope, index) => drawScope(report, data, variants, scope, index));
 
         report.newPage();
-        report.sectionTitle('Wait-time distribution', 'Total scope - a mean alone can\'t tell "everyone waits a bit longer" apart from "a few are stranded"', SCOPES.length + 1);
-        distributionTable(report, data, variants);
+        report.sectionTitle('Wait-time distribution', 'Per scope - a mean alone can\'t tell "everyone waits a bit longer" apart from "a few are stranded"', SCOPES.length + 1);
+        SCOPES.forEach((scope) => {
+            report.heading(scope.label, scope.description);
+            distributionTable(report, data, variants, scope);
+        });
         if (data.routingMetrics?.length) drawRoutingTrips(report, data.routingMetrics);
         drawMethodNotes(report, data);
 

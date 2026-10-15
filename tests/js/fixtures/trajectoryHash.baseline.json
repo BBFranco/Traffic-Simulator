@@ -18,5 +18,10 @@
   "3|green_wave|false|": "c56523e5bf38b856",
   "3|green_wave|true|": "5ae73bb02e27f99c",
   "1|fixed|false|destination": "90510e43065513b0",
-  "2|fixed|false|destination": "89c5bfef260665b5"
+  "2|fixed|false|destination": "89c5bfef260665b5",
+  "1|coordinated_adaptive|false|": "39f84075c4eb9743",
+  "1|coordinated_adaptive|true|": "6ea54080a8f189b9",
+  "2|coordinated_adaptive|false|": "d7026120dd5cdd06",
+  "2|coordinated_adaptive|true|": "d8b0e654321301d7",
+  "1|coordinated_adaptive|false|destination": "7c3aee7748d1fb62"
 }

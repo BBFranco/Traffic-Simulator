@@ -75,7 +75,7 @@ export function finalizeRecoveryTickPayload(
     return {
         controller_mode: controllerMode,
         // fixed-time and green-wave never vary by sensor (matches simulation_runs' own column).
-        sensor_mode: controllerMode === 'adaptive' ? sensorMode : null,
+        sensor_mode: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive' ? sensorMode : null,
         corridor_config: corridorId,
         routing_mode: routingMode,
         power_event_seconds: round(powerOutageStartTick * dt, 1),

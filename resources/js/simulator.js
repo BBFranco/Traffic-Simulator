@@ -41,6 +41,7 @@ const MODE_LABELS = {
     fixed: 'Fixed-time',
     adaptive: 'Adaptive',
     green_wave: 'Green wave',
+    coordinated_adaptive: 'Coordinated adaptive',
     /** Not a mode a user picks - set by a corridor config for a highway backbone (mode:"none" in corridor.js). */
     none: 'Free flow',
 };
@@ -1048,9 +1049,26 @@ function signalTimingHtml(timing, arterialName, crossName) {
             <div class="mt-0.5">${bar(runs)}</div>
         </div>`;
 
-    return `${header('Cycle timing', `${positionS.toFixed(0)} / ${Math.round(cycleS)}s`)}
+    return `${header(timing.coordination ? 'Background cycle' : 'Cycle timing', `${positionS.toFixed(0)} / ${Math.round(cycleS)}s`)}
         ${roadRow(escapeHtml(arterialName), roads[0])}
-        ${roadRow(escapeHtml(crossName), roads[1])}`;
+        ${roadRow(escapeHtml(crossName), roads[1])}
+        ${timing.coordination ? coordinationHtml(timing.coordination) : ''}`;
+}
+
+/** Coordinated adaptive's extra tooltip lines: yield point / force-off, platoon messages, self-tuning. */
+function coordinationHtml(c) {
+    const line = (label, value) => `<div class="flex justify-between gap-3"><span>${label}</span><span class="text-slate-700 dark:text-slate-300">${value}</span></div>`;
+    const reasons = { yield: 'yielded', gapOut: 'gapped out', forceOff: 'forced off', platoonEarly: 'ended early for a platoon', reservice: 'gave the cross street a second go', maxOut: 'maxed out', sideCap: 'gave way - side street waited too long' };
+    const stages = { 0: 'arterial', '0t': 'arterial arrow', 1: 'cross', '1t': 'cross arrow' };
+    return `<div class="mt-1 space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+        ${line('Coordination', c.married ? 'married - on the common cycle' : 'divorced - running as adaptive')}
+        ${line('Offset', `${c.offsetS.toFixed(1)}s`)}
+        ${c.yieldInS != null ? line('Yield point', c.yieldInS > 0 ? `in ${c.yieldInS.toFixed(1)}s` : 'passed') : ''}
+        ${c.forceOffInS != null ? line('Force-off', `in ${Math.max(0, c.forceOffInS).toFixed(1)}s`) : ''}
+        ${line('Next platoon', c.nextPlatoon ? `${c.nextPlatoon.vehicles} veh in ${c.nextPlatoon.inS.toFixed(1)}s` : '—')}
+        ${c.lastEnd ? line('Last green', `${stages[c.lastEnd.stage]} ${reasons[c.lastEnd.reason] ?? c.lastEnd.reason} at ${c.lastEnd.greenS.toFixed(0)}s`) : ''}
+        ${c.retune ? line('Self-tuning', `cycle ${c.retune.commonCycleS.toFixed(0)}s (target ${c.retune.targetCycleS.toFixed(0)}s) · ${c.retune.married} married${c.pendingPlan ? ' · pending' : ''}`) : ''}
+    </div>`;
 }
 
 function escapeHtml(value) {
