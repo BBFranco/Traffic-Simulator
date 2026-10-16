@@ -881,6 +881,13 @@ class ResultsController extends Controller
             ->where('batch_id', $latest->batch_id)
             ->selectRaw('min(seed) as first_seed, max(seed) as last_seed')
             ->first();
+        // Per power state: before 2026-10-16 the total blackout ran on its own +10000 seed set, so the report states what each batch actually used.
+        $seedsByPower = SimulationRun::query()
+            ->where('batch_id', $latest->batch_id)
+            ->selectRaw('power_state, min(seed) as first_seed, max(seed) as last_seed')
+            ->groupBy('power_state')
+            ->get()
+            ->mapWithKeys(fn (SimulationRun $run): array => [$run->power_state->value => ['first' => (int) $run->first_seed, 'last' => (int) $run->last_seed]]);
         $minutes = fn (?int $ticks): ?int => $ticks === null ? null : (int) round($ticks * ($config['dt'] ?? 0.1) / 60);
 
         $commit = match (true) {
@@ -923,6 +930,7 @@ class ResultsController extends Controller
             'outageEndMinutes' => $minutes($outageEndTicks),
             'firstSeed' => $seeds?->first_seed,
             'lastSeed' => $seeds?->last_seed,
+            'seedsByPower' => $seedsByPower->isEmpty() ? null : $seedsByPower->all(),
             'startedAt' => $latest->batch_started_at?->toIso8601String(),
             // Seconds from power back on to the end of the measured window - a wait recovery that never happened is capped at this.
             'postRestoreWindowS' => $outageEndTicks === null || ! isset($config['durationTicks'])

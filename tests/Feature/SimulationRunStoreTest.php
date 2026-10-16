@@ -36,6 +36,33 @@ class SimulationRunStoreTest extends TestCase
         ];
     }
 
+    public function test_a_re_posted_run_of_the_same_batch_is_skipped(): void
+    {
+        $batchId = (string) Str::uuid();
+        $first = $this->runPayload(['batch_id' => $batchId, 'seed' => 1]);
+        $second = $this->runPayload(['batch_id' => $batchId, 'seed' => 2]);
+
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$first]])->assertCreated();
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$first, $second]])
+            ->assertCreated()
+            ->assertJson(['inserted' => 1, 'skipped' => 1]);
+
+        $this->assertSame([1, 2], SimulationRun::query()->orderBy('seed')->pluck('seed')->all());
+    }
+
+    public function test_the_same_seed_in_another_condition_or_batch_is_stored(): void
+    {
+        $batchId = (string) Str::uuid();
+
+        // Every row carries the same columns, as a batch's payloads do (one bulk insert).
+        $this->postJson(route('simulation-runs.store'), ['runs' => [
+            $this->runPayload(['batch_id' => $batchId, 'sensor_mode' => null]),
+            $this->runPayload(['batch_id' => $batchId, 'sensor_mode' => null, 'power_state' => PowerState::RollingBlackout->value]),
+            $this->runPayload(['batch_id' => $batchId, 'controller_mode' => 'adaptive', 'sensor_mode' => 'radar']),
+            $this->runPayload(['sensor_mode' => null]),
+        ]])->assertCreated()->assertJson(['inserted' => 4, 'skipped' => 0]);
+    }
+
     public function test_a_destination_run_stores_its_routing_metrics(): void
     {
         $stats = ['trips' => 9743, 'pulledOffByBlock' => ['GRO-3' => 120], 'drivewayFallbacks' => ['sameBlock' => 4, 'nextBlock' => 2, 'exit' => 1]];

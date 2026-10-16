@@ -38,9 +38,13 @@ export function buildExperimentalMatrix() {
  * actually valid: fixed-time's rep 5 and adaptive's rep 5 under normal power
  * see the exact same arrival sequence, so a difference in their metrics is
  * attributable to the controller, not to which random seed each happened to
- * draw. A rolling blackout runs on the normal-power seeds; the total blackout keeps its own offset set.
+ * draw.
+ *
+ * One seed set for every power state (2026-10-16): rep 5 at normal power, in the total blackout and in the rolling
+ * blackout sees the same arrivals too, so the power states compare on the same traffic. Until then the total blackout
+ * ran on base + 10000 + rep - batches from before this used that set. `powerState` stays in the signature so a later
+ * per-state set needs no caller changes.
  */
 export function seedForRep(baseSeed, powerState, rep) {
-    const powerOffset = powerState === 'load_shedding' ? 10_000 : 0;
-    return baseSeed + powerOffset + rep;
+    return baseSeed + rep;
 }

@@ -530,7 +530,7 @@ sensor modes.
 
 **Paired seeding:** every controller/sensor combination at a given power
 state uses the *same* RNG seed per repetition
-(`baseSeed + (loadShedding?10000:0) + rep`), so every condition sees an
+(`baseSeed + rep`, the same for every power state since 2026-10-16), so every condition sees an
 identical arrival sequence — enabling paired statistical comparisons.
 
 **Warm-up:** `WARMUP_TICKS = 3600` (6 simulated minutes) — the engine runs

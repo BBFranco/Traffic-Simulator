@@ -1546,8 +1546,13 @@ function seedNote(data) {
     const stamp = data.batchStamp;
     const range = stamp?.firstSeed != null ? ` Seeds in this batch: ${stamp.firstSeed}-${stamp.lastSeed}.` : '';
     if (stamp?.seedsByPower) {
-        const parts = Object.entries(stamp.seedsByPower).map(([power, seeds]) => `${powerLabel(power)} ${seeds.first ?? seeds.firstSeed}-${seeds.last ?? seeds.lastSeed}`);
-        return `Seeds by power state: ${parts.join('; ')}.`;
+        const entries = POWER_ORDER.filter((power) => stamp.seedsByPower[power]).map((power) => [power, stamp.seedsByPower[power]]);
+        const ranges = new Set(entries.map(([, seeds]) => `${seeds.first}-${seeds.last}`));
+        if (entries.length > 1 && ranges.size === 1) {
+            return `One seed set for every power state: rep r of a condition runs on the same seed at normal power and in each blackout, so the power states are paired seed for seed.${range}`;
+        }
+        const parts = entries.map(([power, seeds]) => `${powerLabel(power)} ${seeds.first}-${seeds.last}`);
+        return `Seeds by power state: ${parts.join('; ')}. Comparisons are always paired within one power state, so separate seed sets never mix inside a delta.`;
     }
     const offset = (power) => seedForRep(0, power, 0) - seedForRep(0, 'normal', 0);
     const outages = POWER_ORDER.filter(isOutage);

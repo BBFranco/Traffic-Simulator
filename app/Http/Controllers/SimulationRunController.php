@@ -31,8 +31,23 @@ class SimulationRunController extends Controller
             'created_at' => now(),
         ]);
 
-        SimulationRun::query()->insert($rows->all());
+        // A resumed batch (runBatch.mjs --resume) may re-post a chunk the server stored but never acknowledged.
+        $storedKeys = SimulationRun::query()
+            ->toBase()
+            ->whereIn('batch_id', $rows->pluck('batch_id')->unique())
+            ->get(['batch_id', 'seed', 'controller_mode', 'sensor_mode', 'power_state'])
+            ->map(fn (object $run): string => $this->runKey((array) $run))
+            ->flip();
+        $newRows = $rows->reject(fn (array $run): bool => $storedKeys->has($this->runKey($run)));
 
-        return response()->json(['inserted' => $rows->count()], 201);
+        SimulationRun::query()->insert($newRows->values()->all());
+
+        return response()->json(['inserted' => $newRows->count(), 'skipped' => $rows->count() - $newRows->count()], 201);
+    }
+
+    /** One run of a batch: its condition and seed. */
+    private function runKey(array $run): string
+    {
+        return implode('|', [$run['batch_id'], $run['seed'], $run['controller_mode'], $run['sensor_mode'] ?? '', $run['power_state']]);
     }
 }
