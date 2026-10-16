@@ -43,6 +43,11 @@ const SIGNAL_TYPES = new Set(['fixed', 'adaptive', 'greenWave', 'coordinatedAdap
 export const SPARK_POINTS = 120;
 /** The throughput-over-time chart keeps one point per this many seconds. */
 export const CHART_EVERY_S = 10;
+/** The engine's power situation as one comparable value - its state, and a rolling blackout's dark zones. */
+function powerKey(engine) {
+    return engine.darkZones ? `${engine.powerState}:${[...engine.darkZones].sort().join('+')}` : engine.powerState;
+}
+
 /** Throughput before a power cut is averaged over this long - the base live throughput is compared with. */
 const PRE_CUT_LOOKBACK_S = 600;
 /** A queue reaching this far past the upstream stop line has backed into that junction. */
@@ -108,8 +113,8 @@ export class LiveMetrics {
         this.throughputSeries = [];
         this.chart = [];
         this.outages = [];
-        this.power = { state: engine.powerState, sinceS: 0, preCutThroughput: null };
-        if (engine.powerState === 'load_shedding') this.outages.push({ fromS: 0, toS: null });
+        this.power = { state: engine.powerState, zones: engine.darkZones ? [...engine.darkZones].sort() : null, key: powerKey(engine), sinceS: 0, preCutThroughput: null };
+        if (engine.powerState !== 'normal') this.outages.push({ fromS: 0, toS: null, zones: this.power.zones });
         this.latest = null;
     }
 
@@ -221,6 +226,8 @@ export class LiveMetrics {
             signalsTotal,
             power: {
                 state: this.power.state,
+                /** Rolling blackout: the zones dark right now - null otherwise. */
+                zones: this.power.zones,
                 forS: elapsedS - this.power.sinceS,
                 /** Live throughput as % of the mean in the 10 min before the latest cut - during the outage and after restore. */
                 recoveryPct: this.power.preCutThroughput == null ? null : pctOf(throughputNow, this.power.preCutThroughput),
@@ -266,18 +273,25 @@ export class LiveMetrics {
 
     /* ----------------------------------------------------------- internals */
 
+    /** A total blackout is one outage window; a rolling blackout one per stage, each naming its dark zones. */
     _trackPower(elapsedS) {
+        const key = powerKey(this.engine);
+        if (key === this.power.key) return;
         const state = this.engine.powerState;
-        if (state === this.power.state) return;
-        if (state === 'load_shedding') {
-            const before = this.throughputSeries;
-            this.power.preCutThroughput = before.length ? before.reduce((a, b) => a + b, 0) / before.length : null;
-            this.outages.push({ fromS: elapsedS, toS: null });
-        } else {
-            const open = this.outages[this.outages.length - 1];
-            if (open && open.toS == null) open.toS = elapsedS;
+        const zones = this.engine.darkZones ? [...this.engine.darkZones].sort() : null;
+        const open = this.outages[this.outages.length - 1];
+        if (open && open.toS == null) open.toS = elapsedS;
+        if (state !== 'normal') {
+            // Only a cut from full power resets the baseline - a rolling blackout's next stage keeps the pre-cut one.
+            if (this.power.state === 'normal') {
+                const before = this.throughputSeries;
+                this.power.preCutThroughput = before.length ? before.reduce((a, b) => a + b, 0) / before.length : null;
+            }
+            this.outages.push({ fromS: elapsedS, toS: null, zones });
         }
         this.power.state = state;
+        this.power.zones = zones;
+        this.power.key = key;
         this.power.sinceS = elapsedS;
     }
 

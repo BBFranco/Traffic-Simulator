@@ -43,5 +43,10 @@
   "1|adaptive|false||radar|legacy": "145748c7ec2a55cb",
   "1|coordinated_adaptive|false||radar|legacy": "6a8b8922b431e035",
   "1|adaptive|false||camera|legacy": "154a6a7e1868d809",
-  "1|coordinated_adaptive|false||camera|legacy": "52aefc6717a77ecd"
+  "1|coordinated_adaptive|false||camera|legacy": "52aefc6717a77ecd",
+  "1|fixed|false||true": "01c3f3a4da85c64a",
+  "1|green_wave|false||true": "67311007ac87dfc5",
+  "1|adaptive|false||true": "25b1dce8faa9ebb7",
+  "1|coordinated_adaptive|false||true": "85334b3545f26454",
+  "1|coordinated_adaptive|false|destination|true": "f468301f44743d09"
 }

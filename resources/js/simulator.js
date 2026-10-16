@@ -22,6 +22,7 @@ import { ARTERIAL_ACCENTS } from './sim/renderer.js';
 import { Renderer2D } from './renderers/Renderer2D.js';
 import { VIEW_2D, VIEW_3D } from './renderers/RendererInterface.js';
 import { SimulationEngine } from './sim/engine.js';
+import { ROLLING_SCHEDULE } from './sim/batchSchedule.js';
 import { LiveMetrics } from './sim/metrics/liveMetrics.js';
 import { LiveStatsPanel } from './sim/metrics/liveStatsPanel.js';
 import { applyChartTheme } from './charts/theme.js';
@@ -130,7 +131,7 @@ let pauseAfterCatchUp = true;
  * fetchSampleRuns().
  */
 let sampleRuns = [];
-/** The "Power" side of the replay picker - 'normal' | 'load_shedding'. */
+/** The "Power" side of the replay picker - 'normal' | 'load_shedding' | 'rolling_blackout'. */
 let replaySelectedPowerState = 'normal';
 /**
  * Non-null while a replay is driving the engine automatically - tracks its own tick count
@@ -140,6 +141,11 @@ let replaySelectedPowerState = 'normal';
  * outage timing the batch data itself was measured against.
  */
 let replay = null;
+/**
+ * The Rolling blackout checkbox's run: batchSchedule.js's ROLLING_SCHEDULE played from the moment it was ticked, as
+ * [{ zones, fromS, toS }] in sim seconds (engine.js's setZoneSchedule()) - null while it is off.
+ */
+let rollingWindows = null;
 
 const el = {
     canvasWrap: document.getElementById('canvas-wrap'),
@@ -165,6 +171,9 @@ const el = {
     busRatioValue: document.getElementById('bus-ratio-value'),
     randomEventsInput: document.getElementById('random-events'),
     destinationRoutingInput: document.getElementById('destination-routing'),
+    rollingBlackoutInput: document.getElementById('rolling-blackout'),
+    rollingBlackoutLabel: document.getElementById('rolling-blackout-label'),
+    rollingBlackoutStatus: document.getElementById('rolling-blackout-status'),
     liveStats: document.getElementById('live-stats'),
     runToggle: document.getElementById('run-toggle'),
     stepButton: document.getElementById('step-button'),
@@ -281,6 +290,7 @@ function railSummaries() {
         'rail-power': () => {
             const parts = [state.power.loadShedding ? 'Power cut' : 'Normal'];
             if (state.power.scheduledOutages) parts.push('scheduled outages');
+            if (el.rollingBlackoutInput?.checked) parts.push('rolling blackout');
             return parts.join(' · ');
         },
         'rail-demand': () => {
@@ -375,6 +385,7 @@ async function loadCorridor(id, { config = null } = {}) {
     engine = new SimulationEngine(layout);
     engine.setNodeStatsTracking(true); // the hover tooltip's per-junction wait and throughput
     engine.reset(engineResetOptions());
+    syncRollingControl();
     // Built after reset(): the collector reads the engine's per-road state for its road table.
     liveMetrics = new LiveMetrics(engine, { dt: FIXED_DT_S });
     liveMetrics.wantOverlays = overlaysWanted();
@@ -1157,6 +1168,7 @@ function restartEngine() {
     // interrupted by a Reset before it could consume (and restore) the flag itself.
     replay = null;
     pauseAfterCatchUp = true;
+    syncRollingControl(); // reset() starts every junction lit - the checkbox starts unticked
     resetLiveStats();
     livePanel.setContext({ routingActive: engine.routingActive });
     resetRunState();
@@ -1235,8 +1247,57 @@ function syncPowerSchedule() {
 
 document.getElementById('scheduled-outages').addEventListener('change', (event) => {
     state.power.scheduledOutages = event.target.checked;
+    if (state.power.scheduledOutages) stopRollingBlackout();
     syncPowerSchedule();
     logChange('power.scheduledOutages', state.power.scheduledOutages);
+});
+
+/** Unticked and cleared, and available only on a layout with zones (scripts/add-zones.mjs). */
+function syncRollingControl() {
+    rollingWindows = null;
+    const available = engine.zones.length > 0;
+    el.rollingBlackoutInput.checked = false;
+    el.rollingBlackoutInput.disabled = !available;
+    el.rollingBlackoutLabel.title = available ? '' : 'This layout has no zones - add them with scripts/add-zones.mjs.';
+    el.rollingBlackoutStatus.textContent = '';
+}
+
+/** The checkbox ticked: the batch's rolling schedule from now on, replacing the power cut and scheduled outages. */
+function startRollingBlackout() {
+    if (state.power.loadShedding) {
+        state.power.loadShedding = false;
+        applyToggleFaces(el.loadSheddingToggle, false);
+        engine.setManualLoadShedding(false);
+    }
+    if (state.power.scheduledOutages) {
+        state.power.scheduledOutages = false;
+        document.getElementById('scheduled-outages').checked = false;
+        syncPowerSchedule();
+    }
+    const firstTick = ROLLING_SCHEDULE[0].fromTick;
+    const nowS = engine.simTimeS;
+    rollingWindows = ROLLING_SCHEDULE.map((w) => ({ zones: w.zones, fromS: nowS + (w.fromTick - firstTick) * FIXED_DT_S, toS: nowS + (w.toTick - firstTick) * FIXED_DT_S }));
+    engine.setZoneSchedule(rollingWindows);
+    renderPowerPill(engine);
+    logChange('power.rollingBlackout', true);
+}
+
+/** Unticked (or replaced by another power source, or run to its end): every dark junction is back that same tick. */
+function stopRollingBlackout(reason = null) {
+    if (!rollingWindows && !el.rollingBlackoutInput.checked) return;
+    rollingWindows = null;
+    el.rollingBlackoutInput.checked = false;
+    el.rollingBlackoutStatus.textContent = '';
+    engine.setZoneSchedule(null);
+    engine.setZoneDark([]);
+    renderPowerPill(engine);
+    logChange('power.rollingBlackout', reason ?? false);
+}
+
+el.rollingBlackoutInput.addEventListener('change', () => {
+    if (el.rollingBlackoutInput.checked) startRollingBlackout();
+    else stopRollingBlackout();
+    railAccordion?.refresh();
 });
 
 document.getElementById('outage-off-minutes').addEventListener('change', (event) => {
@@ -1253,9 +1314,10 @@ document.getElementById('outage-period-minutes').addEventListener('change', (eve
 
 el.loadSheddingToggle.addEventListener('click', () => {
     state.power.loadShedding = !state.power.loadShedding;
+    if (state.power.loadShedding) stopRollingBlackout();
     applyToggleFaces(el.loadSheddingToggle, state.power.loadShedding);
     engine.setManualLoadShedding(state.power.loadShedding);
-    renderPowerPill(state.power.loadShedding);
+    renderPowerPill(engine);
     logChange('power.loadShedding', state.power.loadShedding);
 });
 
@@ -1266,6 +1328,9 @@ el.loadSheddingToggle.addEventListener('click', () => {
  * outages), then hands off to `tickEngine()` (via `replay`) to reset stats at the end of
  * warm-up and trigger/restore power automatically at the run's original outage ticks.
  */
+const REPLAY_POWER_LABELS = { normal: 'at normal power', load_shedding: 'with a total blackout', rolling_blackout: 'with a rolling blackout' };
+const REPLAY_POWER_NOUNS = { normal: 'normal-power', load_shedding: 'total-blackout', rolling_blackout: 'rolling-blackout' };
+
 async function startReplay(run) {
     if (run.corridor_config !== state.corridorId) {
         await loadCorridor(run.corridor_config);
@@ -1330,6 +1395,9 @@ async function startReplay(run) {
         statsReset: warmupTicks <= 0,
         powerOutageStartTick: config.powerOutageStartTick ?? null,
         powerOutageEndTick: config.powerOutageEndTick ?? null,
+        /** A rolling-blackout run's windows (measured ticks) - null for every other run, which replays as before. */
+        rollingSchedule: config.rollingSchedule ?? null,
+        darkZonesKey: '',
         durationTicks: config.durationTicks ?? Infinity,
         outageStarted: false,
         outageEnded: false,
@@ -1348,7 +1416,7 @@ async function startReplay(run) {
     renderRunPill();
 
     const label = replayFamilyLabel(run);
-    const powerLabel = run.power_state === 'load_shedding' ? 'with load shedding' : 'without load shedding';
+    const powerLabel = REPLAY_POWER_LABELS[run.power_state] ?? REPLAY_POWER_LABELS.normal;
     if (el.replayStatus) el.replayStatus.textContent = `Replaying ${label}, ${powerLabel} (seed ${state.seed}).`;
     logChange('replay', `${label} - ${powerLabel} (seed ${state.seed})`);
 }
@@ -1358,7 +1426,7 @@ el.replayLoadButton?.addEventListener('click', async () => {
     const run = sampleRuns.find((r) => replayFamilyKey(r) === familyKey && r.power_state === replaySelectedPowerState);
     if (!run) {
         if (el.replayStatus) {
-            el.replayStatus.textContent = `No ${replaySelectedPowerState === 'load_shedding' ? 'load-shedding' : 'normal-power'} run found for this condition.`;
+            el.replayStatus.textContent = `No ${REPLAY_POWER_NOUNS[replaySelectedPowerState] ?? 'normal-power'} run found for this condition.`;
         }
         return;
     }
@@ -1433,11 +1501,39 @@ function renderRunPill() {
  * load shedding even while the manual button still reads "off", so this pill
  * has to reflect what is really happening, not just what was clicked.
  */
-function renderPowerPill(effectiveLoadShedding) {
-    const tone = effectiveLoadShedding ? 'rose' : 'emerald';
+function renderPowerPill({ powerState, darkZones, simTimeS }) {
+    const tone = powerState === 'normal' ? 'emerald' : 'rose';
     el.powerPill.className = PILL_TONES[tone];
     el.powerPill.querySelector('span').className = DOT_TONES[tone];
-    el.powerLabel.textContent = effectiveLoadShedding ? 'Load shedding' : 'Power normal';
+    if (powerState === 'rolling_blackout') {
+        const leftS = rollingStageLeftS(simTimeS);
+        const text = `Rolling: zones ${[...darkZones].sort().join('+')} dark${leftS == null ? '' : ` ${clockText(leftS)}`}`;
+        el.powerLabel.textContent = text;
+        el.rollingBlackoutStatus.textContent = text;
+    } else {
+        el.powerLabel.textContent = powerState === 'load_shedding' ? 'Load shedding' : 'Power normal';
+        if (el.rollingBlackoutInput.checked && rollingWindows) el.rollingBlackoutStatus.textContent = `Starts in ${clockText(Math.max(0, rollingWindows[0].fromS - simTimeS))}`;
+    }
+}
+
+/** Time left in the rolling blackout's current stage - from the checkbox's windows, or a replay's recorded ones. */
+function rollingStageLeftS(simTimeS) {
+    if (rollingWindows) {
+        const open = rollingWindows.find((w) => simTimeS >= w.fromS && simTimeS < w.toS);
+        return open ? open.toS - simTimeS : null;
+    }
+    if (replay?.rollingSchedule) {
+        const measuredTick = replay.ticks - replay.warmupTicks;
+        const open = replay.rollingSchedule.find((w) => measuredTick >= w.fromTick && measuredTick < w.toTick);
+        return open ? (open.toTick - measuredTick) * FIXED_DT_S : null;
+    }
+    return null;
+}
+
+/** m:ss */
+function clockText(seconds) {
+    const whole = Math.ceil(seconds);
+    return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
 /** Clears every stat readout back to the em-dash placeholder. */
@@ -1492,7 +1588,9 @@ function renderFrame(snapshot) {
     activeRenderer().update(snapshot, accumulatorS / FIXED_DT_S);
     renderLiveStats();
     updateSimClock(snapshot.simTimeS);
-    renderPowerPill(snapshot.powerState === 'load_shedding');
+    renderPowerPill(snapshot);
+    // The checkbox's schedule has run its course: every zone is back, so it reads unticked again.
+    if (rollingWindows && snapshot.simTimeS >= rollingWindows[rollingWindows.length - 1].toS) stopRollingBlackout('schedule complete');
     updateDemandReadouts();
     if (!el.tooltip.classList.contains('hidden')) renderTooltip();
 }
@@ -1583,6 +1681,19 @@ function tickEngine() {
         applyToggleFaces(el.loadSheddingToggle, false);
         engine.setManualLoadShedding(false);
         logChange('replay', 'power restored (matches recorded run)');
+    }
+
+    // A rolling-blackout run: its zones go dark and come back at the recorded ticks, exactly as runHeadless.js drove them.
+    if (replay.rollingSchedule && measuredTick >= 0) {
+        const zones = [...new Set(replay.rollingSchedule.filter((w) => measuredTick >= w.fromTick && measuredTick < w.toTick).flatMap((w) => w.zones))];
+        const key = [...zones].sort().join(',');
+        if (key !== replay.darkZonesKey) {
+            replay.darkZonesKey = key;
+            engine.setZoneDark(zones);
+            el.rollingBlackoutInput.checked = zones.length > 0;
+            if (!zones.length) el.rollingBlackoutStatus.textContent = '';
+            logChange('replay', zones.length ? `zones ${key.replace(/,/g, '+')} dark (matches recorded run)` : 'every zone restored (matches recorded run)');
+        }
     }
 
     if (measuredTick >= replay.durationTicks) {

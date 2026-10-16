@@ -12,6 +12,9 @@
  *   3. Queue-length bounds - never negative, never past a sane per-lane cap.
  *   4. Load-shedding       - a power event actually engages the all-way-stop
  *                            fallback and the run still completes to durationTicks.
+ *   5. Rolling blackout    - on a corridor with zones: each stage darkens exactly its
+ *                            zones' junctions (all-way stops), the rest stay lit, and a
+ *                            rolling run still balances its cars.
  *
  * Webster's-method hand-check is NOT here - the spec is explicit that one is a
  * manual/spreadsheet comparison against equations.js:websterOptimumCycle()'s
@@ -23,6 +26,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runHeadless } from '../resources/js/sim/runHeadless.js';
+import { buildLayout } from '../resources/js/sim/corridor.js';
+import { SimulationEngine } from '../resources/js/sim/engine.js';
+import { ROLLING_SCHEDULE } from '../resources/js/sim/batchSchedule.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -113,6 +119,30 @@ function checkLoadShedding(results, run, label) {
     pass(results, `Load-shedding engages (${label})`, `${rows.length} sampled rows report load_shedding after the trigger, and the run completed to durationTicks without throwing.`);
 }
 
+/** Every stage of ROLLING_SCHEDULE, then power back: a junction is an all-way stop exactly when its zone is dark. */
+function checkRollingStages(results, corridorConfig) {
+    const layout = buildLayout(corridorConfig);
+    const engine = new SimulationEngine(layout);
+    if (!engine.zones.length) {
+        pass(results, 'Rolling blackout engages zone by zone', 'skipped - this corridor has no zones (scripts/add-zones.mjs).');
+        return;
+    }
+    const arterialModes = Object.fromEntries(layout.arterials.map((a) => [a.id, 'fixed']));
+    engine.reset({ seed: 3, arterialModes, demand: {}, sensorMode: 'inductive_loop', batteryBackedSensors: true, power: {} });
+    // Junctions with no lights to lose (roundabouts, stop streets, all-way stops, free merges) never change.
+    const signalled = [...engine.nodesInfo.values()].filter((info) => ['fixed'].includes(info.controllerType));
+    const wrong = [];
+    for (const zones of [...ROLLING_SCHEDULE.map((w) => w.zones), []]) {
+        engine.setZoneDark(zones);
+        for (const info of signalled) {
+            const dark = zones.includes(engine.zoneOfNode.get(info.node.id));
+            if ((info.controllerType === 'allWayStop') !== dark) wrong.push(`${info.node.id} (zones ${zones.join('+') || 'none'} dark: ${info.controllerType})`);
+        }
+    }
+    if (wrong.length) fail(results, 'Rolling blackout engages zone by zone', `Wrong controller at: ${wrong.slice(0, 8).join(', ')}`);
+    else pass(results, 'Rolling blackout engages zone by zone', `${signalled.length} signals: each stage darkens exactly its zones, all lit after.`);
+}
+
 function main() {
     const args = parseArgs(process.argv.slice(2));
     const corridorConfig = loadCorridor(args.corridor);
@@ -150,6 +180,24 @@ function main() {
     checkCarConservation(results, outageRun, 'adaptive, load-shedding');
     checkQueueBounds(results, outageRun, corridorConfig, 'adaptive, load-shedding');
     checkLoadShedding(results, outageRun, 'adaptive, load-shedding');
+
+    checkRollingStages(results, corridorConfig);
+    if (corridorConfig.arterials.some((a) => a.zone != null)) {
+        const quarter = Math.floor(args.duration / 4);
+        const rollingRun = runHeadless({
+            seed: 3,
+            controllerMode: 'coordinated_adaptive',
+            sensorMode: 'inductive_loop',
+            rollingSchedule: [{ zones: [1, 3], fromTick: quarter, toTick: 2 * quarter }, { zones: [2], fromTick: 2 * quarter, toTick: 3 * quarter }],
+            corridorConfig,
+            durationTicks: args.duration,
+            dt: args.dt,
+        });
+        checkCarConservation(results, rollingRun, 'coordinated adaptive, rolling blackout');
+        const rollingRows = rollingRun.rows.filter((r) => r.powerState === 'rolling_blackout').length;
+        if (rollingRows) pass(results, 'Rolling blackout engages (coordinated adaptive)', `${rollingRows} sampled rows report rolling_blackout.`);
+        else fail(results, 'Rolling blackout engages (coordinated adaptive)', 'No sampled row reported rolling_blackout.');
+    }
 
     for (const r of results) {
         console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name} - ${r.detail}`);

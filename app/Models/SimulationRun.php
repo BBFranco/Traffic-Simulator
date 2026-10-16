@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PowerState;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -57,6 +58,18 @@ use Illuminate\Database\Eloquent\Model;
     'throughput_per_min_pre_outage_side_street',
     'throughput_per_min_during_outage_side_street',
     'throughput_per_min_post_recovery_side_street',
+    'avg_wait_time_stage1',
+    'throughput_per_min_stage1',
+    'avg_wait_time_stage2',
+    'throughput_per_min_stage2',
+    'avg_wait_time_stage1_arterial',
+    'throughput_per_min_stage1_arterial',
+    'avg_wait_time_stage2_arterial',
+    'throughput_per_min_stage2_arterial',
+    'avg_wait_time_stage1_side_street',
+    'throughput_per_min_stage1_side_street',
+    'avg_wait_time_stage2_side_street',
+    'throughput_per_min_stage2_side_street',
     'median_wait_time',
     'p95_wait_time',
     'max_wait_time',
@@ -74,6 +87,7 @@ use Illuminate\Database\Eloquent\Model;
     'routing_stats',
     'coordination_stats',
     'road_waits',
+    'zone_stats',
     'diagnostics',
     'raw_config_json',
 ])]
@@ -89,6 +103,8 @@ class SimulationRun extends Model
             'routing_stats' => 'array',
             'coordination_stats' => 'array',
             'road_waits' => 'array',
+            'zone_stats' => 'array',
+            'power_state' => PowerState::class,
             'diagnostics' => 'array',
             'warmup_drifting' => 'array',
             'warmup_ticks' => 'integer',

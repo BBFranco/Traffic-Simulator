@@ -14,7 +14,8 @@ use Illuminate\Support\Collection;
  *
  * Keyed "mode|sensor|power" (sensor 'average' for adaptive across its sensors, '' for green wave),
  * then by column: `delta` in % of the fixed-time mean (pp for cleared-without-stop) and `ci95` in
- * the same unit. Recovery columns pair only seeds where both sides recovered.
+ * the same unit. Recovery columns pair only seeds where both sides recovered. The zone scopes (`<metric>_zone1`...)
+ * read from each run's zone_stats (ZoneScopes) and pair the same way.
  */
 class SeedPairedDeltas
 {
@@ -34,6 +35,11 @@ class SeedPairedDeltas
 
     private const SCOPE_SUFFIXES = ['', '_arterial', '_side_street'];
 
+    /** What each zone scope pairs on - its mean wait and tail, throughput, cleared-without-stop and recovery. */
+    private const ZONE_METRICS = ['avg_wait_time', 'throughput_per_min', 'pct_cleared_without_stop', 'time_to_recovery_seconds', 'time_to_recovery_wait_seconds', 'median_wait_time', 'p95_wait_time', 'max_wait_time'];
+
+    public function __construct(private readonly ZoneScopes $zoneScopes) {}
+
     /** Percentage-point columns: the difference itself, not a share of the baseline. */
     private const POINT_COLUMNS = ['pct_cleared_without_stop'];
 
@@ -46,24 +52,24 @@ class SeedPairedDeltas
      */
     public function forBatches(Collection $batchIds): array
     {
-        $columns = $this->columns();
+        $columns = [...$this->columns(), ...$this->zoneScopes->columns(self::ZONE_METRICS)];
         $runs = SimulationRun::query()
             ->whereIn('batch_id', $batchIds)
-            ->get(['controller_mode', 'sensor_mode', 'power_state', 'corridor_config', 'seed', ...$columns])
+            ->get(['controller_mode', 'sensor_mode', 'power_state', 'corridor_config', 'seed', 'zone_stats', ...$this->columns()])
             ->toBase();
 
-        $pairKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}";
+        $pairKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state->value}|{$run->seed}";
         $baselines = $runs->where('controller_mode', 'fixed')->keyBy($pairKey);
 
         $splitsBySensor = fn (SimulationRun $run): bool => ControllerMode::from($run->controller_mode)->splitsBySensor();
         $subjects = $runs->where('controller_mode', '!=', 'fixed')
             // Only the actuated modes vary by sensor - green wave runs carry a sensor mode they never read.
             ->groupBy(fn (SimulationRun $run): string => $splitsBySensor($run)
-                ? "{$run->controller_mode}|{$run->sensor_mode}|{$run->power_state}"
-                : "{$run->controller_mode}||{$run->power_state}");
+                ? "{$run->controller_mode}|{$run->sensor_mode}|{$run->power_state->value}"
+                : "{$run->controller_mode}||{$run->power_state->value}");
         // An actuated mode across its sensors: the sensors' mean per seed, paired like any single condition.
         $sensorAverages = $runs->filter($splitsBySensor)
-            ->groupBy(fn (SimulationRun $run): string => "{$run->controller_mode}|average|{$run->power_state}");
+            ->groupBy(fn (SimulationRun $run): string => "{$run->controller_mode}|average|{$run->power_state->value}");
 
         return $subjects->merge($sensorAverages)
             ->map(fn (Collection $group): array => collect($columns)
@@ -91,18 +97,18 @@ class SeedPairedDeltas
         $adaptive = $runs->where('controller_mode', 'adaptive');
         $coordinated = $runs->where('controller_mode', 'coordinated_adaptive');
 
-        $perSensorKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}|{$run->sensor_mode}";
-        $perSeedKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}";
+        $perSensorKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state->value}|{$run->seed}|{$run->sensor_mode}";
+        $perSeedKey = fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state->value}|{$run->seed}";
         $sensorBaselines = $adaptive->keyBy($perSensorKey);
         $averageBaselines = $adaptive->groupBy($perSeedKey)->map(fn (Collection $group): object => (object) collect($columns)
             ->mapWithKeys(fn (string $column): array => [$column => $group->pluck($column)->filter(fn ($value): bool => $value !== null)->avg()])
             ->all());
 
         $result = [];
-        foreach ($coordinated->groupBy(fn (SimulationRun $run): string => "{$run->sensor_mode}|{$run->power_state}") as $key => $group) {
+        foreach ($coordinated->groupBy(fn (SimulationRun $run): string => "{$run->sensor_mode}|{$run->power_state->value}") as $key => $group) {
             $result[$key] = $this->pairedColumns($group, $sensorBaselines, $perSensorKey, $columns);
         }
-        foreach ($coordinated->groupBy(fn (SimulationRun $run): string => "average|{$run->power_state}") as $key => $group) {
+        foreach ($coordinated->groupBy(fn (SimulationRun $run): string => "average|{$run->power_state->value}") as $key => $group) {
             $result[$key] = $this->pairedColumns($group, $averageBaselines, $perSeedKey, $columns);
         }
 
@@ -120,15 +126,15 @@ class SeedPairedDeltas
 
     /**
      * @param  Collection<int, SimulationRun>  $group
-     * @param  Collection<string, SimulationRun>  $baselines
+     * @param  Collection<string, SimulationRun|object>  $baselines
      * @return array{delta: float, ci95: float, pairs: int}|null
      */
     private function pairedDelta(Collection $group, Collection $baselines, callable $pairKey, string $column): ?array
     {
         $pairs = $group->groupBy($pairKey)
             ->map(fn (Collection $seedRuns, string $key): ?array => [
-                'subject' => $seedRuns->pluck($column)->filter(fn ($value): bool => $value !== null)->avg(),
-                'baseline' => $baselines->get($key)?->{$column},
+                'subject' => $seedRuns->map(fn (SimulationRun $run): ?float => $this->value($run, $column))->filter(fn ($value): bool => $value !== null)->avg(),
+                'baseline' => $this->value($baselines->get($key), $column),
             ])
             ->filter(fn (array $pair): bool => $pair['subject'] !== null && $pair['baseline'] !== null)
             ->values();
@@ -177,6 +183,16 @@ class SeedPairedDeltas
 
     private function baseColumn(string $column): string
     {
-        return str_replace(['_arterial', '_side_street'], '', $column);
+        return str_replace(['_arterial', '_side_street', ...array_keys(ZoneScopes::SUFFIXES)], '', $column);
+    }
+
+    /** A column's value on a run (a zone column from its zone_stats), or on versusAdaptive()'s per-seed average. */
+    private function value(?object $run, string $column): ?float
+    {
+        if ($run instanceof SimulationRun && $this->zoneScopes->isZoneColumn($column)) {
+            return $this->zoneScopes->value($run, $column);
+        }
+
+        return $run?->{$column};
     }
 }

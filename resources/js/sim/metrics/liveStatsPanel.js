@@ -44,6 +44,12 @@ const KPI_FORMAT = {
     stranded: (s) => num(s.stranded),
 };
 
+/** A dark window's band label: a rolling blackout's names its zones, a total blackout's every junction. */
+function darkBandLabel(zones) {
+    if (!zones) return 'LIGHTS DARK';
+    return `${zones.length > 1 ? 'ZONES' : 'ZONE'} ${zones.join(' + ')} DARK`;
+}
+
 const ROW_FORMAT = {
     onNetwork: (s) => num(s.onNetwork),
     completed: (s) => num(s.completed),
@@ -62,7 +68,7 @@ const ROW_FORMAT = {
     stranded: (s) => num(s.stranded),
     drift: (s) => (s.drift === 'settling' ? 'Settling' : `${s.drift === 'settled' ? 'Settled' : 'Drifting'} (${num((s.driftRatio ?? 0) * 100, 0)}% / 10 min)`),
     signalsDark: (s) => `${s.signalsDark}/${s.signalsTotal}`,
-    outage: (s) => `${s.power.state === 'load_shedding' ? 'Out' : 'On'} for ${clock(s.power.forS)}`,
+    outage: (s) => `${s.power.state === 'load_shedding' ? 'Out' : s.power.state === 'rolling_blackout' ? `Zones ${s.power.zones.join(' + ')} out` : 'On'} for ${clock(s.power.forS)}`,
     recoveryPct: (s) => pct(s.power.recoveryPct),
     divertedPct: (s) => pct(s.routing?.divertedPct),
     missedDrivewaysPct: (s) => pct(s.routing?.missedDrivewaysPct),
@@ -221,6 +227,7 @@ export class LiveStatsPanel {
     _renderChips(sample) {
         const { power } = sample;
         if (power.state === 'load_shedding') this._chip('power', 'bad', `Lights out ${clock(power.forS)}`);
+        else if (power.state === 'rolling_blackout') this._chip('power', 'bad', `Zones ${power.zones.join(' + ')} dark ${clock(power.forS)}`);
         else if (power.recoveryPct != null) this._chip('power', 'good', `Restored ${clock(power.forS)}, ${pct(power.recoveryPct)}`);
         else this._chip('power', 'good', 'Power on');
 
@@ -348,7 +355,7 @@ export class LiveStatsPanel {
         this.chart.data.labels = labels;
         this.chart.data.datasets[0].data = points.map((p) => p.throughput);
         this.chart.options.plugins.xRangeBand = points.length
-            ? { bands: outages.map((o) => ({ from: indexAt(o.fromS), to: o.toS == null ? points.length - 1 : indexAt(o.toS) })), label: 'LIGHTS DARK' }
+            ? { bands: outages.map((o) => ({ from: indexAt(o.fromS), to: o.toS == null ? points.length - 1 : indexAt(o.toS), label: darkBandLabel(o.zones) })), label: 'LIGHTS DARK' }
             : {};
         this.chart.update('none');
         this.chartEmpty?.classList.toggle('hidden', points.length > 0);

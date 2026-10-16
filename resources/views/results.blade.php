@@ -38,7 +38,7 @@
 
                 <button type="button" id="batch-run-button"
                         class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Generate dataset (600 runs)
+                    Generate dataset (900 runs)
                 </button>
             </div>
         </div>
@@ -89,7 +89,7 @@
                     Cancel
                 </button>
                 <button type="button" id="batch-modal-confirm" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Run batch (600 runs)
+                    Run batch (900 runs)
                 </button>
             </div>
         </div>
@@ -97,8 +97,8 @@
 
     <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
         <strong class="font-semibold">Nothing below is measured yet.</strong>
-        Click <strong>Generate dataset</strong> to run the full 12-condition x 30-rep experimental matrix
-        (600 headless runs) in this browser tab and populate
+        Click <strong>Generate dataset</strong> to run the full 30-condition x 30-rep experimental matrix
+        (900 headless runs) in this browser tab and populate
         <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
         while it runs - the tab is not frozen, just busy.
     </div>
@@ -172,9 +172,9 @@
         <div>
             <label for="filter-scope" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Scope</label>
             <select id="filter-scope" class="{{ $select }}">
-                <option value="total" selected>Total (main + side streets)</option>
-                <option value="arterial">Main arterial only</option>
-                <option value="side_street">Side streets only</option>
+                @foreach ($scopeLabels as $scope => $label)
+                    <option value="{{ $scope }}" {{ $loop->first ? 'selected' : '' }}>{{ $label }}</option>
+                @endforeach
             </select>
         </div>
         <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
@@ -210,7 +210,7 @@
             <div>
                 <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Per-condition means</h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                    Each controller mode under normal power and under load shedding. Adaptive's bars follow the
+                    Each controller mode under each power state. Adaptive's bars follow the
                     "Compare against fixed-time" selection above.
                 </p>
             </div>
@@ -279,7 +279,7 @@
 
     {{-- ============================================ segmented + distribution --}}
     <section class="mb-8">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Load shedding, segmented</h2>
+        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Outages, segmented</h2>
         <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
             Pre-outage / during-outage / post-recovery averages, computed from cumulative
             counters rather than a rolling window - this is what shows the real Adaptive-vs-
@@ -289,7 +289,8 @@
             still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
             regardless of the selector above - a single mean can't tell "everyone waits a bit
             longer" apart from "most people are fine, a few are stranded", but that distribution
-            isn't split by arterial/side-street.
+            isn't split by arterial/side-street. Under a rolling blackout, during-outage covers both
+            stages and post-recovery starts at the final restore.
         </p>
 
         <div class="overflow-x-auto {{ $card }}" id="segmented-table">
@@ -297,6 +298,7 @@
                 <thead class="{{ $tableHead }}">
                     <tr>
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
+                        <th scope="col" class="px-4 py-2 font-semibold">Power</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, run mean (s, Total)</th>

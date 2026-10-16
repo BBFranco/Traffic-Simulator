@@ -79,11 +79,11 @@ class SimulatorController extends Controller
             ->where('controller_mode', 'fixed')
             ->whereIn('seed', $runs->pluck('seed'))
             ->get(['seed', 'power_state', 'avg_wait_time', 'throughput_per_min'])
-            ->keyBy(fn (SimulationRun $run): string => "{$run->seed}|{$run->power_state}");
+            ->keyBy(fn (SimulationRun $run): string => "{$run->seed}|{$run->power_state->value}");
 
         $runs->each(fn (SimulationRun $run) => $run->setAttribute(
             'fixed_twin',
-            $fixedTwins->get("{$run->seed}|{$run->power_state}")?->only(['avg_wait_time', 'throughput_per_min'])
+            $fixedTwins->get("{$run->seed}|{$run->power_state->value}")?->only(['avg_wait_time', 'throughput_per_min'])
         ));
 
         return response()->json(['runs' => $runs]);

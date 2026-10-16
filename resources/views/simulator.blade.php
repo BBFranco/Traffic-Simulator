@@ -66,7 +66,7 @@
                     <div class="mt-3">
                         <span class="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">Power</span>
                         <x-segmented control="replay-power-state" size="sm" value="normal"
-                                     :options="['normal' => 'Normal', 'load_shedding' => 'Load shedding']" />
+                                     :options="$replayPowerOptions" />
                     </div>
                     <button type="button" id="replay-load-button"
                             class="mt-3 w-full rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20">
@@ -208,6 +208,17 @@
                             Destination routing
                             <x-info-tip text="Every car gets a destination when it spawns - a driveway on a block, or a way out of the map - and follows a route there instead of turning at random. Cars heading for a driveway keep to the lane beside it, slow down and turn in, waiting for a gap when they have to cross oncoming traffic. Only available on a corridor with a routing section; switching it restarts the run." />
                         </span>
+                    </span>
+                </label>
+
+                <label id="rolling-blackout-label" class="flex cursor-pointer items-start gap-2.5 {{ $inset }} p-2.5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                    <input type="checkbox" id="rolling-blackout" class="mt-0.5 {{ $checkbox }}">
+                    <span class="min-w-0 flex-1">
+                        <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                            Rolling blackout
+                            <x-info-tip text="The batch's rolling blackout, starting now: zones 1 (south) and 3 (north) go dark for 15 minutes, then zone 2 (the middle) for 15 minutes, then every light is back. A dark junction is an all-way stop; queues carry over from one stage to the next. Unticking it restores every junction at once. It replaces the power cut and scheduled outages while it runs. Only available on a layout with zones." />
+                        </span>
+                        <span id="rolling-blackout-status" class="mt-1 block text-[10px] text-slate-600 dark:text-slate-400"></span>
                     </span>
                 </label>
             </x-control-section>

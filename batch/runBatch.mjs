@@ -4,7 +4,7 @@
  * logic behind build step 18's "click the button" dataset.
  *
  * Runs every condition in the dissertation's experimental matrix (controller
- * mode x power state x sensor mode - 12 conditions total) against a corridor,
+ * mode x power state x sensor mode - 30 conditions total) against a corridor,
  * REPS times each with a distinct seed, and writes one CSV (time series) +
  * one JSON (summary) per run into results/<condition>/<seed>.{csv,json}.
  *
@@ -16,10 +16,14 @@
  * Usage:
  *   node batch/runBatch.mjs [--corridor=hatfield-pretorius-francisbaard]
  *     [--reps=30] [--duration=54000] [--warmup-ticks=auto] [--probe-only] [--base-seed=20260101]
- *     [--power-outage-start-tick=6000] [--power-outage-end-tick=12000]
+ *     [--power-outage-start-tick=9000] [--power-outage-end-tick=18000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
- *     [--controllers=fixed,green_wave] [--power=normal] [--webster-turn-weight]
- *     [--demand-scale=0.9] [--end-to-end-share=0.2]
+ *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
+ *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2]
+ *
+ * --power runs a subset of the power states, and --batch-id posts into an existing batch: a full batch split per power
+ * state (to stay inside the ~6-8 parallel-run memory limit) is one batch on /results. Pass the first part's warm-up
+ * to the others as --warmup-ticks=<n> so every part measures from the same point.
  *
  * --webster-turn-weight runs the Webster sensitivity: a protected turn's q scaled by its weight.
  * --demand-scale / --end-to-end-share run a volume or through-trip sweep point (see withSweepSettings()).
@@ -34,10 +38,12 @@
  * /results batch button does; pass a number to skip the probe. --probe-only
  * prints the probe's verdict and stops.
  *
- * A load-shedding condition's outage starts 15 min into the MEASURED window
+ * A load-shedding (total blackout) condition's outage starts 15 min into the MEASURED window
  * (i.e. warm-up doesn't count) and power is restored at 30 min, by default
  * (sim/batchSchedule.js) - override either tick explicitly if a different
- * schedule is needed. Both must fall strictly before --duration.
+ * schedule is needed. Both must fall strictly before --duration. A rolling-blackout
+ * condition runs batchSchedule.js's ROLLING_SCHEDULE (zones 1+3 dark 15-30 min, zone 2
+ * 30-45 min) - the corridor needs its `zone`s (scripts/add-zones.mjs).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,7 +54,7 @@ import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experim
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
-import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from '../resources/js/sim/batchSchedule.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from '../resources/js/sim/batchSchedule.js';
 import { buildStamp } from './buildStamp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,6 +81,7 @@ function parseArgs(argv) {
         websterTurnWeight: false,
         demandScale: 1,
         endToEndShare: null,
+        batchId: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -94,6 +101,7 @@ function parseArgs(argv) {
         else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
+        else if (key === 'batch-id') args.batchId = value;
     }
     // Default outage schedule: 15-30 min into the measured window, whatever its length.
     if (args.powerOutageStartTick == null) args.powerOutageStartTick = POWER_OUTAGE_START_TICK;
@@ -207,7 +215,11 @@ async function main() {
         .filter((c) => !args.power || args.power.includes(c.powerState));
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
     const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null ? 'sensitivity' : 'main';
-    const batchId = randomUUID();
+    const batchId = args.batchId ?? randomUUID();
+    console.log(`Batch ${batchId}${args.batchId ? ' (posting into an existing batch)' : ''}.`);
+    if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
+        throw new Error(`"${args.corridor}" has no zones - a rolling blackout needs them (scripts/add-zones.mjs).`);
+    }
     const totalRuns = matrix.length * args.reps;
     let completed = 0;
     let mismatches = 0;
@@ -223,6 +235,9 @@ async function main() {
         fs.mkdirSync(outDir, { recursive: true });
 
         let recoveryAcc = null;
+        const outage = condition.powerState !== 'normal';
+        const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
+        let darkWindows = null;
 
         for (let rep = 0; rep < args.reps; rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
@@ -233,6 +248,7 @@ async function main() {
                 warmupTicks: warmup.warmupTicks,
                 powerOutageStartTick: condition.powerState === 'load_shedding' ? args.powerOutageStartTick : null,
                 powerOutageEndTick: condition.powerState === 'load_shedding' ? args.powerOutageEndTick : null,
+                rollingSchedule,
                 corridorConfig,
                 durationTicks: args.duration,
                 dt: args.dt,
@@ -264,8 +280,9 @@ async function main() {
                 // curve, so the chart on /results averages the same population the "time to
                 // recovery" stat card does - posted once after the last rep, not batched like
                 // the rest.
-                if (condition.powerState === 'load_shedding') {
+                if (outage) {
                     recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { totalRows, arterialScopeRows, sideStreetRows });
+                    darkWindows = summary.darkWindows;
                 }
             }
 
@@ -288,9 +305,12 @@ async function main() {
                     sensorMode: condition.sensorMode,
                     corridorId: corridorConfig.id,
                     dt: args.dt,
-                    powerOutageStartTick: args.powerOutageStartTick,
-                    powerOutageEndTick: args.powerOutageEndTick,
+                    // A rolling blackout's curve spans its first cut to its final restore.
+                    powerOutageStartTick: rollingSchedule ? rollingSchedule[0].fromTick : args.powerOutageStartTick,
+                    powerOutageEndTick: rollingSchedule ? rollingSchedule[rollingSchedule.length - 1].toTick : args.powerOutageEndTick,
                     routingMode: args.routing ?? 'random',
+                    powerState: condition.powerState,
+                    darkWindows,
                 })
             );
         }

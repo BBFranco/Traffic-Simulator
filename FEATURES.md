@@ -457,6 +457,25 @@ counts, lane use and distances are simulation estimates (see the file's `meta`).
 - **Public toggles:** manual trigger button, or a scheduled
   off-minutes/period-minutes pair on the Simulator page.
 
+**Rolling blackout** (`rolling_blackout`, alongside `normal` and
+`load_shedding` = the total blackout):
+- Zones are a layout property: each horizontal road carries `"zone": 1|2|3`
+  (scripts/add-zones.mjs) and every junction on it takes that zone. Vertical
+  connectors (Jan Shoba, Hilda, Festival, Grosvenor, Dyer, Herold) have none.
+- Batch schedule (`ROLLING_SCHEDULE`): zones 1+3 dark minutes 15-30, zone 2
+  dark 30-45, all lit from 45. Only the junctions in dark zones become
+  all-way stops; queues carry across every switch.
+- All power sources resolve into one dark set per tick (`_computePower()`),
+  so the manual cut, scheduled outages and the rolling blackout can't leave a
+  junction dark when switching between them.
+- Zone wait is charged by junction (`ZONE_ACCOUNTING = 'by-junction-v1'`):
+  a car's wait counts to the zone of the junction it is queuing for, so a
+  vertical road's queue at a zone's junction is that zone's wait.
+- Total/arterial/side recovery is measured from the final restore (minute
+  45); each zone from its own restore. The Simulator page has a "Rolling
+  blackout" checkbox that plays the same schedule from the moment it is
+  ticked.
+
 **Recovery-time measurement** (`runHeadless.js`, `computeRecoverySeconds()`):
 1. Compute a pre-outage baseline (mean of the metric over all pre-outage ticks).
 2. Compute a threshold: `baseline × 0.8` for "higher is better" metrics
@@ -492,8 +511,9 @@ steady-state context.
 
 File: `resources/js/sim/experimentalMatrix.js`
 
-Defines the 12-condition batch matrix (controller mode × power state ×
-sensor mode), shared verbatim between the CLI batch driver and the Results
+Defines the 30-condition batch matrix (controller mode × power state ×
+sensor mode; normal, load_shedding, rolling_blackout × fixed, green wave,
+4 adaptive, 4 coordinated adaptive), shared verbatim between the CLI batch driver and the Results
 page's "Generate dataset" button so they can't drift apart:
 
 ```

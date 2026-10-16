@@ -11,14 +11,14 @@ class ResultsLockupBannerTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function storeRun(string $batchId, int $seed, ?array $lockup): void
+    private function storeRun(string $batchId, int $seed, ?array $lockup, string $power = 'load_shedding'): void
     {
         $this->postJson(route('simulation-runs.store'), ['runs' => [[
             'batch_id' => $batchId,
             'seed' => $seed,
             'controller_mode' => 'adaptive',
             'sensor_mode' => 'camera',
-            'power_state' => 'load_shedding',
+            'power_state' => $power,
             'corridor_config' => 'hatfield-realistic',
             'avg_wait_time' => 45,
             'avg_wait_time_arterial' => 40,
@@ -49,7 +49,22 @@ class ResultsLockupBannerTest extends TestCase
         $this->actingAs(User::factory()->create())
             ->getJson(route('results.data', ['routing' => 'random']))
             ->assertOk()
-            ->assertJsonPath('lockupLabel', 'Adaptive (camera), load shedding, seed 20270104 at south_hilda');
+            ->assertJsonPath('lockupLabel', 'Adaptive (camera), total blackout, seed 20270104 at south_hilda');
+    }
+
+    public function test_a_locked_rolling_blackout_run_is_named_by_its_power_state(): void
+    {
+        $this->storeRun((string) Str::uuid(), 20270101, [
+            'longestStillS' => 3150,
+            'cycles' => 1,
+            'firstCycle' => ['carIds' => [1, 2], 'nodeIds' => ['park_janshoba'], 'places' => [], 'heldS' => 60, 'atS' => 2000],
+            'isLockup' => true,
+        ], 'rolling_blackout');
+
+        $this->actingAs(User::factory()->create())
+            ->getJson(route('results.data', ['routing' => 'random']))
+            ->assertOk()
+            ->assertJsonPath('lockupLabel', 'Adaptive (camera), rolling blackout, seed 20270101 at park_janshoba');
     }
 
     public function test_a_batch_without_lockups_has_no_banner(): void
@@ -72,6 +87,6 @@ class ResultsLockupBannerTest extends TestCase
             ->getJson(route('results.data', ['routing' => 'random']))
             ->assertOk()
             ->assertJsonPath('lockupLabel', null)
-            ->assertJsonPath('starvedLabel', 'Adaptive (camera), load shedding, seed 20270129 at lynnwood_herold (518 s)');
+            ->assertJsonPath('starvedLabel', 'Adaptive (camera), total blackout, seed 20270129 at lynnwood_herold (518 s)');
     }
 }

@@ -32,6 +32,10 @@ for (const sensorMode of ['inductive_loop', 'magnetometer', 'radar', 'camera']) 
     for (const controllerMode of ['adaptive', 'coordinated_adaptive']) HASH_MATRIX.push({ seed: 1, controllerMode, loadShedding: false, routingMode: null, sensorMode, sensorSpecSet: 'legacy' });
 }
 
+// Rolling blackout (added 2026-10-16) - its keys captured on their own, the rest untouched.
+for (const controllerMode of ['fixed', 'green_wave', 'adaptive', 'coordinated_adaptive']) HASH_MATRIX.push({ seed: 1, controllerMode, loadShedding: false, routingMode: null, rolling: true });
+HASH_MATRIX.push({ seed: 1, controllerMode: 'coordinated_adaptive', loadShedding: false, routingMode: 'destination', rolling: true });
+
 /** runHeadless() cases whose summary must stay byte-identical: warm-up, outage window, both routing modes. */
 export const SUMMARY_MATRIX = [];
 for (const seed of [1, 2]) {
@@ -42,6 +46,8 @@ for (const seed of [1, 2]) {
 }
 for (const seed of [1, 2]) SUMMARY_MATRIX.push({ seed, controllerMode: 'coordinated_adaptive', routingMode: 'destination', outage: true });
 for (const sensorMode of ['magnetometer', 'radar', 'camera']) SUMMARY_MATRIX.push({ seed: 1, controllerMode: 'adaptive', routingMode: 'destination', outage: true, sensorMode });
+// Rolling blackout (added 2026-10-16): the same 1500-3000 outage span, split into its two stages.
+for (const controllerMode of ['fixed', 'coordinated_adaptive']) SUMMARY_MATRIX.push({ seed: 1, controllerMode, routingMode: 'destination', outage: false, rolling: true });
 
 export function caseKey(c) {
     return Object.values(c).join('|');
@@ -55,6 +61,7 @@ export function summaryArgs(c, corridorConfig) {
         warmupTicks: 1200,
         powerOutageStartTick: c.outage ? 1500 : null,
         powerOutageEndTick: c.outage ? 3000 : null,
+        rollingSchedule: c.rolling ? [{ zones: [1, 3], fromTick: 1500, toTick: 2250 }, { zones: [2], fromTick: 2250, toTick: 3000 }] : null,
         corridorConfig,
         durationTicks: 4800,
         routingMode: c.routingMode,

@@ -10,10 +10,10 @@
             {{ $modeLabels[$run['controller_mode']] }}
         </td>
         <td class="whitespace-nowrap px-4 py-2">
-            @if ($run['power_state'] === 'load_shedding')
-                <span class="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">Load shedding</span>
+            @if ($run['power_state'] === 'normal')
+                <span class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ $powerLabels[$run['power_state']] }}</span>
             @else
-                <span class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">Normal</span>
+                <span class="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">{{ $powerLabels[$run['power_state']] }}</span>
             @endif
         </td>
         <td class="whitespace-nowrap px-4 py-2 text-slate-500 dark:text-slate-400">

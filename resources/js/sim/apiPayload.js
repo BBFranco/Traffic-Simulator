@@ -67,6 +67,15 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, warmup
         throughput_per_min_pre_outage_side_street: summary.preOutageSideStreet?.throughputPerMin ?? null,
         throughput_per_min_during_outage_side_street: summary.duringOutageSideStreet?.throughputPerMin ?? null,
         throughput_per_min_post_recovery_side_street: summary.postRecoverySideStreet?.throughputPerMin ?? null,
+        // Rolling blackout only (null otherwise): its two stages, splitting "during" - zones 1+3 dark, then zone 2.
+        ...Object.fromEntries(['stage1', 'stage2'].flatMap((stage) => [
+            [`avg_wait_time_${stage}`, summary[stage]?.avgWaitTime ?? null],
+            [`throughput_per_min_${stage}`, summary[stage]?.throughputPerMin ?? null],
+            [`avg_wait_time_${stage}_arterial`, summary[`${stage}Arterial`]?.avgWaitTime ?? null],
+            [`throughput_per_min_${stage}_arterial`, summary[`${stage}Arterial`]?.throughputPerMin ?? null],
+            [`avg_wait_time_${stage}_side_street`, summary[`${stage}SideStreet`]?.avgWaitTime ?? null],
+            [`throughput_per_min_${stage}_side_street`, summary[`${stage}SideStreet`]?.throughputPerMin ?? null],
+        ])),
         // Full-run, network-wide distribution - a mean alone can't tell "everyone waits a
         // bit longer" apart from "most people are fine, a few are stranded".
         median_wait_time: summary.medianWait,
@@ -78,6 +87,8 @@ export function toApiPayload(summary, batchId, { warmupStationary = null, warmup
         max_wait_time_side_street: summary.maxWaitSideStreet ?? null,
         coordination_stats: summary.coordination ?? null,
         road_waits: summary.roadWaits ?? null,
+        // Per rolling-blackout zone (runHeadless.js's zoneSummary()) - every power state, so normal rows give the zone baselines.
+        zone_stats: summary.zoneStats ?? null,
         // Destination routing only (null under random turning): trips, their delay over free flow, and what didn't go to plan.
         trips: summary.routing?.trips ?? null,
         mean_trip_time: summary.routing?.meanTripS ?? null,

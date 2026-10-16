@@ -41,7 +41,7 @@ class RoadWaitMetrics
         // seed -> one road's mean wait per (corridor, power, seed, mode): the sensors averaged for the actuated modes.
         $perSeed = [];
         $roads = [];
-        foreach ($runs->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state}|{$run->seed}|{$run->controller_mode}") as $key => $group) {
+        foreach ($runs->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->power_state->value}|{$run->seed}|{$run->controller_mode}") as $key => $group) {
             [$corridor, $power, $seed, $mode] = explode('|', $key);
             foreach ($group as $run) {
                 foreach ($run->road_waits as $roadId => $road) {

@@ -678,6 +678,8 @@ function buildArterial(raw, laneWidthM) {
          * streets' (engine.js#_recordClear()), the mirror of a connector's `scope: "arterial"`.
          */
         scope: raw.scope === 'side' ? 'side' : 'arterial',
+        /** Rolling-blackout zone (1-3), or null - every junction on this road takes it (engine.js's zoneOfNode). */
+        zone: raw.zone ?? null,
         /** Initial controller mode from config; the UI overrides this per arterial at runtime. */
         mode: raw.mode ?? 'fixed',
         demand: buildDemand(raw.demand, raw.id, 8),
@@ -845,6 +847,8 @@ function connectorTrafficFields(raw, defaults, { lanes, laneWidthM, medianWidthM
         turnChance: raw.turnChance ?? raw.crossChance ?? 0,
         /** "arterial" for a major road modelled as a cross street (Jan Shoba): its traffic is measured in the arterial scope, not the side streets. */
         scope: raw.scope === 'arterial' ? 'arterial' : 'sideStreet',
+        /** Rolling-blackout zone (1-3) of a horizontal stub or slip, or null - a vertical connector has none (engine.js's _stampStatsKeys()). */
+        zone: raw.zone ?? null,
         /** `{ nodeId: { northbound: [...], ... } }` as written in the config - parsed per approach in buildApproaches(). */
         rawLaneUse: raw.laneUse ?? {},
         /** `{ nodeId: { northbound: { right: {...} }, ... } }` - same keys as `rawLaneUse`, parsed in buildApproaches(). */

@@ -41,6 +41,13 @@ function overlayColour([r, g, b], t) {
 export const ARTERIAL_ACCENTS = ['#0284c7', '#ea580c', '#8b5cf6', '#059669'];
 
 /**
+ * Rolling-blackout zone colours (1 south, 2 middle, 3 north) - the report's zone figure, rows and bands. The reference
+ * palette's first three categorical slots, validated all-pairs (dataviz validate_palette.js); the zone figure colours its
+ * name pills by zone instead of ARTERIAL_ACCENTS, so the two sets never share a figure.
+ */
+export const ZONE_TINTS = { 1: '#2a78d6', 2: '#eb6834', 3: '#1baf7a' };
+
+/**
  * Two map palettes, one per theme. Not an inversion of each other: on the light
  * map the asphalt is a pale grey and the markings go DARK, because white lane
  * lines on a light carriageway would be invisible. Both are legible schematics
@@ -283,6 +290,11 @@ export class LayoutRenderer {
             // Live statistics overlays (metrics/liveMetrics.js), off until ticked in the Layers box.
             showQueueHeatmap: false,
             showDensity: false,
+            /**
+             * The report's zone figure: { [zone]: colour } tints every road with a `zone` (scripts/add-zones.mjs) and
+             * colours its name pills by zone instead of by arterial - null (the default) draws the plain layout.
+             */
+            zoneTint: null,
         };
         /** `{ queues: [{ points, queue }], density: Map(road id -> veh/lane-km) }` from the latest live sample, or null. */
         this.liveOverlays = null;
@@ -508,6 +520,13 @@ export class LayoutRenderer {
         ctx.textAlign = 'left';
     }
 
+    /** An arterial's name-pill accent: its identity colour, or its zone's on the report's zone figure (options.zoneTint). */
+    _labelAccent(arterial, index) {
+        const { zoneTint } = this.options;
+        if (zoneTint) return zoneTint[arterial.zone] ?? PALETTE.labelMuted;
+        return ARTERIAL_ACCENTS[index % ARTERIAL_ACCENTS.length];
+    }
+
     /** Every road, drawn as a thick capped line along its centreline. */
     eachRoad(callback) {
         for (const arterial of this.layout.arterials) {
@@ -589,7 +608,7 @@ export class LayoutRenderer {
         const { ctx } = this;
         const { scale } = this.camera;
 
-        this.eachRoad(({ from, to, widthM, medianWidthM, heading, curvePoints }) => {
+        this.eachRoad(({ from, to, widthM, medianWidthM, heading, curvePoints, ref }) => {
             const w = Math.max(2, widthM * scale);
             ctx.lineCap = 'butt';
             ctx.lineJoin = 'round';
@@ -603,6 +622,16 @@ export class LayoutRenderer {
             ctx.lineWidth = w;
             this.pathRoad(from, to, curvePoints);
             ctx.stroke();
+
+            const tint = this.options.zoneTint?.[ref?.zone];
+            if (tint) {
+                ctx.save();
+                ctx.globalAlpha = 0.55;
+                ctx.strokeStyle = tint;
+                this.pathRoad(from, to, curvePoints);
+                ctx.stroke();
+                ctx.restore();
+            }
 
             // Median island down the middle of a divided street (drawJunctions() paints over it inside each junction).
             if (medianWidthM > 0) {
@@ -1293,7 +1322,7 @@ export class LayoutRenderer {
         if (scale > 0.5) {
             ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
             this.layout.arterials.forEach((arterial, ai) => {
-                const accent = ARTERIAL_ACCENTS[ai % ARTERIAL_ACCENTS.length];
+                const accent = this._labelAccent(arterial, ai);
                 const side = this.outwardSide(arterial);
                 const offM = arterial.roadWidthM / 2 + 26;
 
@@ -1316,7 +1345,7 @@ export class LayoutRenderer {
         // the edge of the view.
         ctx.font = '600 12px ui-sans-serif, system-ui, sans-serif';
         this.layout.arterials.forEach((arterial, ai) => {
-            const accent = ARTERIAL_ACCENTS[ai % ARTERIAL_ACCENTS.length];
+            const accent = this._labelAccent(arterial, ai);
             // The local tangent at the very start of the drawn road - the curve's own
             // start heading when curved (sampleAt(0) is where the approach lead-in's
             // extrapolation is anchored from), otherwise the arterial's one constant heading.

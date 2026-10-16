@@ -39,7 +39,7 @@ import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
-import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK } from './sim/batchSchedule.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from './sim/batchSchedule.js';
 import { describeLayoutDrift } from './sim/layoutDrift.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
@@ -192,6 +192,26 @@ function sensorRecoverySeries(timeline, metric, mode) {
     return sensorSeries[0].map((_, i) => one(sensorSeries.reduce((sum, s) => sum + s[i], 0) / sensorSeries.length));
 }
 
+/** A dark window's band label: every junction ("ALL ZONES DARK"), or the zones that went dark. */
+function darkWindowLabel(zones) {
+    if (!zones?.length) return 'ALL ZONES DARK';
+    return `${zones.length > 1 ? 'ZONES' : 'ZONE'} ${zones.join(' + ')} DARK`;
+}
+
+/** The timeline's shaded bands, one per dark window - a curve without windows gets one from its outage start/end. */
+function recoveryBands(timeline) {
+    const windows = timeline.darkWindows?.length
+        ? timeline.darkWindows
+        : timeline.sheddingStart != null && timeline.sheddingEnd != null
+          ? [{ zones: null, fromS: timeline.sheddingStart, toS: timeline.sheddingEnd }]
+          : [];
+    return windows.map((w) => ({
+        from: nearestSecondIndex(timeline.seconds, w.fromS),
+        to: nearestSecondIndex(timeline.seconds, w.toS),
+        label: darkWindowLabel(w.zones),
+    }));
+}
+
 /** Index of the sample closest to `target` - recovery ticks are sampled every few
  * seconds, so an outage timestamp rarely lands on an exact sample. */
 function nearestSecondIndex(seconds, target) {
@@ -249,18 +269,9 @@ function buildRecoveryLineChart(canvasId, metric, { tooltipUnit }) {
                 ...options,
                 plugins: {
                     ...options.plugins,
-                    // Category scale: the band is addressed by label index, not by seconds.
-                    // Null when no run's summary carried a power-event tick (a normal-power
-                    // representative run) - omit the plugin config entirely rather than pass -1 indices.
-                    ...(timeline.sheddingStart != null && timeline.sheddingEnd != null
-                        ? {
-                              xRangeBand: {
-                                  from: nearestSecondIndex(timeline.seconds, timeline.sheddingStart),
-                                  to: nearestSecondIndex(timeline.seconds, timeline.sheddingEnd),
-                                  label: 'LIGHTS DARK',
-                              },
-                          }
-                        : {}),
+                    // Category scale: each band is addressed by label index, not by seconds - one per
+                    // dark window (a rolling blackout's zones each get their own).
+                    xRangeBand: { bands: recoveryBands(timeline) },
                 },
             },
             plugins: [xRangeBand, lineEndLabels],
@@ -363,8 +374,8 @@ onThemeChange((theme) => {
 /* ------------------------------------------------------- batch-run button */
 
 /**
- * Build steps 17-18: runs the full 12-condition x 30-rep experimental matrix
- * (600 headless runs - 20 conditions x 30 reps) in this tab and populates `simulation_runs`.
+ * Build steps 17-18: runs the full 30-condition x 30-rep experimental matrix
+ * (900 headless runs - 30 conditions x 30 reps) in this tab and populates `simulation_runs`.
  *
  * `runHeadless()` here is the exact same function batch/runBatch.mjs calls
  * from the CLI - only the driver differs (a browser button instead of a
@@ -446,6 +457,7 @@ async function runBatch(demandOverrides, routingMode = 'random') {
                     warmupTicks: warmup.warmupTicks,
                     powerOutageStartTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_START_TICK : null,
                     powerOutageEndTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_END_TICK : null,
+                    rollingSchedule: condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null,
                     corridorConfig,
                     durationTicks: DURATION_TICKS,
                     dt: DT,
@@ -470,6 +482,8 @@ async function runBatch(demandOverrides, routingMode = 'random') {
         let jobIndex = 0;
         for (const condition of matrix) {
             let recoveryAcc = null;
+            let darkWindows = null;
+            const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
 
             for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
                 topUp(jobIndex);
@@ -480,11 +494,12 @@ async function runBatch(demandOverrides, routingMode = 'random') {
 
                 pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build: __BUILD_STAMP__ }));
 
-                // Every rep of a load-shedding condition folds into this condition's recovery
+                // Every rep of an outage condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
                 // card does - posted once after the last rep, not batched with the summary POSTs.
-                if (condition.powerState === 'load_shedding') {
+                if (condition.powerState !== 'normal') {
                     recoveryAcc = accumulateRecoveryTicks(recoveryAcc, { totalRows, arterialScopeRows, sideStreetRows });
+                    darkWindows = summary.darkWindows;
                 }
 
                 if (pending.length >= POST_BATCH_SIZE) {
@@ -499,9 +514,12 @@ async function runBatch(demandOverrides, routingMode = 'random') {
                         sensorMode: condition.sensorMode,
                         corridorId: corridorConfig.id,
                         dt: DT,
-                        powerOutageStartTick: POWER_OUTAGE_START_TICK,
-                        powerOutageEndTick: POWER_OUTAGE_END_TICK,
+                        // A rolling blackout's curve spans its first cut to its final restore.
+                        powerOutageStartTick: rollingSchedule ? rollingSchedule[0].fromTick : POWER_OUTAGE_START_TICK,
+                        powerOutageEndTick: rollingSchedule ? rollingSchedule[rollingSchedule.length - 1].toTick : POWER_OUTAGE_END_TICK,
                         routingMode,
+                        powerState: condition.powerState,
+                        darkWindows,
                     })
                 );
             }

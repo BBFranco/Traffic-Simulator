@@ -35,7 +35,7 @@
                                 <span class="me-2 inline-block h-2 w-2 rounded-full align-middle" style="background-color: {{ $modeColours[$row['controller_mode']] }}"></span>
                                 {{ $modeLabels[$row['controller_mode']] }}
                             </th>
-                            <td class="px-4 py-2">{{ $row['power_state'] === 'load_shedding' ? 'Load shedding' : 'Normal' }}</td>
+                            <td class="px-4 py-2">{{ $powerLabels[$row['power_state']] }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['runs'] }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['mean_wait'] === null ? '—' : number_format($row['mean_wait'], 1) }}</td>
                             <td class="px-4 py-2 text-right">{{ $row['mean_driveway_wait'] === null ? '—' : number_format($row['mean_driveway_wait'], 1) }}</td>

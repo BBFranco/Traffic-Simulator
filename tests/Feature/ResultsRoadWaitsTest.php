@@ -31,7 +31,15 @@ class ResultsRoadWaitsTest extends TestCase
             'pct_cleared_without_stop_side_street' => 25,
             'raw_config_json' => ['durationTicks' => 36000, 'dt' => 0.1],
             'road_waits' => ['jan_shoba' => ['name' => 'Jan Shoba', 'scope' => 'arterial', 'vehicles' => 100, 'meanWait' => $roadWait, 'maxWait' => 90]],
-            ...($married === null ? [] : ['coordination_stats' => ['marriedShare' => $married, 'nodes' => ['pt_grosvenor' => ['routeId' => 'pretorius', 'marriedShare' => $married]], 'routes' => ['pretorius' => ['meanCycleS' => 60, 'retunes' => 1]]]]),
+            ...($married === null ? [] : ['coordination_stats' => [
+                'marriedShare' => $married,
+                'nodes' => ['pt_grosvenor' => ['routeId' => 'pretorius', 'marriedShare' => $married]],
+                'routes' => ['pretorius' => ['meanCycleS' => 60, 'retunes' => 1]],
+                ...($power === 'rolling_blackout' ? [
+                    'byStage' => ['pre' => ['marriedShare' => 0.8, 'routeCycleS' => 70.9], 'stage1' => ['marriedShare' => 0.2, 'routeCycleS' => 64], 'stage2' => ['marriedShare' => 0.3, 'routeCycleS' => 66], 'post' => ['marriedShare' => 0.7, 'routeCycleS' => 71.1]],
+                    'restores' => [['atS' => 1800, 'stage' => 'stage2', 'holdS' => 20], ['atS' => 2700, 'stage' => 'post', 'holdS' => 30]],
+                ] : []),
+            ]]),
         ]]])->assertCreated();
     }
 
@@ -64,11 +72,12 @@ class ResultsRoadWaitsTest extends TestCase
         $this->assertArrayHasKey('average|normal', $payload['coordinationMetrics']['versus_adaptive']);
     }
 
-    public function test_per_junction_married_share_is_reported_for_load_shedding_too(): void
+    public function test_per_junction_married_share_is_reported_for_every_power_state(): void
     {
         $batchId = (string) Str::uuid();
         $this->storeRun($batchId, 1, 'coordinated_adaptive', 24, 10, married: 0.6);
         $this->storeRun($batchId, 2, 'coordinated_adaptive', 24, 10, power: 'load_shedding', married: 0.5);
+        $this->storeRun($batchId, 3, 'coordinated_adaptive', 24, 10, power: 'rolling_blackout', married: 0.4);
 
         $junction = $this->actingAs(User::factory()->create())
             ->getJson(route('results.data', ['routing' => 'random']))
@@ -77,5 +86,44 @@ class ResultsRoadWaitsTest extends TestCase
 
         $this->assertEquals(60.0, $junction['married_pct']);
         $this->assertEquals(50.0, $junction['married_pct_load_shedding']);
+        $this->assertEquals(['normal' => 60.0, 'load_shedding' => 50.0, 'rolling_blackout' => 40.0], $junction['married_pct_by_power']);
+    }
+
+    public function test_a_rolling_blackout_reports_jan_shobas_married_share_by_stage_and_its_resync_holds_per_restore(): void
+    {
+        $batchId = (string) Str::uuid();
+        $this->storeRun($batchId, 1, 'coordinated_adaptive', 24, 10, power: 'rolling_blackout', married: 0.4);
+
+        $condition = collect($this->actingAs(User::factory()->create())
+            ->getJson(route('results.data', ['routing' => 'random']))
+            ->assertOk()
+            ->json('coordinationMetrics.conditions'))
+            ->firstWhere('power_state', 'rolling_blackout');
+
+        $this->assertSame(['pre', 'stage1', 'stage2', 'post'], array_keys($condition['by_stage']));
+        $this->assertEquals(20.0, $condition['by_stage']['stage1']['married_pct']);
+        $this->assertEquals(70.9, $condition['by_stage']['pre']['route_cycle_s']);
+        $this->assertSame(['stage2', 'post'], array_column($condition['restores'], 'stage'));
+        $this->assertEquals(30.0, $condition['restores'][1]['hold_s']);
+        $this->assertEquals(1.0, $condition['restores'][0]['per_run']);
+    }
+
+    public function test_road_waits_are_split_by_the_rolling_blackout_too(): void
+    {
+        $batchId = (string) Str::uuid();
+        foreach ([1, 2, 3] as $seed) {
+            $this->storeRun($batchId, $seed, 'fixed', 40, 30, 'rolling_blackout');
+            $this->storeRun($batchId, $seed, 'adaptive', 30, 20 + $seed, 'rolling_blackout');
+        }
+
+        $road = collect($this->actingAs(User::factory()->create())
+            ->getJson(route('results.data', ['routing' => 'random']))
+            ->assertOk()
+            ->json('roadWaits'))
+            ->firstWhere('power_state', 'rolling_blackout');
+
+        $this->assertSame('jan_shoba', $road['road_id']);
+        $this->assertEquals(22.0, $road['adaptive']);
+        $this->assertEquals(-26.7, $road['adaptive_vs_fixed']['delta']);
     }
 }

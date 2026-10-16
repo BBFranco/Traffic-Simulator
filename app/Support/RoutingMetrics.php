@@ -28,7 +28,7 @@ class RoutingMetrics
             ->get()
             ->map(fn (object $row) => [
                 'controller_mode' => $row->controller_mode,
-                'power_state' => $row->power_state,
+                'power_state' => $row->power_state->value,
                 'runs' => (int) $row->runs,
                 'mean_wait' => $this->float($row->mean_wait),
                 'mean_trip_time' => $this->float($row->mean_trip_time),

@@ -2,6 +2,7 @@
 
 namespace App\View\Composers;
 
+use App\Enums\PowerState;
 use Illuminate\View\View;
 
 /**
@@ -18,6 +19,7 @@ class SimulatorComposer
             'sensorModes' => $this->sensorModes(),
             'toneClasses' => $this->toneClasses(),
             'controllerModeOptions' => $this->controllerModeOptions(),
+            'replayPowerOptions' => PowerState::options(),
             'speedOptions' => $this->speedOptions(),
             'viewOptions' => $this->viewOptions(),
             'liveKpis' => $this->liveKpis(),
