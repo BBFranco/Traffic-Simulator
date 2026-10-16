@@ -13,10 +13,11 @@ const SENSORS = ['inductive_loop', 'magnetometer', 'radar', 'camera'];
 const TICKS = 1500;
 const config = loadCorridor('hatfield-realistic');
 
-function digestRun(sensorMode, controllerMode, sensorErrors = false) {
+function digestRun(sensorMode, controllerMode, sensorErrors = false, errors = null) {
     const { engine } = startEngine({ config, seed: 1, controllerMode, sensorMode });
     engine.sensorErrors = sensorErrors;
     engine.setSensorMode(sensorMode);
+    if (errors) engine.sensorSpec = { ...engine.sensorSpec, errors: { ...engine.sensorSpec.errors, ...errors } };
     const observations = createHash('sha1');
     const decisions = createHash('sha1');
     const sample = engine._sampleDetectors.bind(engine);
@@ -56,6 +57,7 @@ for (const controllerMode of ['adaptive', 'coordinated_adaptive']) {
     });
 }
 
-test('sensor errors on (sensitivity runs): radar draws its count noise from its own streams', () => {
-    assert.ok(digestRun('radar', 'adaptive', true).sensorDraws > 0);
+test('sensor errors on (sensitivity runs): a miss rate draws from the detectors\' own streams; count noise draws nothing, as counts never decide a switch', () => {
+    assert.equal(digestRun('radar', 'adaptive', true).sensorDraws, 0);
+    assert.ok(digestRun('radar', 'adaptive', true, { missP: 0.01 }).sensorDraws > 0);
 });

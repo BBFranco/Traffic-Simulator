@@ -53,7 +53,7 @@ import {
 import { carShapeFor } from './carShapes.js';
 import { observeDetector, emptyFrame, applyErrors, countWithNoise, sensorAvailable } from './sensors.js';
 import { sensorSpecFor, latencyTicks, DEFAULT_SENSOR_SPEC_SET } from './sensorSpecs.js';
-import { isOtherCallSufficient } from './demandEstimator.js';
+import { isOtherCallSufficient, legacyCallSufficient } from './demandEstimator.js';
 import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection } from './corridor.js';
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
@@ -742,8 +742,8 @@ export class SimulationEngine {
                     arterial,
                     controller: null,
                     controllerType: null,
-                    // Per-phase "how long has this approach had an uninterrupted call" - the demand estimator's
-                    // memory (demandEstimator.js: debounce for presence-only sensors, maxCallWaitS for counting ones).
+                    // Per-phase "how long has this approach had an uninterrupted call" - the shared call rule's
+                    // memory (demandEstimator.js: a call persisting callDebounceS is served, whatever the sensor).
                     callPersistenceS: [0, 0],
                     /** Per-phase count samples for a spec's count filter (demandEstimator.js). */
                     countSamples: [[], []],
@@ -4617,9 +4617,12 @@ export class SimulationEngine {
         return frames.turn[phase].some((f) => f.actuated);
     }
 
-    /** The common demand estimate (demandEstimator.js) on the waiting phase's frames. */
+    /** The shared call rule (demandEstimator.js) on the waiting phase's frames - the legacy set keeps the pre-overhaul rule. */
     _isOtherCallSufficient(info, frames, currentPhase, dt) {
-        return isOtherCallSufficient({
+        if (this.sensorSpecSet !== 'legacy') {
+            return isOtherCallSufficient({ state: info, currentPhase, frames: frames.phase[1 - currentPhase], params: info.controller.params, dt });
+        }
+        return legacyCallSufficient({
             state: info,
             currentPhase,
             frames: frames.phase[1 - currentPhase],
@@ -4922,7 +4925,7 @@ export class SimulationEngine {
             const { minGreen, maxGreen, gapOutS, minCallToSwitch, callDebounceS, maxCallWaitS } = controller.params;
             const otherQueue = phase === 0 ? crossQueue : arterialQueue; // ground truth, for the human reading this
             const otherName = phase === 0 ? 'cross street' : 'arterial';
-            const usesNarrowSensor = !this.sensorSpec.outputs.count;
+            const usesNarrowSensor = this.sensorSpecSet !== 'legacy' || !this.sensorSpec.outputs.count;
             const gapRemaining = gapOutS - controller.secondsSinceLastDetection;
 
             if (phaseElapsed < minGreen) return `≥ ${(minGreen - phaseElapsed).toFixed(1)}s (holding minimum green)`;
@@ -4930,7 +4933,7 @@ export class SimulationEngine {
             if (usesNarrowSensor) {
                 const persistedS = info.callPersistenceS[1 - phase];
                 if (persistedS < callDebounceS)
-                    return `≤ ${(maxGreen - phaseElapsed).toFixed(1)}s (call on ${otherName} too new to trust - can't count depth on this sensor, capped by max green)`;
+                    return `≤ ${(maxGreen - phaseElapsed).toFixed(1)}s (call on ${otherName} too new to trust - served once it has persisted ${callDebounceS}s, capped by max green)`;
             } else if (otherQueue < minCallToSwitch && info.callPersistenceS[1 - phase] < maxCallWaitS) {
                 const capS = Math.min(maxGreen - phaseElapsed, maxCallWaitS - info.callPersistenceS[1 - phase]);
                 return `≤ ${capS.toFixed(1)}s (small call on ${otherName}, served once it has waited ${maxCallWaitS}s or at max green)`;

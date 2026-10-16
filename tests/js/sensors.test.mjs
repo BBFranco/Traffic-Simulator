@@ -1,12 +1,12 @@
 /**
- * Sensor observation models (sensorSpecs.js, sensors.js) and the common demand estimator (demandEstimator.js).
+ * Sensor observation models (sensorSpecs.js, sensors.js) and the shared call rule (demandEstimator.js).
  * Observable differences are asserted only where the declared models predict them.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { observeDetector } from '../../resources/js/sim/sensors.js';
 import { SENSOR_SPEC_SETS, latencyTicks, sensorSpecFor, sensorSpecHash } from '../../resources/js/sim/sensorSpecs.js';
-import { isOtherCallSufficient } from '../../resources/js/sim/demandEstimator.js';
+import { isOtherCallSufficient, legacyCallSufficient } from '../../resources/js/sim/demandEstimator.js';
 import { ADAPTIVE_DEFAULTS } from '../../resources/js/sim/equations.js';
 
 const STOP_LINE_M = 200;
@@ -106,32 +106,43 @@ test('every sensor shares one gap-out zone: 0-8 m upstream of the line', () => {
     }
 });
 
-/** Runs the estimator for `ticks` ticks on the same frame and returns the first tick it says yes (or null). */
-function ticksUntilCall(outputs, frame, ticks = 200, dt = 0.1) {
+/** Runs `rule` for `ticks` ticks on the same frame and returns the first tick it says yes (or null). */
+function ticksUntilCall(rule, outputs, frame, ticks = 200, dt = 0.1) {
     const state = { callPersistenceS: [0, 0], countSamples: [[], []] };
     for (let t = 1; t <= ticks; t += 1) {
-        if (isOtherCallSufficient({ state, currentPhase: 0, frames: [frame], readCount: (f) => f.count, outputs, params: ADAPTIVE_DEFAULTS, dt, simTimeS: t * dt })) return t;
+        if (rule({ state, currentPhase: 0, frames: [frame], readCount: (f) => f.count, outputs, params: ADAPTIVE_DEFAULTS, dt, simTimeS: t * dt })) return t;
     }
     return null;
 }
 
-test('the estimator decides on what a frame carries, not on which sensor: identical outputs give identical decisions', () => {
-    const presenceOnly = { presence: true, count: null, queueExtent: null };
-    assert.equal(ticksUntilCall(SENSOR_SPEC_SETS.field.inductive_loop.outputs, presenceOnly), ticksUntilCall({ ...SENSOR_SPEC_SETS.field.magnetometer.outputs, queueExtent: false }, presenceOnly));
+test('one call rule for every sensor: whatever a frame also carries (count, queue extent), presence persisting callDebounceS decides', () => {
+    const frames = [
+        { presence: true, count: null, queueExtent: null }, // loop
+        { presence: true, count: null, queueExtent: true }, // magnetometer, queue over the advance puck
+        { presence: true, count: 12, queueExtent: null }, // radar / camera, a long queue
+        { presence: true, count: 1, queueExtent: null }, // radar / camera, a lone car
+    ];
+    for (const mode of SENSORS) {
+        for (const frame of frames) assert.equal(ticksUntilCall(isOtherCallSufficient, SENSOR_SPEC_SETS.field[mode].outputs, frame), 30, `${mode} ${JSON.stringify(frame)}`);
+    }
+    assert.equal(ticksUntilCall(isOtherCallSufficient, SENSOR_SPEC_SETS.field.camera.outputs, { presence: false, count: 0, queueExtent: null }), null);
 });
 
-test('estimator: presence-only waits out the debounce; a queue over an advance zone calls at once', () => {
-    const outputs = SENSOR_SPEC_SETS.field.magnetometer.outputs;
-    assert.equal(ticksUntilCall(outputs, { presence: true, count: null, queueExtent: false }), 30);
-    assert.equal(ticksUntilCall(outputs, { presence: true, count: null, queueExtent: true }), 1);
+test('the call clock restarts when presence drops', () => {
+    const state = { callPersistenceS: [0, 0] };
+    const step = (presence) => isOtherCallSufficient({ state, currentPhase: 0, frames: [{ presence }], params: ADAPTIVE_DEFAULTS, dt: 0.1 });
+    for (let t = 0; t < 25; t += 1) step(true);
+    step(false);
+    assert.equal(state.callPersistenceS[1], 0);
 });
 
-test('estimator: a count at the threshold calls at once unfiltered, after the window when smoothed, and a short queue after maxCallWaitS', () => {
-    const camera = SENSOR_SPEC_SETS.field.camera.outputs;
-    const radar = SENSOR_SPEC_SETS.field.radar.outputs;
-    assert.equal(ticksUntilCall(camera, { presence: true, count: 5, queueExtent: null }), 1);
-    assert.equal(ticksUntilCall(radar, { presence: true, count: 5, queueExtent: null }), 30);
-    assert.equal(ticksUntilCall(camera, { presence: true, count: 1, queueExtent: null }), 101); // 0.1 s summed 100 times falls a hair short of 10 s
+test('legacy rule (legacy spec set only): an advance-zone queue calls at once, counting sensors wait for 5 vehicles or 10 s', () => {
+    const f = SENSOR_SPEC_SETS.field;
+    assert.equal(ticksUntilCall(legacyCallSufficient, f.magnetometer.outputs, { presence: true, count: null, queueExtent: false }), 30);
+    assert.equal(ticksUntilCall(legacyCallSufficient, f.magnetometer.outputs, { presence: true, count: null, queueExtent: true }), 1);
+    assert.equal(ticksUntilCall(legacyCallSufficient, f.camera.outputs, { presence: true, count: 5, queueExtent: null }), 1);
+    assert.equal(ticksUntilCall(legacyCallSufficient, f.radar.outputs, { presence: true, count: 5, queueExtent: null }), 30);
+    assert.equal(ticksUntilCall(legacyCallSufficient, f.camera.outputs, { presence: true, count: 1, queueExtent: null }), 101); // 0.1 s summed 100 times falls a hair short of 10 s
 });
 
 test('the per-run spec hash tracks behaviour, not citations: a re-sourced number keeps it, a changed number or errors switch moves it', () => {

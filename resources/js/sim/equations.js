@@ -198,9 +198,9 @@ export const ADAPTIVE_DEFAULTS = {
     gapOutS: 3, // seconds - end the phase once no vehicle has actuated the stop-line detector for this long
     minGreen: 8, // seconds - never cut a phase shorter than this
     maxGreen: 45, // seconds - hard cap regardless of queue
-    minCallToSwitch: 5, // vehicles - the other phase needs at least this many queued before it's worth switching to (wide-window sensors only, see engine.js's _isOtherCallSufficient() - ignored once maxGreen is hit or the call has waited maxCallWaitS)
-    callDebounceS: 3, // seconds - narrow-window sensors (inductive_loop, magnetometer) can't count queue depth, so instead the other phase's call must simply persist this long before it's worth switching to; radar's noisy count is averaged over this same window before it's compared to minCallToSwitch
-    maxCallWaitS: 10, // seconds - wide-window sensors (radar, camera): a call below minCallToSwitch that has been held this long is served anyway, so a short queue isn't stranded until maxGreen
+    callDebounceS: 3, // seconds - the shared call rule (demandEstimator.js): the other phase's call must persist this long before it's worth switching to, for every sensor
+    minCallToSwitch: 5, // vehicles - legacy sensor spec set only (demandEstimator.js's legacyCallSufficient()): counting sensors needed this many queued
+    maxCallWaitS: 10, // seconds - legacy sensor spec set only: a counting sensor's call below minCallToSwitch was served after this long
 };
 
 /**
