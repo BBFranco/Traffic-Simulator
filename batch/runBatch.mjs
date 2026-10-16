@@ -62,7 +62,7 @@ import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
 import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from '../resources/js/sim/batchSchedule.js';
-import { buildStamp } from './buildStamp.mjs';
+import { buildStamp, simFingerprint } from './buildStamp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -208,20 +208,11 @@ function lockupJunctions(lockup) {
 
 const CHECKPOINT_DIR = path.join(ROOT, 'results', 'batches');
 
-/** Short sha1 of the corridor config and of every file under resources/js/sim - a resume must run exactly what the batch started on. */
+/** Short sha1 of the corridor config and of the simulation code (buildStamp.mjs) - a resume must run exactly what the batch started on. */
 function fingerprint(corridorConfig) {
-    const hash = createHash('sha1');
-    const walk = (dir) => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) walk(full);
-            else if (entry.name.endsWith('.js')) hash.update(entry.name).update(fs.readFileSync(full));
-        }
-    };
-    walk(path.join(ROOT, 'resources', 'js', 'sim'));
     return {
         corridor: createHash('sha1').update(JSON.stringify(corridorConfig)).digest('hex').slice(0, 12),
-        sim: hash.digest('hex').slice(0, 12),
+        sim: simFingerprint(ROOT),
     };
 }
 

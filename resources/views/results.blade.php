@@ -74,7 +74,7 @@
             <div id="batch-modal-streets" class="space-y-3"></div>
 
             <label class="mt-4 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
-                <input type="checkbox" id="batch-modal-destination" class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
+                <input type="checkbox" id="batch-modal-destination" checked class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
                 <span>
                     <span class="font-semibold">Destination routing</span>
                     <span class="block text-slate-500 dark:text-slate-400">
@@ -125,13 +125,47 @@
         Runs: <span id="starved-label">{{ $starvedLabel }}</span>.
     </div>
 
+    {{-- results.js shows it when the latest batch stopped short of the full matrix. --}}
+    <div id="resume-banner" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 text-[12px] leading-relaxed text-sky-900 dark:border-sky-500/25 dark:bg-sky-500/5 dark:text-sky-200">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="min-w-0 flex-1">
+                <strong class="font-semibold">Unfinished batch.</strong>
+                <span id="resume-banner-label"></span>
+                Resume runs only what it is missing, on its own settings and seeds.
+            </span>
+            <button type="button" id="resume-batch-button"
+                    class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
+                Resume batch
+            </button>
+        </div>
+    </div>
+
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">
             <span id="batch-progress-label" class="font-semibold">Starting...</span>
-            <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+            <span class="flex items-baseline gap-3">
+                <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+                <button type="button" id="batch-details-toggle" aria-expanded="false" aria-controls="batch-details"
+                        class="inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">
+                    Details
+                    <svg id="batch-details-chevron" class="h-3.5 w-3.5 transition-transform" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+                </button>
+            </span>
         </div>
         <div class="h-2.5 w-full overflow-hidden rounded-full bg-sky-200/70 dark:bg-sky-900/60">
             <div id="batch-progress-bar" class="h-full w-0 rounded-full bg-sky-600 transition-[width] duration-150 dark:bg-sky-400"></div>
+        </div>
+        {{-- What kind of batch this is, always shown; the per-condition breakdown opens under Details (results.js's batch monitor). --}}
+        <p id="batch-progress-meta" class="mt-2 text-[11px] text-sky-800 dark:text-sky-300/90"></p>
+        <div id="batch-details" class="hidden mt-3 border-t border-sky-200 pt-3 dark:border-sky-500/20">
+            <dl id="batch-details-facts" class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px] text-sky-900 sm:grid-cols-3 lg:grid-cols-4 dark:text-sky-200"></dl>
+            <div id="batch-details-conditions" class="mt-4 grid gap-5 lg:grid-cols-3"></div>
+            <p class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-sky-800/80 dark:text-sky-300/70">
+                <span class="inline-flex items-center gap-1.5"><span class="h-2 w-3 rounded-sm bg-sky-300 dark:bg-sky-700"></span>saved earlier (resumed)</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2 w-3 rounded-sm bg-sky-600 dark:bg-sky-400"></span>finished this run</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2 w-3 rounded-sm bg-amber-400"></span>running now</span>
+                <span>Reruns rebuild a cut-off condition's recovery curve and are not posted again.</span>
+            </p>
         </div>
     </div>
 

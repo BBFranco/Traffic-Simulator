@@ -400,27 +400,36 @@ const batchProgressBar = document.getElementById('batch-progress-bar');
 const batchProgressLabel = document.getElementById('batch-progress-label');
 const batchProgressPct = document.getElementById('batch-progress-pct');
 const batchRunningBadge = document.getElementById('batch-running-badge');
+const resumeBanner = document.getElementById('resume-banner');
+const resumeBannerLabel = document.getElementById('resume-banner-label');
+const resumeButton = document.getElementById('resume-batch-button');
 
 let batchRunning = false;
 
 batchButton?.addEventListener('click', () => openBatchModal());
 
 /**
- * Runs the 600-run batch (unchanged from before the modal existed - only the
+ * Runs the 900-run batch (unchanged from before the modal existed - only the
  * corridorConfig passed in can now carry per-street demand overrides from the
  * modal, see runBatchModal.js's docblock at the top of this section).
+ *
+ * `resume` (the latest batch's stored progress, /results/latest-batch-progress) carries a stopped batch on instead:
+ * its own id, start time, warm-up, corridor, routing and demand, and only the runs the server doesn't hold yet. Runs are
+ * taken and posted in matrix order, so what a batch stored is always a prefix of it; an outage condition cut off half
+ * way reruns its stored reps without posting them, only to rebuild its recovery curve from every rep again.
  *
  * @param {Record<string, {min: number, max: number, saturationFlowPerLanePerHour: number}>} demandOverrides
  *   Keyed by street id (arterial or connector), spec §10-11.
  */
-async function runBatch(demandOverrides, routingMode = 'random') {
+async function runBatch(demandOverrides, routingMode = 'random', resume = null) {
     if (batchRunning) return;
     batchRunning = true;
     batchButton.disabled = true;
+    resumeBanner?.classList.add('hidden');
     batchRunningBadge?.classList.remove('hidden');
     document.getElementById('fake-data-badge')?.classList.add('hidden');
     document.getElementById('fake-data-banner')?.classList.add('hidden');
-    if (batchProgressLabel) batchProgressLabel.textContent = 'Starting...';
+    if (batchProgressLabel) batchProgressLabel.textContent = resume ? 'Resuming...' : 'Starting...';
     if (batchProgressBar) batchProgressBar.style.width = '0%';
     if (batchProgressPct) batchProgressPct.textContent = '0%';
     batchProgressWrap?.classList.remove('hidden');
@@ -429,29 +438,53 @@ async function runBatch(demandOverrides, routingMode = 'random') {
 
     try {
         pool = new BatchWorkerPool(batchWorkerCount());
-        const corridorId = document.getElementById('filter-corridor')?.value || data.defaultCorridorId;
+        const corridorId = resume?.corridorConfig ?? (document.getElementById('filter-corridor')?.value || data.defaultCorridorId);
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
-        const batchId = newBatchId();
-        const batchStartedAt = new Date().toISOString();
-        const totalRuns = matrix.length * REPS_PER_CONDITION;
+        const batchId = resume?.batchId ?? newBatchId();
+        const batchStartedAt = resume?.batchStartedAt ?? new Date().toISOString();
+        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size });
 
-        const warmup = await probeWarmup(pool, corridorConfig, routingMode);
+        if (!resume) batchMonitor.phase('Warm-up probe');
+        const warmup = resume?.warmup ?? (await probeWarmup(pool, corridorConfig, routingMode));
+        batchMonitor.setWarmup(warmup);
+        const stored = new Set((resume?.runs ?? []).map((run) => storedRunKey(run.controllerMode, run.sensorMode, run.powerState, run.seed)));
+
+        // Per condition, the reps still to run: none for a condition the server holds in full, the missing ones
+        // otherwise - plus, for a cut-off outage condition, its stored reps again (not posted) for the recovery curve.
+        const plan = matrix
+            .map((condition) => {
+                const reps = Array.from({ length: REPS_PER_CONDITION }, (_, rep) => {
+                    const seed = seedForRep(BASE_SEED, condition.powerState, rep);
+                    return { seed, isStored: stored.has(storedRunKey(condition.controllerMode, conditionSensor(condition), condition.powerState, seed)) };
+                });
+                const isOutage = condition.powerState !== 'normal';
+                if (reps.every((rep) => rep.isStored)) return null;
+                return { condition, reps: isOutage ? reps : reps.filter((rep) => !rep.isStored) };
+            })
+            .filter(Boolean);
+        const totalRuns = plan.reduce((sum, { reps }) => sum + reps.length, 0);
+        batchMonitor.setPlan(matrix, plan);
+        const post = async (runs) => {
+            await postSimulationRuns(runs);
+            batchMonitor.posted(runs.length);
+        };
 
         let completed = 0;
         let pending = [];
         const startedAtMs = performance.now();
-        if (batchProgressLabel) batchProgressLabel.textContent = `Running ${pool.size} at a time...`;
+        if (batchProgressLabel) batchProgressLabel.textContent = resume ? `Resuming with ${stored.size} runs already saved, ${pool.size} at a time...` : `Running ${pool.size} at a time...`;
 
         // Every run in matrix order; the pool works through them side by side, but results are
         // taken (and each condition's recovery curve built) in the same order as one at a time,
         // so the dataset is identical. Only a few pool-widths run ahead, since every finished
         // run holds its per-tick rows until it is taken.
-        const jobs = matrix.flatMap((condition) =>
-            Array.from({ length: REPS_PER_CONDITION }, (_, rep) => ({
+        const jobs = plan.flatMap(({ condition, reps }) =>
+            reps.map(({ seed, isStored }) => ({
                 condition,
+                isStored,
                 options: {
-                    seed: seedForRep(BASE_SEED, condition.powerState, rep),
+                    seed,
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
                     warmupTicks: warmup.warmupTicks,
@@ -470,8 +503,10 @@ async function runBatch(demandOverrides, routingMode = 'random') {
         const topUp = (takenIndex) => {
             while (started < jobs.length && started < takenIndex + runAhead) {
                 const job = jobs[started];
+                batchMonitor.jobStarted(job.condition.key);
                 job.result = pool.run('run', job.options).then((result) => {
                     completed += 1;
+                    batchMonitor.jobFinished(job.condition.key, job.isStored);
                     updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs);
                     return result;
                 });
@@ -480,19 +515,25 @@ async function runBatch(demandOverrides, routingMode = 'random') {
         };
 
         let jobIndex = 0;
-        for (const condition of matrix) {
+        for (const { condition, reps } of plan) {
             let recoveryAcc = null;
             let darkWindows = null;
             const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
 
-            for (let rep = 0; rep < REPS_PER_CONDITION; rep += 1) {
+            for (let rep = 0; rep < reps.length; rep += 1) {
                 topUp(jobIndex);
+                const { isStored } = jobs[jobIndex];
                 // eslint-disable-next-line no-await-in-loop
                 const { sideStreetRows, totalRows, arterialScopeRows, summary } = await jobs[jobIndex].result;
                 jobs[jobIndex] = null; // let its rows go
                 jobIndex += 1;
 
-                pending.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build: __BUILD_STAMP__ }));
+                if (!isStored) {
+                    const payload = toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build: __BUILD_STAMP__ });
+                    // What a resume needs to run the same demand again.
+                    payload.raw_config_json.demandOverrides = demandOverrides;
+                    pending.push(payload);
+                }
 
                 // Every rep of an outage condition folds into this condition's recovery
                 // curve, so the chart averages the same population the "time to recovery" stat
@@ -503,7 +544,7 @@ async function runBatch(demandOverrides, routingMode = 'random') {
                 }
 
                 if (pending.length >= POST_BATCH_SIZE) {
-                    await postSimulationRuns(pending.splice(0, pending.length));
+                    await post(pending.splice(0, pending.length));
                 }
             }
 
@@ -522,11 +563,12 @@ async function runBatch(demandOverrides, routingMode = 'random') {
                         darkWindows,
                     })
                 );
+                batchMonitor.curvePosted(condition.key);
             }
         }
 
         if (batchProgressLabel) batchProgressLabel.textContent = 'Saving results...';
-        if (pending.length) await postSimulationRuns(pending);
+        if (pending.length) await post(pending);
 
         if (batchProgressLabel) batchProgressLabel.textContent = 'Refreshing charts...';
         // Show what was just run: its routing mode's latest batch.
@@ -546,16 +588,74 @@ async function runBatch(demandOverrides, routingMode = 'random') {
         // A dev/dissertation tool, not consumer UI - a blocking alert is an
         // acceptable, unmissable failure signal here.
         // eslint-disable-next-line no-alert
-        alert(`Batch run failed: ${error.message}`);
+        alert(`Batch run failed: ${error.message}\n\nWhat it saved is kept - Resume batch carries on from there.`);
     } finally {
         pool?.terminate();
+        batchMonitor.end();
         batchRunning = false;
         batchButton.disabled = false;
         batchButton.textContent = `Generate dataset (${buildExperimentalMatrix().length * REPS_PER_CONDITION} runs)`;
         batchRunningBadge?.classList.add('hidden');
         batchProgressWrap?.classList.add('hidden');
+        checkForUnfinishedBatch();
     }
 }
+
+/** A stored run as resume matches it: condition and seed - fixed-time stores no sensor (apiPayload.js). */
+function storedRunKey(controllerMode, sensorMode, powerState, seed) {
+    return [controllerMode, sensorMode ?? '', powerState, seed].join('|');
+}
+
+function conditionSensor(condition) {
+    return condition.controllerMode === 'fixed' ? null : condition.sensorMode;
+}
+
+/** The latest batch's stored progress, kept for the Resume button while it is short of the full matrix. */
+let unfinishedBatch = null;
+
+/** Shows the Resume banner when the latest batch stopped short of the full matrix (a crash, a closed tab, a server restart). */
+async function checkForUnfinishedBatch() {
+    if (!resumeBanner || !data.latestBatchProgressUrl) return;
+    let progress = null;
+    try {
+        const response = await fetch(data.latestBatchProgressUrl, { headers: { Accept: 'application/json' } });
+        progress = response.ok ? await response.json() : null;
+    } catch {
+        progress = null;
+    }
+    const expected = buildExperimentalMatrix().length * REPS_PER_CONDITION;
+    unfinishedBatch = progress && progress.runs.length < expected ? progress : null;
+    resumeBanner.classList.toggle('hidden', !unfinishedBatch || batchRunning);
+    if (!unfinishedBatch) return;
+    const startedAt = unfinishedBatch.batchStartedAt ? new Date(unfinishedBatch.batchStartedAt).toLocaleString() : 'an unknown time';
+    resumeBannerLabel.textContent = `The batch started ${startedAt} (${unfinishedBatch.corridorConfig}, ${unfinishedBatch.routingMode} routing) stopped with ${unfinishedBatch.runs.length} of ${expected} runs saved.`;
+}
+
+/**
+ * Whether this page may carry the batch on: the same simulation code (the build stamp's `sim` fingerprint) - or, for a
+ * batch stamped before the fingerprint existed, the user's word for it after seeing both commits.
+ */
+function confirmResume(progress) {
+    const then = progress.build ?? {};
+    const now = __BUILD_STAMP__ ?? {};
+    if (then.sim && now.sim) {
+        if (then.sim === now.sim) return true;
+        // eslint-disable-next-line no-alert
+        alert(`This batch ran on different simulation code (${then.commit ?? '?'}, sim ${then.sim}) than this page has (${now.commit ?? '?'}, sim ${now.sim}). Resuming would mix two engines in one batch - start a new one instead.`);
+        return false;
+    }
+    const code = (stamp) => `${stamp.commit ?? 'unknown commit'}${stamp.dirty ? ' with uncommitted changes' : ''}`;
+    const demand = progress.demandOverrides ? '' : "\n\nIts demand settings were not recorded, so it resumes on the corridor's own demand (the dialog's defaults).";
+    // eslint-disable-next-line no-alert
+    return window.confirm(`This batch was started on code ${code(then)}; this page runs ${code(now)}. It predates the simulation-code fingerprint, so the match can't be checked - resume only if resources/js/sim is unchanged since.${demand}\n\nResume?`);
+}
+
+resumeButton?.addEventListener('click', () => {
+    if (!unfinishedBatch || batchRunning || !confirmResume(unfinishedBatch)) return;
+    runBatch(unfinishedBatch.demandOverrides ?? {}, unfinishedBatch.routingMode ?? 'random', unfinishedBatch);
+});
+
+checkForUnfinishedBatch();
 
 /**
  * One id shared by every run of this batch - /results only shows each corridor's latest batch.
@@ -597,6 +697,7 @@ async function probeWarmup(pool, corridorConfig, routingMode) {
     let finished = 0;
     const showProgress = () => {
         if (batchProgressLabel) batchProgressLabel.textContent = `Finding warm-up · ${finished}/${totalRuns} probe runs (${pool.size} at a time)...`;
+        batchMonitor.phase(`Warm-up probe · ${finished}/${totalRuns}`);
     };
     showProgress();
     const probes = await Promise.all(
@@ -731,6 +832,230 @@ function formatDuration(ms) {
     if (m) return `${m}m ${String(s).padStart(2, '0')}s`;
     return `${s}s`;
 }
+
+/* ---------------------------------------------------------- batch monitor */
+
+const batchMeta = document.getElementById('batch-progress-meta');
+const batchDetails = document.getElementById('batch-details');
+const batchDetailsToggle = document.getElementById('batch-details-toggle');
+const batchDetailsChevron = document.getElementById('batch-details-chevron');
+const batchDetailsFacts = document.getElementById('batch-details-facts');
+const batchDetailsConditions = document.getElementById('batch-details-conditions');
+const BATCH_DETAILS_KEY = 'results.batchDetailsOpen';
+const SENSOR_SHORT = { inductive_loop: 'loop', radar: 'radar', camera: 'camera', magnetometer: 'magnetometer' };
+
+function setBatchDetailsOpen(open) {
+    batchDetails?.classList.toggle('hidden', !open);
+    batchDetailsChevron?.classList.toggle('rotate-180', open);
+    batchDetailsToggle?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    try {
+        localStorage.setItem(BATCH_DETAILS_KEY, open ? '1' : '0');
+    } catch {
+        // Private window or blocked storage - the panel just opens closed next time.
+    }
+}
+
+batchDetailsToggle?.addEventListener('click', () => setBatchDetailsOpen(batchDetails?.classList.contains('hidden')));
+try {
+    setBatchDetailsOpen(localStorage.getItem(BATCH_DETAILS_KEY) === '1');
+} catch {
+    setBatchDetailsOpen(false);
+}
+
+/**
+ * The running batch as the Details panel shows it: what kind of batch (routing, corridor, new or resumed, warm-up,
+ * workers) and, per condition, its runs saved earlier, finished, running and still to go, plus its recovery curve.
+ * Display only - it reads what runBatch() reports and steers nothing.
+ */
+const batchMonitor = {
+    state: null,
+    frame: null,
+
+    begin({ batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize }) {
+        this.state = { batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
+        this.render();
+    },
+
+    phase(text) {
+        if (!this.state) return;
+        this.state.phase = text;
+        this.render();
+    },
+
+    setWarmup(warmup) {
+        this.state.warmup = warmup;
+        this.render();
+    },
+
+    /** `plan` from runBatch(): every condition of the matrix, with how many of its reps are saved, to run, and rerun. */
+    setPlan(matrix, plan) {
+        const planned = new Map(plan.map((entry) => [entry.condition.key, entry]));
+        this.state.conditions = matrix.map((condition) => {
+            const entry = planned.get(condition.key);
+            const saved = entry ? entry.reps.filter((rep) => rep.isStored).length : REPS_PER_CONDITION;
+            const isOutage = condition.powerState !== 'normal';
+            return {
+                condition,
+                saved: entry ? saved : REPS_PER_CONDITION,
+                toRun: entry ? entry.reps.filter((rep) => !rep.isStored).length : 0,
+                reruns: entry && isOutage ? saved : 0,
+                finished: 0,
+                rerunsDone: 0,
+                running: 0,
+                isOutage,
+                // A condition held in full before this run already posted its curve.
+                curve: entry ? 'pending' : isOutage ? 'posted' : null,
+            };
+        });
+        this.state.runsTotal = plan.reduce((sum, { reps }) => sum + reps.length, 0);
+        this.state.phase = 'Running';
+        this.render();
+    },
+
+    _row(key) {
+        return this.state?.conditions.find((row) => row.condition.key === key);
+    },
+
+    jobStarted(key) {
+        const row = this._row(key);
+        if (row) row.running += 1;
+        this.render();
+    },
+
+    jobFinished(key, isStored) {
+        const row = this._row(key);
+        if (row) {
+            row.running = Math.max(0, row.running - 1);
+            if (isStored) row.rerunsDone += 1;
+            else row.finished += 1;
+        }
+        this.state.runsDone += 1;
+        this.render();
+    },
+
+    posted(count) {
+        this.state.posted += count;
+        this.render();
+    },
+
+    curvePosted(key) {
+        const row = this._row(key);
+        if (row) row.curve = 'posted';
+        this.render();
+    },
+
+    end() {
+        this.state = null;
+    },
+
+    render() {
+        if (this.frame != null) return;
+        this.frame = requestAnimationFrame(() => {
+            this.frame = null;
+            this._draw();
+        });
+    },
+
+    _draw() {
+        const s = this.state;
+        if (!s) return;
+        const routing = s.routingMode === 'destination' ? 'Destination routing' : 'Random turning';
+        const kind = s.resumed ? `resumed batch (${s.storedCount} runs saved earlier)` : 'new batch';
+        const warmupMin = s.warmup ? Math.round((s.warmup.warmupTicks * DT) / 60) : null;
+        if (batchMeta) {
+            batchMeta.textContent = [routing, s.corridorId, kind, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
+        }
+
+        const elapsedMs = performance.now() - s.startedAtMs;
+        const remainingMs = s.runsDone ? (elapsedMs / s.runsDone) * (s.runsTotal - s.runsDone) : null;
+        const curves = s.conditions.filter((row) => row.isOutage);
+        const facts = [
+            ['Routing', routing],
+            ['Corridor', s.corridorId],
+            ['Batch', s.resumed ? `Resumed · ${s.storedCount} saved earlier` : 'New'],
+            ['Batch id', s.batchId.slice(0, 8), s.batchId],
+            ['Started', s.batchStartedAt ? new Date(s.batchStartedAt).toLocaleString() : '-'],
+            ['Phase', s.phase],
+            ['Warm-up', s.warmup ? `${warmupMin} min (${s.warmup.warmupTicks} ticks)${s.warmup.stationary === false ? ' · not stationary' : ''}` : 'probing...'],
+            ['Workers', `${s.poolSize} runs at a time`],
+            ['Runs this session', `${s.runsDone} / ${s.runsTotal}`],
+            ['Posted', `${s.posted} runs`],
+            ['Recovery curves', `${curves.filter((row) => row.curve === 'posted').length} / ${curves.length} posted`],
+            ['Elapsed', `${formatDuration(elapsedMs)}${remainingMs != null && s.runsDone < s.runsTotal ? ` · ~${formatDuration(remainingMs)} left` : ''}`],
+        ];
+        batchDetailsFacts?.replaceChildren(
+            ...facts.map(([term, value, title]) => {
+                const wrap = document.createElement('div');
+                const dt = document.createElement('dt');
+                dt.className = 'text-[10px] font-semibold uppercase tracking-wider text-sky-700/80 dark:text-sky-400/80';
+                dt.textContent = term;
+                const dd = document.createElement('dd');
+                dd.className = 'tabular-nums';
+                dd.textContent = value;
+                if (title) dd.title = title;
+                wrap.append(dt, dd);
+                return wrap;
+            })
+        );
+
+        const byPower = new Map();
+        for (const row of s.conditions) {
+            if (!byPower.has(row.condition.powerState)) byPower.set(row.condition.powerState, []);
+            byPower.get(row.condition.powerState).push(row);
+        }
+        batchDetailsConditions?.replaceChildren(
+            ...[...byPower].map(([power, rows]) => {
+                const column = document.createElement('section');
+                const heading = document.createElement('h3');
+                heading.className = 'mb-2 text-[10px] font-semibold uppercase tracking-wider text-sky-800 dark:text-sky-300';
+                const done = rows.reduce((sum, row) => sum + row.saved + row.finished, 0);
+                heading.textContent = `${POWER_LABELS[power] ?? power} · ${done} / ${rows.length * REPS_PER_CONDITION}`;
+                const list = document.createElement('ul');
+                list.className = 'space-y-1.5';
+                list.append(...rows.map((row) => this._conditionRow(row)));
+                column.append(heading, list);
+                return column;
+            })
+        );
+    },
+
+    _conditionRow(row) {
+        const { condition } = row;
+        const item = document.createElement('li');
+        item.className = 'grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-[11px] text-sky-900 dark:text-sky-200';
+
+        const label = document.createElement('span');
+        label.className = 'truncate';
+        const sensor = condition.controllerMode === 'adaptive' || condition.controllerMode === 'coordinated_adaptive' ? ` · ${SENSOR_SHORT[condition.sensorMode] ?? condition.sensorMode}` : '';
+        label.textContent = `${MODE_LABELS[condition.controllerMode] ?? condition.controllerMode}${sensor}`;
+        label.title = condition.key;
+
+        const track = document.createElement('span');
+        track.className = 'flex h-2 overflow-hidden rounded-full bg-sky-200/70 dark:bg-sky-900/60';
+        const segment = (count, colour) => {
+            const bar = document.createElement('span');
+            bar.className = `h-full ${colour}`;
+            bar.style.width = `${(count / REPS_PER_CONDITION) * 100}%`;
+            return bar;
+        };
+        track.append(segment(row.saved, 'bg-sky-300 dark:bg-sky-700'), segment(row.finished, 'bg-sky-600 dark:bg-sky-400'), segment(Math.min(row.running, row.toRun - row.finished), 'bg-amber-400'));
+
+        const status = document.createElement('span');
+        status.className = 'whitespace-nowrap tabular-nums';
+        const count = row.saved + row.finished;
+        const complete = count >= REPS_PER_CONDITION && row.curve !== 'pending';
+        const parts = [`${count}/${REPS_PER_CONDITION}`];
+        if (row.reruns) parts.push(`rerun ${row.rerunsDone}/${row.reruns}`);
+        if (row.isOutage) parts.push(row.curve === 'posted' ? 'curve ✓' : 'curve -');
+        parts.push(complete ? 'done' : row.running ? 'running' : count || row.rerunsDone ? 'waiting' : 'queued');
+        status.textContent = parts.join(' · ');
+        if (complete) status.classList.add('text-emerald-700', 'dark:text-emerald-400');
+        else if (row.running) status.classList.add('font-semibold');
+
+        item.append(label, track, status);
+        return item;
+    },
+};
 
 function updateBatchProgress(completed, total, conditionKey, elapsedMs) {
     const pct = Math.round((completed / total) * 100);

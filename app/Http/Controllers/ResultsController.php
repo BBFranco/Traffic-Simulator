@@ -152,6 +152,7 @@ class ResultsController extends Controller
                 // The user's own copy, only to warn in the run modal when it differs from the template the batch runs on.
                 'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
+                'latestBatchProgressUrl' => route('results.latest-batch-progress'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,
             ],
