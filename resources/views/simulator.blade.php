@@ -117,7 +117,7 @@
                                dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20
                                data-[active=true]:border-rose-600 data-[active=true]:bg-rose-600 data-[active=true]:text-white data-[active=true]:hover:bg-rose-500
                                dark:data-[active=true]:border-rose-500">
-                    <span data-when-inactive>Trigger load shedding</span>
+                    <span data-when-inactive>Trigger total blackout</span>
                     <span data-when-active class="hidden">Restore power</span>
                 </button>
 
@@ -126,7 +126,7 @@
                     <span class="min-w-0 flex-1">
                         <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
                             Scheduled rotating outages
-                            <x-info-tip text="Eskom-style load shedding: the power goes off on a repeating schedule." />
+                            <x-info-tip text="Repeating total blackouts: every junction goes dark on a fixed schedule." />
                         </span>
                         <span class="mt-2 flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-slate-400">
                             <input type="number" id="outage-off-minutes" value="2" min="1" max="60" class="w-14 {{ $tinyInput }}">
@@ -215,8 +215,8 @@
                     <input type="checkbox" id="rolling-blackout" class="mt-0.5 {{ $checkbox }}">
                     <span class="min-w-0 flex-1">
                         <span class="flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200">
-                            Rolling blackout
-                            <x-info-tip text="The batch's rolling blackout, starting now: zones 1 (south) and 3 (north) go dark for 15 minutes, then zone 2 (the middle) for 15 minutes, then every light is back. A dark junction is an all-way stop; queues carry over from one stage to the next. Unticking it restores every junction at once. It replaces the power cut and scheduled outages while it runs. Only available on a layout with zones." />
+                            Load shedding
+                            <x-info-tip text="The batch's load shedding, starting now: zones 1 (south) and 3 (north) go dark for 15 minutes, then zone 2 (the middle) for 15 minutes, then every light is back. A dark junction is an all-way stop; queues carry over from one stage to the next. Unticking it restores every junction at once. It replaces the power cut and scheduled outages while it runs. Only available on a layout with zones." />
                         </span>
                         <span id="rolling-blackout-status" class="mt-1 block text-[10px] text-slate-600 dark:text-slate-400"></span>
                     </span>

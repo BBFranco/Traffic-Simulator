@@ -323,7 +323,7 @@
             still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
             regardless of the selector above - a single mean can't tell "everyone waits a bit
             longer" apart from "most people are fine, a few are stranded", but that distribution
-            isn't split by arterial/side-street. Under a rolling blackout, during-outage covers both
+            isn't split by arterial/side-street. Under load shedding, during-outage covers both
             stages and post-recovery starts at the final restore.
         </p>
 

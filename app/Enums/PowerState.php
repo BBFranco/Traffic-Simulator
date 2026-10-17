@@ -4,8 +4,8 @@ namespace App\Enums;
 
 /**
  * The power a run's signals had (runHeadless.js's powerState). `load_shedding` keeps its old value but reads as a
- * total blackout: every junction dark at once. A rolling blackout darkens zones in stages (batchSchedule.js's
- * ROLLING_SCHEDULE).
+ * total blackout: every junction dark at once. `rolling_blackout` reads as load shedding: zones dark in stages
+ * (batchSchedule.js's ROLLING_SCHEDULE).
  */
 enum PowerState: string
 {
@@ -18,7 +18,7 @@ enum PowerState: string
         return match ($this) {
             self::Normal => 'Normal',
             self::LoadShedding => 'Total blackout',
-            self::RollingBlackout => 'Rolling blackout',
+            self::RollingBlackout => 'Load shedding',
         };
     }
 

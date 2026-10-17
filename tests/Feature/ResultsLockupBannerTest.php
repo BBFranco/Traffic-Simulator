@@ -64,7 +64,7 @@ class ResultsLockupBannerTest extends TestCase
         $this->actingAs(User::factory()->create())
             ->getJson(route('results.data', ['routing' => 'random']))
             ->assertOk()
-            ->assertJsonPath('lockupLabel', 'Adaptive (camera), rolling blackout, seed 20270101 at park_janshoba');
+            ->assertJsonPath('lockupLabel', 'Adaptive (camera), load shedding, seed 20270101 at park_janshoba');
     }
 
     public function test_a_batch_without_lockups_has_no_banner(): void

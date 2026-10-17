@@ -131,7 +131,7 @@ class SimulationRunStoreTest extends TestCase
         $this->actingAs(User::factory()->create())->get(route('simulator'))
             ->assertOk()
             ->assertSee('Total blackout')
-            ->assertSee('Rolling blackout');
+            ->assertSee('Load shedding');
     }
 
     public function test_a_random_run_leaves_the_routing_metrics_empty(): void

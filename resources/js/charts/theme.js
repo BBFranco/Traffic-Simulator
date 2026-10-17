@@ -87,7 +87,7 @@ export const MODE_LABELS = {
 export const POWER_LABELS = {
     normal: 'Normal power',
     load_shedding: 'Total blackout',
-    rolling_blackout: 'Rolling blackout',
+    rolling_blackout: 'Load shedding',
 };
 
 export const SENSOR_LABELS = {

@@ -70,8 +70,8 @@ const OUTAGES = {
         ],
     },
     rolling_blackout: {
-        title: 'Rolling blackout',
-        subtitle: 'Zones go dark in turn (zones 1 + 3, then zone 2) - by road and by zone, against fixed-time at normal power and in the rolling blackout',
+        title: 'Load shedding',
+        subtitle: 'Zones go dark in turn (zones 1 + 3, then zone 2) - by road and by zone, against fixed-time at normal power and under load shedding',
         scopes: SCOPES,
         segments: [
             { key: 'pre_outage', label: 'Pre-outage' },
@@ -796,7 +796,7 @@ function drawCover(report, data, variants, corridorLayout) {
 
     report.heading(
         'Headline - ITS vs fixed-time (Total scope)',
-        `Paired against Webster-timed fixed-time control on the same seeds and power state; ± is the 95% CI on the per-seed differences. Wait (mean, median, P95): negative is better. Throughput and cleared-without-stopping: positive is better. Every sensor on its own, and the main-arterial and side-street scopes, follow in section ${SECTION.load_shedding} (total blackout) and section ${SECTION.rolling_blackout} (rolling blackout, with the zone scopes in ${partRef('rolling_blackout', 'zone1')}-${partRef('rolling_blackout', 'zone3')}).`
+        `Paired against Webster-timed fixed-time control on the same seeds and power state; ± is the 95% CI on the per-seed differences. Wait (mean, median, P95): negative is better. Throughput and cleared-without-stopping: positive is better. Every sensor on its own, and the main-arterial and side-street scopes, follow in section ${SECTION.load_shedding} (total blackout) and section ${SECTION.rolling_blackout} (load shedding, with the zone scopes in ${partRef('rolling_blackout', 'zone1')}-${partRef('rolling_blackout', 'zone3')}).`
     );
     comparisonTable(report, data, variants, SCOPES[0], { compact: true, powers: data.powerStates });
 }
@@ -810,7 +810,7 @@ function outageWindowCard(data) {
     const lines = [];
     if (stamp?.outageStartMinutes != null && stamp?.outageEndMinutes != null) lines.push(`Total ${stamp.outageStartMinutes}–${stamp.outageEndMinutes} min`);
     if (stamp?.rollingSchedule?.length) {
-        lines.push(`Rolling ${stamp.rollingSchedule.map((w) => `Z${(w.zones ?? []).join('+')} ${minute(w.fromS)}–${minute(w.toS)}`).join(', ')}`);
+        lines.push(`Load shedding ${stamp.rollingSchedule.map((w) => `Z${(w.zones ?? []).join('+')} ${minute(w.fromS)}–${minute(w.toS)}`).join(', ')}`);
     }
     if (lines.length) return lines.join('\n');
 
@@ -840,7 +840,7 @@ function drawZoneLegend(report) {
     y += 4.2;
     doc.setFontSize(7.5).setTextColor(...COLOURS.muted);
     const note = doc.splitTextToSize(
-        `Rolling-blackout zones: horizontal roads tinted by zone; a junction takes its horizontal road's zone. Vertical roads (${VERTICAL_ROADS}) are untinted - their queues count to the zone of the junction they queue at.`,
+        `Load-shedding zones: horizontal roads tinted by zone; a junction takes its horizontal road's zone. Vertical roads (${VERTICAL_ROADS}) are untinted - their queues count to the zone of the junction they queue at.`,
         CONTENT_WIDTH - 2
     );
     doc.text(note, PAGE.margin + 1, y);
@@ -1410,7 +1410,7 @@ function drawCoordination(report, data, metrics, number) {
 
     report.heading(
         'Per sensor and power state',
-        'Married: share of junction-time on the common cycle (the rest ran as plain adaptive - selective coordination, the resync hold after power returns, or dark in a blackout). Cycle: mean common cycle on the routes where a junction married - each arterial, and Jan Shoba coordinated along its own length. Re-plans: self-tuning updates per measured hour, all routes. Resync holds: per run, after power returns (a rolling blackout restores twice). Messages / holds / early ends: platoon messages posted, arterial greens held for an arriving platoon, cross greens ended early for one - per measured hour.'
+        'Married: share of junction-time on the common cycle (the rest ran as plain adaptive - selective coordination, the resync hold after power returns, or dark in a blackout). Cycle: mean common cycle on the routes where a junction married - each arterial, and Jan Shoba coordinated along its own length. Re-plans: self-tuning updates per measured hour, all routes. Resync holds: per run, after power returns (load shedding restores twice). Messages / holds / early ends: platoon messages posted, arterial greens held for an arriving platoon, cross greens ended early for one - per measured hour.'
     );
     const sensorRank = (sensor) => SENSOR_ORDER.indexOf(sensor);
     const conditions = [...metrics.conditions].sort((a, b) => POWER_ORDER.indexOf(a.power_state) - POWER_ORDER.indexOf(b.power_state) || sensorRank(a.sensor_mode) - sensorRank(b.sensor_mode));
@@ -1534,7 +1534,7 @@ function sensorNotes() {
 /** The rolling schedule as words, e.g. "zones 1 + 3 dark minutes 15-30, then zone 2 dark minutes 30-45". */
 function rollingScheduleText(data) {
     const schedule = data.batchStamp?.rollingSchedule;
-    if (!schedule?.length) return 'zones 1 + 3 dark minutes 15-30, then zone 2 dark minutes 30-45 (this batch ran no rolling blackout)';
+    if (!schedule?.length) return 'zones 1 + 3 dark minutes 15-30, then zone 2 dark minutes 30-45 (this batch ran no load shedding)';
     return schedule.map((w) => `zone${w.zones.length > 1 ? 's' : ''} ${w.zones.join(' + ')} dark minutes ${minute(w.fromS)}-${minute(w.toS)}`).join(', then ');
 }
 
@@ -1557,7 +1557,7 @@ function seedNote(data) {
     const offset = (power) => seedForRep(0, power, 0) - seedForRep(0, 'normal', 0);
     const outages = POWER_ORDER.filter(isOutage);
     if (outages.every((power) => offset(power) === 0)) {
-        return `One seed set for every power state: rep r of a condition runs on base seed + r at normal power, in the total blackout and in the rolling blackout alike, so all three are paired seed for seed.${range}`;
+        return `One seed set for every power state: rep r of a condition runs on base seed + r at normal power, in the total blackout and under load shedding alike, so all three are paired seed for seed.${range}`;
     }
     const parts = outages.map((power) =>
         offset(power) === 0 ? `the ${powerLabel(power).toLowerCase()} runs on the normal-power seeds (base + rep)` : `the ${powerLabel(power).toLowerCase()} on its own set, offset by +${offset(power)} (base + ${offset(power)} + rep)`
@@ -1586,19 +1586,19 @@ function drawMethodNotes(report, data, number) {
         ...(settleNote ? [settleNote] : []),
         seedNote(data),
         `Wait accounting: ${stamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
-        `Total blackout (section ${SECTION.load_shedding}): every junction loses power ${stamp?.outageStartMinutes ?? '-'} min into the measured window and gets it back at ${stamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour. Stored as load_shedding; only the label changed.`,
-        `Rolling blackout (section ${SECTION.rolling_blackout}): ${rollingScheduleText(data)}, then everything lit. A dark junction falls back to all-way-stop control; the lit junctions keep their own controller. Cars and queues are untouched at every switch, so a queue built up in stage 1 carries into stage 2, and stage 2's into the restore. The segmented tables split the dark time into stage 1 and stage 2; "Post" starts at the final restore.`,
-        `Zones (the rolling-blackout scopes, ${zoneRefs}): zone 1 south, zone 2 middle, zone 3 north - groups of horizontal roads, read from the layout's own zone fields. A junction takes its horizontal road's zone, so a roundabout or all-way stop follows its road too; Mall Road (zone 1) has no signals to go dark. Vertical roads (${VERTICAL_ROADS}) carry no zone.`,
+        `Total blackout (section ${SECTION.load_shedding}): every junction loses power ${stamp?.outageStartMinutes ?? '-'} min into the measured window and gets it back at ${stamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour. Stored internally as load_shedding - not the load shedding of section ${SECTION.rolling_blackout}, which is stored as rolling_blackout.`,
+        `Load shedding (section ${SECTION.rolling_blackout}): ${rollingScheduleText(data)}, then everything lit. A dark junction falls back to all-way-stop control; the lit junctions keep their own controller. Cars and queues are untouched at every switch, so a queue built up in stage 1 carries into stage 2, and stage 2's into the restore. The segmented tables split the dark time into stage 1 and stage 2; "Post" starts at the final restore.`,
+        `Zones (the load-shedding scopes, ${zoneRefs}): zone 1 south, zone 2 middle, zone 3 north - groups of horizontal roads, read from the layout's own zone fields. A junction takes its horizontal road's zone, so a roundabout or all-way stop follows its road too; Mall Road (zone 1) has no signals to go dark. Vertical roads (${VERTICAL_ROADS}) carry no zone.`,
         `Zone wait is charged by junction (${stamp?.zoneAccounting ?? 'by-junction-v1'}): a car's wait goes to the zone of the junction it is queuing for - the junction at the end of its lane, or the one it is in. So Jan Shoba's queue at a zone 2 junction is zone 2 wait. This is unlike the total, main-arterial and side-street scopes, which are charged by road. A trip through several zones is in each, with only the wait it built up there, so the zone scopes overlap and don't sum to the total. Normal-power rows carry the zone figures too, as their baselines.`,
-        `Recovery: the total, main-arterial and side-street scopes are timed from the FINAL restore (minute ${minute(restoreSeconds(data, 'rolling_blackout', SCOPES[0]) ?? 2700)} in the rolling blackout); each zone from its own restore. Zones 1 and 3 come back while zone 2 is still dark next to them, so their recovery includes spillback from zone 2 and is not comparable to total-blackout recovery.`,
-        `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout and for rolling zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for rolling zone 2 and the rolling total, main-arterial and side-street scopes. The caps differ because each is the whole time left after its own restore - one shared cap would cut the total blackout short or run past the end of the rolling window. So recovery figures compare controllers within a section only, never across sections: a capped mean under a 60-minute cap and one under 45 minutes are not on the same scale.`,
-        'Outage window card on the cover: "Total" is the total blackout\'s dark minutes; "Rolling Z1+3 15–30, Z2 30–45" reads zones 1 and 3 dark minutes 15-30, then zone 2 dark minutes 30-45 - minutes into the measured window.',
+        `Recovery: the total, main-arterial and side-street scopes are timed from the FINAL restore (minute ${minute(restoreSeconds(data, 'rolling_blackout', SCOPES[0]) ?? 2700)} under load shedding); each zone from its own restore. Zones 1 and 3 come back while zone 2 is still dark next to them, so their recovery includes spillback from zone 2 and is not comparable to total-blackout recovery.`,
+        `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout and for load-shedding zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for load-shedding zone 2 and the load-shedding total, main-arterial and side-street scopes. The caps differ because each is the whole time left after its own restore - one shared cap would cut the total blackout short or run past the end of the load-shedding window. So recovery figures compare controllers within a section only, never across sections: a capped mean under a 60-minute cap and one under 45 minutes are not on the same scale.`,
+        'Outage window card on the cover: "Total" is the total blackout\'s dark minutes; "Load shedding Z1+3 15–30, Z2 30–45" reads zones 1 and 3 dark minutes 15-30, then zone 2 dark minutes 30-45 - minutes into the measured window.',
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state, so each outage section carries its own normal-power baseline rows. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where both sides recover throughput within 30 s, its delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
         'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.',
-        `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every rolling stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). A rolling blackout fires the resync hold twice, once per restore.`,
+        `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total and zone scopes only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
         ...thresholdNotes(data),

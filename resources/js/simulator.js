@@ -290,7 +290,7 @@ function railSummaries() {
         'rail-power': () => {
             const parts = [state.power.loadShedding ? 'Power cut' : 'Normal'];
             if (state.power.scheduledOutages) parts.push('scheduled outages');
-            if (el.rollingBlackoutInput?.checked) parts.push('rolling blackout');
+            if (el.rollingBlackoutInput?.checked) parts.push('load shedding');
             return parts.join(' · ');
         },
         'rail-demand': () => {
@@ -1328,8 +1328,8 @@ el.loadSheddingToggle.addEventListener('click', () => {
  * outages), then hands off to `tickEngine()` (via `replay`) to reset stats at the end of
  * warm-up and trigger/restore power automatically at the run's original outage ticks.
  */
-const REPLAY_POWER_LABELS = { normal: 'at normal power', load_shedding: 'with a total blackout', rolling_blackout: 'with a rolling blackout' };
-const REPLAY_POWER_NOUNS = { normal: 'normal-power', load_shedding: 'total-blackout', rolling_blackout: 'rolling-blackout' };
+const REPLAY_POWER_LABELS = { normal: 'at normal power', load_shedding: 'with a total blackout', rolling_blackout: 'with load shedding' };
+const REPLAY_POWER_NOUNS = { normal: 'normal-power', load_shedding: 'total-blackout', rolling_blackout: 'load-shedding' };
 
 async function startReplay(run) {
     if (run.corridor_config !== state.corridorId) {
@@ -1507,11 +1507,11 @@ function renderPowerPill({ powerState, darkZones, simTimeS }) {
     el.powerPill.querySelector('span').className = DOT_TONES[tone];
     if (powerState === 'rolling_blackout') {
         const leftS = rollingStageLeftS(simTimeS);
-        const text = `Rolling: zones ${[...darkZones].sort().join('+')} dark${leftS == null ? '' : ` ${clockText(leftS)}`}`;
+        const text = `Load shedding: zones ${[...darkZones].sort().join('+')} dark${leftS == null ? '' : ` ${clockText(leftS)}`}`;
         el.powerLabel.textContent = text;
         el.rollingBlackoutStatus.textContent = text;
     } else {
-        el.powerLabel.textContent = powerState === 'load_shedding' ? 'Load shedding' : 'Power normal';
+        el.powerLabel.textContent = powerState === 'load_shedding' ? 'Total blackout' : 'Power normal';
         if (el.rollingBlackoutInput.checked && rollingWindows) el.rollingBlackoutStatus.textContent = `Starts in ${clockText(Math.max(0, rollingWindows[0].fromS - simTimeS))}`;
     }
 }
