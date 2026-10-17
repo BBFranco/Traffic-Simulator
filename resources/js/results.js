@@ -35,6 +35,7 @@ import {
 } from './charts/theme.js';
 import { Fireworks } from 'fireworks-js';
 import { onThemeChange } from './theme.js';
+import { currentBuildStamp } from './buildStampClient.js';
 import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js';
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
@@ -443,7 +444,9 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         const matrix = buildExperimentalMatrix();
         const batchId = resume?.batchId ?? newBatchId();
         const batchStartedAt = resume?.batchStartedAt ?? new Date().toISOString();
-        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size });
+        // A resume keeps the batch's own stamp, as runBatch.mjs --resume does - confirmResume() has checked the sim matches.
+        const build = resume?.build ?? (await currentBuildStamp(__BUILD_STAMP__));
+        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
 
         if (!resume) batchMonitor.phase('Warm-up probe');
         const warmup = resume?.warmup ?? (await probeWarmup(pool, corridorConfig, routingMode));
@@ -529,7 +532,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                 jobIndex += 1;
 
                 if (!isStored) {
-                    const payload = toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build: __BUILD_STAMP__ });
+                    const payload = toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build });
                     // What a resume needs to run the same demand again.
                     payload.raw_config_json.demandOverrides = demandOverrides;
                     pending.push(payload);
@@ -635,23 +638,23 @@ async function checkForUnfinishedBatch() {
  * Whether this page may carry the batch on: the same simulation code (the build stamp's `sim` fingerprint) - or, for a
  * batch stamped before the fingerprint existed, the user's word for it after seeing both commits.
  */
-function confirmResume(progress) {
+async function confirmResume(progress) {
     const then = progress.build ?? {};
-    const now = __BUILD_STAMP__ ?? {};
+    const now = await currentBuildStamp(__BUILD_STAMP__);
     if (then.sim && now.sim) {
         if (then.sim === now.sim) return true;
         // eslint-disable-next-line no-alert
         alert(`This batch ran on different simulation code (${then.commit ?? '?'}, sim ${then.sim}) than this page has (${now.commit ?? '?'}, sim ${now.sim}). Resuming would mix two engines in one batch - start a new one instead.`);
         return false;
     }
-    const code = (stamp) => `${stamp.commit ?? 'unknown commit'}${stamp.dirty ? ' with uncommitted changes' : ''}`;
+    const code = (stamp) => `${stamp.commit ?? 'unknown commit'}${stamp.dirty == null ? ' (tree state unknown)' : stamp.dirty ? ' with uncommitted changes' : ''}`;
     const demand = progress.demandOverrides ? '' : "\n\nIts demand settings were not recorded, so it resumes on the corridor's own demand (the dialog's defaults).";
     // eslint-disable-next-line no-alert
     return window.confirm(`This batch was started on code ${code(then)}; this page runs ${code(now)}. It predates the simulation-code fingerprint, so the match can't be checked - resume only if resources/js/sim is unchanged since.${demand}\n\nResume?`);
 }
 
-resumeButton?.addEventListener('click', () => {
-    if (!unfinishedBatch || batchRunning || !confirmResume(unfinishedBatch)) return;
+resumeButton?.addEventListener('click', async () => {
+    if (!unfinishedBatch || batchRunning || !(await confirmResume(unfinishedBatch))) return;
     runBatch(unfinishedBatch.demandOverrides ?? {}, unfinishedBatch.routingMode ?? 'random', unfinishedBatch);
 });
 
@@ -862,6 +865,14 @@ try {
     setBatchDetailsOpen(false);
 }
 
+/** The batch's code as the report's cover reads it (ResultsController::treeState()) - clean only when a check said so. */
+function buildLabel(build) {
+    if (!build?.commit) return 'commit unknown';
+    if (build.source === 'vite-dev' && build.fresh !== true) return `${build.commit} · tree state not checked`;
+    if (build.dirty == null) return `${build.commit} · tree state unknown`;
+    return `${build.commit} · ${build.dirty ? 'dirty (uncommitted changes)' : 'clean'}`;
+}
+
 /**
  * The running batch as the Details panel shows it: what kind of batch (routing, corridor, new or resumed, warm-up,
  * workers) and, per condition, its runs saved earlier, finished, running and still to go, plus its recovery curve.
@@ -871,8 +882,8 @@ const batchMonitor = {
     state: null,
     frame: null,
 
-    begin({ batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize }) {
-        this.state = { batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
+    begin({ batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, build }) {
+        this.state = { batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, build, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
         this.render();
     },
 
@@ -962,8 +973,9 @@ const batchMonitor = {
         const routing = s.routingMode === 'destination' ? 'Destination routing' : 'Random turning';
         const kind = s.resumed ? `resumed batch (${s.storedCount} runs saved earlier)` : 'new batch';
         const warmupMin = s.warmup ? Math.round((s.warmup.warmupTicks * DT) / 60) : null;
+        const code = buildLabel(s.build);
         if (batchMeta) {
-            batchMeta.textContent = [routing, s.corridorId, kind, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
+            batchMeta.textContent = [routing, s.corridorId, kind, code, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
         }
 
         const elapsedMs = performance.now() - s.startedAtMs;
@@ -974,6 +986,7 @@ const batchMonitor = {
             ['Corridor', s.corridorId],
             ['Batch', s.resumed ? `Resumed · ${s.storedCount} saved earlier` : 'New'],
             ['Batch id', s.batchId.slice(0, 8), s.batchId],
+            ['Code', code, [s.build?.source, s.build?.sim && `sim ${s.build.sim}`].filter(Boolean).join(' · ')],
             ['Started', s.batchStartedAt ? new Date(s.batchStartedAt).toLocaleString() : '-'],
             ['Phase', s.phase],
             ['Warm-up', s.warmup ? `${warmupMin} min (${s.warmup.warmupTicks} ticks)${s.warmup.stationary === false ? ' · not stationary' : ''}` : 'probing...'],

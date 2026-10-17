@@ -34,9 +34,12 @@ export function simFingerprint(cwd) {
     return hash.digest('hex').slice(0, 12);
 }
 
-/** `{ commit, dirty, source, at, sim }` - commit null outside a git checkout. */
-export function buildStamp(cwd, source) {
-    const commit = git('rev-parse --short HEAD', cwd);
-    const status = git('status --porcelain', cwd);
-    return { commit, dirty: commit ? status !== '' : null, source, at: new Date().toISOString(), sim: simFingerprint(cwd) };
+/**
+ * `{ commit, dirty, source, at, sim }` - commit null outside a git checkout, and dirty null (unknown, never clean)
+ * whenever git couldn't say. `runGit` is the tests' seam.
+ */
+export function buildStamp(cwd, source, runGit = git) {
+    const commit = runGit('rev-parse --short HEAD', cwd);
+    const status = commit ? runGit('status --porcelain', cwd) : null;
+    return { commit, dirty: status === null ? null : status !== '', source, at: new Date().toISOString(), sim: simFingerprint(cwd) };
 }

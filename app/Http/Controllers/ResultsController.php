@@ -869,6 +869,21 @@ class ResultsController extends Controller
         ];
     }
 
+    /**
+     * Whether the batch's code had uncommitted changes - only 'clean' when a check said so. A dev-server stamp without
+     * `fresh` predates the check at batch start (results.js's currentBuildStamp()); dirty null means git couldn't say.
+     */
+    private function treeState(array $build): ?string
+    {
+        return match (true) {
+            ! isset($build['commit']) => null,
+            ($build['source'] ?? null) === 'vite-dev' && ($build['fresh'] ?? false) !== true => 'unchecked',
+            ! array_key_exists('dirty', $build) || $build['dirty'] === null => 'unknown',
+            (bool) $build['dirty'] => 'dirty',
+            default => 'clean',
+        };
+    }
+
     private function batchStamp(Builder $query): ?array
     {
         $latest = (clone $query)->latest('id')->first();
@@ -891,11 +906,22 @@ class ResultsController extends Controller
             ->mapWithKeys(fn (SimulationRun $run): array => [$run->power_state->value => ['first' => (int) $run->first_seed, 'last' => (int) $run->last_seed]]);
         $minutes = fn (?int $ticks): ?int => $ticks === null ? null : (int) round($ticks * ($config['dt'] ?? 0.1) / 60);
 
-        $commit = match (true) {
-            ! isset($build['commit']) => 'commit not recorded',
-            (bool) ($build['dirty'] ?? true) => "{$build['commit']} (uncommitted changes)",
-            default => "{$build['commit']} (clean tree)",
+        $treeState = $this->treeState($build);
+        $commit = match ($treeState) {
+            null => 'commit not recorded',
+            'unchecked' => "{$build['commit']} (tree state not checked)",
+            'unknown' => "{$build['commit']} (tree state unknown)",
+            'dirty' => "{$build['commit']} (uncommitted changes)",
+            'clean' => "{$build['commit']} (clean tree)",
         };
+        $buildSource = collect([
+            ['vite-dev' => 'via dev server', 'vite-build' => 'via built bundle', 'cli' => 'via CLI'][$build['source'] ?? ''] ?? null,
+            isset($build['sim']) ? "sim {$build['sim']}" : null,
+        ])->filter()->implode(', ');
+        $coordination = SimulationRun::query()
+            ->where('batch_id', $latest->batch_id)
+            ->where('controller_mode', 'coordinated_adaptive')
+            ->first(['raw_config_json'])?->raw_config_json['controllerConfig']['coordination'] ?? null;
         $controllers = $config['controllerConfig'] ?? null;
         $controllerLabel = $controllers === null
             ? 'signal rules not recorded'
@@ -911,10 +937,12 @@ class ResultsController extends Controller
 
         return [
             'label' => collect([
-                "code {$commit}",
+                $buildSource === '' ? "code {$commit}" : "code {$commit} {$buildSource}",
                 "wait accounting {$waitAccounting}",
+                isset($config['zoneAccounting']) ? "zone wait {$config['zoneAccounting']}" : null,
                 $controllerLabel,
                 $sensorSpecs['label'],
+                isset($coordination['crossShiftS']) ? "coordinated cross shift {$coordination['crossShiftS']} s" : null,
                 RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
                 isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,
                 $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,
@@ -922,6 +950,8 @@ class ResultsController extends Controller
             'commit' => $build['commit'] ?? null,
             'dirty' => $build['dirty'] ?? null,
             'source' => $build['source'] ?? null,
+            'sim' => $build['sim'] ?? null,
+            'treeState' => $treeState,
             'waitAccounting' => $waitAccounting,
             'routingMode' => $latest->routing_mode,
             'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
@@ -942,10 +972,7 @@ class ResultsController extends Controller
             'controllerConfig' => $controllers,
             'sensorSpecs' => $sensorSpecs,
             // The coordination layers and thresholds the batch's coordinated adaptive runs used (marriage gates, platoon, tuning, levers).
-            'coordination' => SimulationRun::query()
-                ->where('batch_id', $latest->batch_id)
-                ->where('controller_mode', 'coordinated_adaptive')
-                ->first(['raw_config_json'])?->raw_config_json['controllerConfig']['coordination'] ?? null,
+            'coordination' => $coordination,
             'routingTiersHash' => $config['routingTiersHash'] ?? null,
         ];
     }

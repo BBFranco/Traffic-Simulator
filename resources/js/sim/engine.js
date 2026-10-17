@@ -641,6 +641,12 @@ function isSignalled(info) {
     return info.node.control === 'signal' && info.arterialGates.length > 0;
 }
 
+/** The controller a junction gets from its layout control alone, whatever the power or mode - null for a signal, whose control depends on both. */
+function nativeControllerType(info) {
+    if (!info.arterialGates.length) return null;
+    return { roundabout: 'roundabout', stop: 'minorStop', allWayStop: 'allWayStop' }[info.node.control] ?? null;
+}
+
 /** Do all-way stop approaches `a` and `b` face each other across the box? */
 function allWayStopOpposing(a, b) {
     const ha = a.approach?.heading;
@@ -2512,6 +2518,10 @@ export class SimulationEngine {
 
     _rebuildController(nodeId) {
         const info = this.nodesInfo.get(nodeId);
+        // A roundabout, stop street or all-way stop by layout has no lights: it runs the same lit or dark, in every mode.
+        // Rebuilding it on a power or mode change would empty its ring/box record and its arrival clocks with cars still
+        // in them - so an existing one keeps its controller and state.
+        if (info.controller && info.controllerType === nativeControllerType(info)) return;
         const arterialState = this.arterialState.get(info.arterial.id);
         const crossDemand = this._crossDemandFor(info.node);
 

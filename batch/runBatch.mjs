@@ -254,7 +254,8 @@ async function main() {
         // Taken before the probe, so a batch's duration includes finding its warm-up.
         const batchStartedAt = new Date().toISOString();
         const build = buildStamp(ROOT, 'cli');
-        console.log(`Code: ${build.commit ?? 'not a git checkout'}${build.dirty ? ' (uncommitted changes - not a baseline batch)' : ''}`);
+        const treeNote = build.dirty === null ? ' (tree state unknown - not a baseline batch)' : build.dirty ? ' (uncommitted changes - not a baseline batch)' : '';
+        console.log(`Code: ${build.commit ?? 'not a git checkout'}${build.commit ? treeNote : ''}`);
         // A fixed --warmup-ticks is the caller's own choice - nothing measured says whether it's stationary.
         const warmup = args.warmupTicks === 'auto' ? probeWarmup(corridorConfig, args) : { warmupTicks: args.warmupTicks, stationary: null };
         if (args.probeOnly) return;

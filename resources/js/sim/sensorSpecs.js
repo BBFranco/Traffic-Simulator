@@ -9,7 +9,8 @@
  *
  * Distances are metres upstream of the stop line. Evidence rule: every number carries `source`
  * (URL + model), or `assumed`, or `derived` (follows from a published figure without being
- * stated). Assumed values are never tuned to make two sensors differ.
+ * stated), or `tuned` (no published figure exists; chosen by test runs). Assumed values are never tuned to make two
+ * sensors differ.
  *
  * Spec fields:
  *   gapOut      - the detection zone that feeds the shared gap-out timer (any vehicle, moving or stopped).
@@ -117,7 +118,7 @@ const FIELD = {
             source: 'assumed - stop-bar pucks laid to cover the same 0-8 m presence footprint as the loop',
         },
         queue: null,
-        advance: [{ centreM: 30, lengthM: 2, source: 'assumed - one advance puck 30 m upstream (about 2 s at 50-60 km/h), sensing about 2 m' }],
+        advance: [{ centreM: 30, lengthM: 2, source: 'tuned - one advance puck 30 m upstream (about 2 s at 50-60 km/h), sensing about 2 m; no published placement exists, so the distance was chosen by test runs. Sensor modelled on Sensys Networks FlexMag (product page, FlexMag Flush and Deep Sensors datasheet): 3-axis magnetometer, 32/128 Hz sampling, advance-detection mode' }],
         footprint: 'body',
         outputs: { presence: true, count: null, queueExtent: true, speed: false },
         samplePeriodS: 1 / 128, // 7.8 ms
