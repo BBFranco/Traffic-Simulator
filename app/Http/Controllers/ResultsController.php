@@ -841,6 +841,24 @@ class ResultsController extends Controller
     }
 
     /**
+     * The load-shedding ablation arms (batch/ablationArms.mjs) a batch's coordinated runs had on - null when none.
+     *
+     * @param  array<string, mixed>|null  $coordination
+     */
+    private function ablationLabel(?array $coordination): ?string
+    {
+        $zones = fn (array $ids): string => 'zone '.implode('+', $ids);
+        $arms = collect([
+            ! empty($coordination['recoveryHoldThroughOutageZones']) ? "A1 resync hold through the outage ({$zones($coordination['recoveryHoldThroughOutageZones'])})" : null,
+            ! empty($coordination['freeCycleZones']) ? "A2 free cycle while another zone is dark ({$zones($coordination['freeCycleZones'])})" : null,
+            ($coordination['connectorRouteMarriage'] ?? true) === false ? 'A3 Jan Shoba route marriage off' : null,
+            ! empty($coordination['noPlatoonMessageZones']) ? "A4 platoon messages off while another zone is dark ({$zones($coordination['noPlatoonMessageZones'])})" : null,
+        ])->filter();
+
+        return $arms->isEmpty() ? null : 'ablation '.$arms->implode(', ');
+    }
+
+    /**
      * The sensor configurations a batch's actuated runs resolved to: spec set(s) and, per sensor, the resolved-spec hash.
      * Runs from before this was recorded carry none - reported as not recorded, never assumed.
      */
@@ -943,6 +961,7 @@ class ResultsController extends Controller
                 $controllerLabel,
                 $sensorSpecs['label'],
                 isset($coordination['crossShiftS']) ? "coordinated cross shift {$coordination['crossShiftS']} s" : null,
+                $this->ablationLabel($coordination),
                 RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
                 isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,
                 $seeds ? "seeds {$seeds->first_seed}-{$seeds->last_seed}" : null,

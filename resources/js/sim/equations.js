@@ -219,6 +219,10 @@ export const COORDINATED_DEFAULTS = {
     freezeAfterWarmup: false, // ablation: the self-tuner stops re-planning when the warm-up ends - common cycle, splits and marriages held where they had settled (a power return rebuilds from that state, not from the planned demand)
     recoveryHold: true, // lever 3: after power returns every junction runs as plain adaptive for recoveryHoldS, flushing the outage queues, then marries back in
     recoveryHoldS: 300, // seconds
+    recoveryHoldThroughOutageZones: [], // ablation A1: junctions of these zones restored while another zone is still dark stay on plain adaptive until every zone is lit
+    freeCycleZones: [], // ablation A2: these zones' arterial routes, while another zone is dark, re-plan every common cycle on the unsmoothed measured flow, the cycle jumping straight to its target (no retuneMaxStepS)
+    noPlatoonMessageZones: [], // ablation A4: these zones' arterial routes, while another zone is dark, run without platoon messages - no arterial holds for a platoon, no early cross-green ends
+    connectorRouteMarriage: true, // ablation A3 (false): connector routes (Jan Shoba) still take their junctions but never marry them - plain adaptive there
     forceRoutes: false, // connector routes married at every link whatever their flow (the selective rule left Jan Shoba's ~3-7 veh/min/lane all divorced)
     connectorRoutes: true, // Jan Shoba (`scope: "arterial"` connectors) coordinated along its own chains on phase 1 - controllers/coordinationRoutes.js
     selective: true, // SCATS-style marriage: only junctions on a link with strong arterial flow coordinate - the rest run plain adaptive

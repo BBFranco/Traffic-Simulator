@@ -19,7 +19,11 @@
  *     [--power-outage-start-tick=9000] [--power-outage-end-tick=18000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
- *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2]
+ *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4]
+ *
+ * --ablation runs coordinated adaptive with one of ablationArms.mjs's coordination overrides (baseline: none). The
+ * overrides land in every coordinated run's raw config, which the batch line reads. Stored as a 'sensitivity' batch,
+ * like a sweep point - an ablation batch never replaces the baseline on /results.
  *
  * --power runs a subset of the power states, and --batch-id posts into an existing batch: a full batch split per power
  * state (to stay inside the ~6-8 parallel-run memory limit) is one batch on /results. Pass the first part's warm-up
@@ -63,6 +67,7 @@ import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resourc
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
 import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from '../resources/js/sim/batchSchedule.js';
 import { buildStamp, simFingerprint } from './buildStamp.mjs';
+import { ABLATION_ARMS } from './ablationArms.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -90,6 +95,7 @@ function parseArgs(argv) {
         endToEndShare: null,
         batchId: null,
         resume: null,
+        ablation: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -111,7 +117,9 @@ function parseArgs(argv) {
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
         else if (key === 'batch-id') args.batchId = value;
         else if (key === 'resume') args.resume = value;
+        else if (key === 'ablation') args.ablation = value;
     }
+    if (args.ablation != null && !ABLATION_ARMS[args.ablation]) throw new Error(`--ablation=${args.ablation}: not one of ${Object.keys(ABLATION_ARMS).join(', ')}.`);
     // Default outage schedule: 15-30 min into the measured window, whatever its length.
     if (args.powerOutageStartTick == null) args.powerOutageStartTick = POWER_OUTAGE_START_TICK;
     if (args.powerOutageEndTick == null) args.powerOutageEndTick = POWER_OUTAGE_END_TICK;
@@ -273,7 +281,9 @@ async function main() {
         .filter((c) => !args.controllers || args.controllers.includes(c.controllerMode))
         .filter((c) => !args.power || args.power.includes(c.powerState));
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
-    const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null ? 'sensitivity' : 'main';
+    const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
+    const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
+    if (arm) console.log(`Ablation: ${arm.label} ${JSON.stringify(arm.coordination)}`);
     if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
         throw new Error(`"${args.corridor}" has no zones - a rolling blackout needs them (scripts/add-zones.mjs).`);
     }
@@ -302,7 +312,8 @@ async function main() {
     if (args.post) console.log(`Will POST results to ${args.post} in batches of ${POST_BATCH_SIZE}.`);
 
     for (const condition of matrix) {
-        const outDir = path.join(ROOT, 'results', condition.key);
+        // An ablation arm writes beside the others, never over them - the arms share condition keys.
+        const outDir = path.join(ROOT, 'results', args.ablation ? `${condition.key}.${args.ablation}` : condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
         const outage = condition.powerState !== 'normal';
@@ -325,6 +336,7 @@ async function main() {
                 dt: args.dt,
                 routingMode: args.routing,
                 websterTurnWeight: args.websterTurnWeight,
+                coordination: arm?.coordination ?? {},
             });
 
             fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));

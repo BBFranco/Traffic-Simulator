@@ -2107,7 +2107,14 @@ export class SimulationEngine {
         // A junction going dark drops any hold; one whose power is back: coordinated adaptive holds it on plain adaptive for a while (recoveryHold) to flush the outage queues.
         for (const nodeId of nodesOf(changed.filter((id) => dark.has(id)))) this.recoveryHoldUntil.delete(nodeId);
         if (this.coordination?.recoveryHold && restored.length) {
-            for (const nodeId of nodesOf(restored)) this.recoveryHoldUntil.set(nodeId, this.simTimeS + this.coordination.recoveryHoldS);
+            // Ablation A1: a held zone restored while another is still dark holds until every zone is lit - then marries at once.
+            const holdThrough = new Set(this.coordination.recoveryHoldThroughOutageZones ?? []);
+            const zoneOf = (id) => this.layout.arterials.find((arterial) => arterial.id === id)?.zone;
+            for (const id of restored) {
+                const untilS = dark.size && holdThrough.has(zoneOf(id)) ? Infinity : this.simTimeS + this.coordination.recoveryHoldS;
+                for (const nodeId of nodesOf([id])) this.recoveryHoldUntil.set(nodeId, untilS);
+            }
+            if (!dark.size) for (const [nodeId, untilS] of this.recoveryHoldUntil) if (untilS === Infinity) this.recoveryHoldUntil.delete(nodeId);
             const coordinates = [...this.arterialState.values()].some((state) => state.mode === 'coordinated_adaptive');
             if (coordinates) this.coordinationStats.onRecoveryHold(this.coordination.recoveryHoldS, this.simTimeS);
         }
@@ -2289,16 +2296,20 @@ export class SimulationEngine {
             }
 
             const routeChains = toChains((stops) => stops.filter((stop) => owned.has(stop.nodeId))).filter((chain) => chain.nodeIds.length);
+            // Ablation A3 (connectorRouteMarriage off): the route still takes its junctions, but never marries one.
+            const marry = this.coordination.connectorRouteMarriage === false
+                ? () => ({ nodes: new Set(), links: new Set() })
+                : (q, previousLinks) => chooseMarriedOnChains(routeChains, [...owned], q, targetSpeedMps, routeCoord, previousLinks);
             const route = {
                 id: `route:${name}`,
                 coordinatedPhase: 1,
                 nodeInfos: [...owned].map((nodeId) => this.nodesInfo.get(nodeId)),
                 chains: routeChains,
                 targetSpeedMps,
-                marriage: chooseMarriedOnChains(routeChains, [...owned], crossQ, targetSpeedMps, routeCoord),
+                marriage: marry(crossQ),
             };
             route.planner = (infos, arterialDemandFor, crossDemandFor, turnFor, options) => planRoute(route, arterialDemandFor, crossDemandFor, turnFor, options);
-            route.marry = (q, previousLinks) => chooseMarriedOnChains(route.chains, [...owned], q, targetSpeedMps, routeCoord, previousLinks);
+            route.marry = marry;
             routes.push(route);
         }
         return routes;
@@ -2381,9 +2392,16 @@ export class SimulationEngine {
         let plan = marriedCycleS != null && marriedCycleS !== unmarriedPlan.commonCycleS
             ? group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, { commonCycleS: marriedCycleS })
             : unmarriedPlan;
-        const bus = coord.platoonMessages ? new CoordinationBus() : null;
+        // Ablations A2 / A4: a listed zone's arterial route, built while another zone is dark, until the next rebuild -
+        // A2 tunes freely, A4 runs without platoon messages (no arterial holds, no early cross-green ends).
+        const zone = coordinatedPhase === 0 ? this.layout.arterials.find((arterial) => arterial.id === group.id)?.zone : undefined;
+        const partialOutage = this.darkNodes.size > 0;
+        const noPlatoonMessages = partialOutage && (coord.noPlatoonMessageZones ?? []).includes(zone);
+        const bus = coord.platoonMessages && !noPlatoonMessages ? new CoordinationBus() : null;
+        const freeCycle = partialOutage && (coord.freeCycleZones ?? []).includes(zone);
+        const tunerCoord = freeCycle ? { ...coord, retuneEveryCycles: 1, retuneSmoothing: 1, retuneMaxStepS: Infinity } : coord;
         const tuner = coord.selfTuning
-            ? new SelfTuner({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS: this.simTimeS, coord, planner: group.planner, marry: group.marry, coordinatedPhase })
+            ? new SelfTuner({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS: this.simTimeS, coord: tunerCoord, planner: group.planner, marry: group.marry, coordinatedPhase })
             : null;
         // A rebuild (power back) under the freeze ablation: the settled state, not the planned demand.
         const frozen = tuner && this.frozenTuning.get(group.id);
