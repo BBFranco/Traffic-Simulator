@@ -110,6 +110,8 @@ export function runHeadless({
     const schedule = outageSchedule({ powerOutageStartTick, powerOutageEndTick, rollingSchedule });
     let darkZonesKey = '';
     let stage = null;
+    /** stage -> engine.roadWaits' running totals as that stage opened, so each road's wait splits by stage (clear time) - recording only. */
+    const roadWaitMarks = new Map();
     let outageStarted = false;
     let outageEnded = false;
     let statsReset = warmupTicks <= 0;
@@ -137,6 +139,7 @@ export function runHeadless({
         const stageNow = measuredTick >= 0 ? schedule?.stageAt(measuredTick) ?? null : null;
         if (stageNow !== stage) {
             engine.coordinationStats.setStage(stageNow);
+            if (stageNow) roadWaitMarks.set(stageNow, copyRoadWaits(engine.roadWaits));
             stage = stageNow;
         }
         if (rollingSchedule && measuredTick >= 0) {
@@ -253,6 +256,7 @@ export function runHeadless({
         zoneRows,
         accounting,
         accountingAtMeasureStart,
+        roadWaitMarks,
     });
 
     return { rows, sideStreetRows, totalRows, arterialScopeRows, zoneRows, summary };
@@ -291,14 +295,45 @@ function outageSchedule({ powerOutageStartTick, powerOutageEndTick, rollingSched
     };
 }
 
-/** `engine.roadWaits` as plain JSON, named and scoped from the layout: { roadId: { name, scope, vehicles, meanWait, maxWait } }. */
-function roadWaitsSummary(layout, roadWaits) {
+function copyRoadWaits(roadWaits) {
+    return new Map([...roadWaits].map(([id, r]) => [id, { n: r.n, waitSum: r.waitSum }]));
+}
+
+/**
+ * Each road's waits split by outage stage, by when its vehicles cleared - the difference of the running totals at
+ * consecutive stage marks: { pre: { vehicles, meanWait }, stage1: ..., post: ... }. Stages with no vehicle are left out.
+ */
+function roadWaitStages(roadId, final, marks) {
+    const stages = [...marks.keys()];
+    const out = {};
+    stages.forEach((stage, i) => {
+        const from = marks.get(stage).get(roadId) ?? { n: 0, waitSum: 0 };
+        const to = i + 1 < stages.length ? marks.get(stages[i + 1]).get(roadId) ?? { n: 0, waitSum: 0 } : final;
+        const n = to.n - from.n;
+        if (n > 0) out[stage] = { vehicles: n, meanWait: Math.round(((to.waitSum - from.waitSum) / n) * 100) / 100 };
+    });
+    return out;
+}
+
+/** `engine.roadWaits` as plain JSON, named and scoped from the layout: { roadId: { name, scope, vehicles, meanWait, maxWait, stages? } }. */
+function roadWaitsSummary(layout, roadWaits, stageMarks = null) {
     const roads = new Map();
     for (const arterial of layout.arterials) roads.set(arterial.id, { name: arterial.name, scope: arterial.scope === 'side' ? 'side' : 'arterial' });
     for (const connector of layout.connectors) roads.set(connector.id, { name: connector.name ?? connector.id, scope: connector.scope === 'arterial' ? 'arterial' : 'side' });
     const round = (value) => Math.round(value * 100) / 100;
     return Object.fromEntries(
-        [...roadWaits].filter(([id]) => roads.has(id)).map(([id, r]) => [id, { ...roads.get(id), vehicles: r.n, meanWait: round(r.waitSum / r.n), maxWait: round(r.maxWait) }])
+        [...roadWaits]
+            .filter(([id]) => roads.has(id))
+            .map(([id, r]) => [
+                id,
+                {
+                    ...roads.get(id),
+                    vehicles: r.n,
+                    meanWait: round(r.waitSum / r.n),
+                    maxWait: round(r.maxWait),
+                    ...(stageMarks?.size ? { stages: roadWaitStages(id, r, stageMarks) } : {}),
+                },
+            ])
     );
 }
 
@@ -323,6 +358,7 @@ function buildSummary({
     zoneRows,
     accounting,
     accountingAtMeasureStart,
+    roadWaitMarks,
 }) {
     // A rolling blackout's outage runs from its first window's start to its final restore - every scope below that
     // isn't a zone is measured on that span, exactly as a total blackout's.
@@ -481,7 +517,7 @@ function buildSummary({
         p95WaitSideStreet: sideStreetWaits.p95Wait,
         maxWaitSideStreet: sideStreetWaits.maxWait,
         /** Per road: vehicles that used it, their mean and worst wait built up on it - the report's per-road table. */
-        roadWaits: roadWaitsSummary(layout, engine.roadWaits),
+        roadWaits: roadWaitsSummary(layout, engine.roadWaits, roadWaitMarks),
         // What the coordination did (controllers/coordinationStats.js) - coordinated adaptive runs only.
         ...(controllerMode === 'coordinated_adaptive' ? { coordination: coordinationSummary(engine, warmupTicks * dt) } : {}),
         preOutage: segments.preOutage,

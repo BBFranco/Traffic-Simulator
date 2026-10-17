@@ -33,7 +33,7 @@ import {
 } from './charts/theme.js';
 import { currentTheme } from './theme.js';
 import { buildLayout, corridorCounts } from './sim/corridor.js';
-import { MAX_WARMUP_TICKS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
+import { MAX_WARMUP_TICKS, PROBE_REPLICATIONS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
 import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS } from './sim/equations.js';
 import { SENSOR_SPEC_SETS, latencyTicks } from './sim/sensorSpecs.js';
 import { seedForRep } from './sim/experimentalMatrix.js';
@@ -118,6 +118,9 @@ const SENSOR_COLOURS = {
     },
 };
 const SENSOR_MODE_LABELS = { adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive' };
+
+/** Road-wait rows where every controller's mean stays under this (s) are hidden: slips and on/off ramps at ~0 s carry only noise. */
+const ROAD_WAIT_MIN_S = 0.5;
 
 const PAGE = { width: 210, height: 297, margin: 14 };
 const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
@@ -762,6 +765,8 @@ function drawCover(report, data, variants, corridorLayout) {
     }
     if (corridorLayout) {
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+        // "Coordinable" is not "coordinated": only the junctions on a strong link marry, so say how many did.
+        const marriedAtNormal = (junctions) => junctions.filter((row) => (row.married_pct_by_power?.normal ?? row.married_pct ?? 0) >= 50).length;
         report.chartCard(
             'Corridor layout',
             [
@@ -769,7 +774,7 @@ function drawCover(report, data, variants, corridorLayout) {
                 plural(corridorLayout.sideRoads, 'side street'),
                 // park_hilda is signal-controlled but has no arterial approach, so coordination never takes it: count what could coordinate.
                 data.coordinationMetrics?.junctions?.length && data.coordinationMetrics.junctions.length < corridorLayout.signals
-                    ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')}`
+                    ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')} (${marriedAtNormal(data.coordinationMetrics.junctions)} married at normal power)`
                     : plural(corridorLayout.signals, 'signalised junction'),
                 corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
                 corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
@@ -953,8 +958,6 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
         ...(compact
             ? []
             : [
-                  // Throughput-recovery first: wait-recovery is mostly censored by the measured window.
-                  { header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' },
                   {
                       header: 'Recovery (wait)',
                       value: (c) => fmtRecoveryDelta(c, 'wait', windowFor(c)),
@@ -968,6 +971,8 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
                           return its < baseline;
                       },
                   },
+                  // After wait: throughput is back within seconds for every controller, so it tells little.
+                  { header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' },
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
@@ -1027,14 +1032,14 @@ function perConditionTable(report, data, variants, scope, powers) {
                 fmtCi(row[m('avg_wait_time')], row[`${m('avg_wait_time')}_ci95`]),
                 fmtCi(row[m('throughput_per_min')], row[`${m('throughput_per_min')}_ci95`]),
                 fmtCi(row[m('pct_cleared_without_stop')], row[`${m('pct_cleared_without_stop')}_ci95`]),
-                isOutage(power) ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-',
                 isOutage(power) ? fmtWaitRecovery(row, m('time_to_recovery_wait_seconds'), postRestoreWindowS(data, power, scope)) : '-',
+                isOutage(power) ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-',
             ]);
         });
     });
 
     report.table({
-        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - thru', 'Recovery - wait']],
+        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - wait', 'Recovery - thru']],
         body,
         columnStyles: { 0: { cellWidth: 38 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
     });
@@ -1126,7 +1131,7 @@ function drawScope(report, data, variants, scope, power) {
 
     report.heading(
         'Every ITS variant vs fixed-time',
-        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). Recovery: throughput first - wait-recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
+        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
         card
     );
     comparisonTable(report, data, variants, scope, { powers });
@@ -1250,7 +1255,7 @@ function warmupSettleNote(settle) {
     const parts = Object.entries(settle).map(
         ([mode, scopes]) => `${labels[mode] ?? mode} ${minutes(scopes.total)} (main arterial ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)})`
     );
-    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting.`;
+    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting. The probe runs ${PROBE_REPLICATIONS} seeds per controller with the inductive loop only, so these settle times are a noisy sizing step for the warm-up, not findings - a scope that settles later than its parts, or one sensor's slow side streets, is within that noise.`;
 }
 
 const GREEN_END_LABELS = {
@@ -1312,6 +1317,10 @@ function drawVersusAdaptive(report, versus, conditions) {
     });
 }
 
+function roadLabel(road) {
+    return road.name && road.name !== road.road_id ? `${road.name} (${road.road_id})` : road.road_id;
+}
+
 /**
  * Wait per road under `powers` (the normal baseline and this section's outage): each controller's mean, and the paired
  * differences that show where a gain or loss sits (a main road, or the streets crossing it). By road only - no zone split.
@@ -1321,7 +1330,7 @@ function drawRoadWaits(report, data, powers) {
     report.heading(
         'Wait by road',
         roadWaits.length
-            ? 'Where the wait is - each road on its own. Mean wait (s) a vehicle built up on each road, over the vehicles that used it - a trip over several roads is in each, with only the wait it built up there. Adaptive and coordinated adaptive: the sensors averaged per seed. Δ columns: paired change on the same seeds, % of the baseline, ± 95% CI; tinted only where the CI excludes zero (negative is better).'
+            ? 'Where the wait is - each road on its own. Mean wait (s) a vehicle built up on each road, over the vehicles that used it - a trip over several roads is in each, with only the wait it built up there. Adaptive and coordinated adaptive: the sensors averaged per seed. The "vs" columns: paired change on the same seeds, % of the baseline, ± 95% CI; tinted only where the CI excludes zero (negative is better).'
             : null
     );
     if (!roadWaits.length) {
@@ -1331,12 +1340,14 @@ function drawRoadWaits(report, data, powers) {
     const labels = { arterial: 'Main roads', side: 'Side streets' };
     powers.forEach((power) => {
         ['arterial', 'side'].forEach((scope) => {
-            const rows = roadWaits.filter((row) => row.power_state === power && row.scope === scope);
-            if (!rows.length) return;
+            const scoped = roadWaits.filter((row) => row.power_state === power && row.scope === scope);
+            if (!scoped.length) return;
+            const rows = scoped.filter((row) => ['fixed', 'adaptive', 'green_wave', 'coordinated_adaptive'].some((mode) => (row[mode] ?? 0) >= ROAD_WAIT_MIN_S));
+            const hidden = scoped.length - rows.length;
             report.heading(`${labels[scope]} - ${powerLabel(power)}`, null, { level: 'card' });
             const pair = (key) => ({ value: (row) => fmtPaired(row[key]?.delta, row[key]?.ci95, '%'), improves: (row) => lowerIsBetter(row[key]?.delta, row[key]?.ci95) });
             const columns = [
-                { header: 'Road', value: (row) => (row.name && row.name !== row.road_id ? `${row.name} (${row.road_id})` : row.road_id) },
+                { header: 'Road', value: roadLabel },
                 { header: 'Fixed', value: (row) => fmt(row.fixed) },
                 { header: 'Adaptive', value: (row) => fmt(row.adaptive) },
                 { header: 'Green wave', value: (row) => fmt(row.green_wave) },
@@ -1345,7 +1356,7 @@ function drawRoadWaits(report, data, powers) {
                 { header: 'Coordinated vs fixed', ...pair('coordinated_vs_fixed') },
                 { header: 'Coordinated vs adaptive', ...pair('coordinated_vs_adaptive') },
             ];
-            report.table({
+            if (rows.length) report.table({
                 head: [columns.map((column) => column.header)],
                 body: rows.map((row) => columns.map((column) => column.value(row))),
                 columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i === 0 ? 'left' : 'right' }])),
@@ -1355,7 +1366,38 @@ function drawRoadWaits(report, data, powers) {
                     if (improves) toneCell(hook.cell, improves(rows[hook.row.index]));
                 },
             });
+            if (hidden) report.paragraph(`${hidden} ${hidden === 1 ? 'road' : 'roads'} under ${ROAD_WAIT_MIN_S} s mean wait for every controller hidden.`);
+            if (scope === 'arterial') drawRoadWaitStages(report, rows, power, columns.slice(1));
         });
+    });
+}
+
+/**
+ * The main roads' waits split by outage stage (by when each vehicle cleared): locates which road carries a stage's
+ * gap between controllers. Only for runs that recorded the split - older batches skip it.
+ */
+function drawRoadWaitStages(report, roads, power, valueColumns) {
+    const rows = roads.flatMap((road) => Object.entries(road.stages ?? {}).map(([stage, figures]) => ({ ...figures, road, stage })));
+    if (!rows.length) return;
+    report.heading(
+        `Main roads by stage - ${powerLabel(power)}`,
+        'The same figures split by outage stage, each vehicle counted in the stage it cleared in - so a queue built in one stage and cleared in the next is charged to the next.',
+        { level: 'card' }
+    );
+    const columns = [
+        { header: 'Road', value: (row) => roadLabel(row.road) },
+        { header: 'Stage', value: (row) => STAGE_LABELS[row.stage] ?? row.stage },
+        ...valueColumns,
+    ];
+    report.table({
+        head: [columns.map((column) => column.header)],
+        body: rows.map((row) => columns.map((column) => column.value(row))),
+        columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i < 2 ? 'left' : 'right' }])),
+        didParseCell: (hook) => {
+            if (hook.section !== 'body') return;
+            const improves = columns[hook.column.index].improves;
+            if (improves) toneCell(hook.cell, improves(rows[hook.row.index]));
+        },
     });
 }
 
@@ -1597,7 +1639,7 @@ function drawMethodNotes(report, data, number) {
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where both sides recover throughput within 30 s, its delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
-        'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery is the primary recovery figure.',
+        'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller - and under load shedding it is already above its pre-cut level at the final restore (stage 2 surge), so it reads 0 s. Read wait recovery and the post-recovery segments instead.',
         `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total and zone scopes only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,

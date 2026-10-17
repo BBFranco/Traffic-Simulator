@@ -11,7 +11,8 @@ use Illuminate\Support\Collection;
  * controller's mean (the sensors averaged per seed for the actuated modes), and the paired differences on the
  * same seeds: coordinated vs fixed-time, coordinated vs adaptive, and adaptive vs fixed-time, as % of the
  * baseline with a 95% CI. That locates where a controller's gain or loss sits - a main road or the streets crossing it.
- * Empty for batches from before the per-road waits were recorded.
+ * Outage runs that recorded each road's wait by stage (runHeadless.js's roadWaitStages) get the same figures per stage
+ * under `stages`. Empty for batches from before the per-road waits were recorded.
  */
 class RoadWaitMetrics
 {
@@ -22,6 +23,8 @@ class RoadWaitMetrics
         'coordinated_vs_adaptive' => ['coordinated_adaptive', 'adaptive'],
         'adaptive_vs_fixed' => ['adaptive', 'fixed'],
     ];
+
+    private const WHOLE_RUN = 'all';
 
     /** Fewest seed pairs worth an interval. */
     private const MIN_PAIRS = 3;
@@ -46,23 +49,26 @@ class RoadWaitMetrics
             foreach ($group as $run) {
                 foreach ($run->road_waits as $roadId => $road) {
                     $roads[$roadId] ??= ['name' => $road['name'], 'scope' => $road['scope']];
-                    $perSeed[$power][$roadId][$mode]["{$corridor}:{$seed}"][] = $road['meanWait'];
+                    $perSeed[$power][$roadId][self::WHOLE_RUN][$mode]["{$corridor}:{$seed}"][] = $road['meanWait'];
+                    foreach ($road['stages'] ?? [] as $stage => $stageWait) {
+                        $perSeed[$power][$roadId][$stage][$mode]["{$corridor}:{$seed}"][] = $stageWait['meanWait'];
+                    }
                 }
             }
         }
 
         $rows = [];
         foreach ($perSeed as $power => $byRoad) {
-            foreach ($byRoad as $roadId => $byMode) {
-                $means = collect($byMode)->map(fn (array $seeds): array => collect($seeds)->map(fn (array $waits): float => array_sum($waits) / count($waits))->all());
-                $row = ['road_id' => $roadId, 'name' => $roads[$roadId]['name'], 'scope' => $roads[$roadId]['scope'], 'power_state' => $power];
-                foreach (self::MODES as $mode) {
-                    $row[$mode] = isset($means[$mode]) ? round(collect($means[$mode])->avg(), 1) : null;
-                }
-                foreach (self::PAIRS as $label => [$subject, $baseline]) {
-                    $row[$label] = $this->paired($means[$subject] ?? [], $means[$baseline] ?? []);
-                }
-                $rows[] = $row;
+            foreach ($byRoad as $roadId => $byStage) {
+                $stages = collect($byStage)->except(self::WHOLE_RUN);
+                $rows[] = [
+                    'road_id' => $roadId,
+                    'name' => $roads[$roadId]['name'],
+                    'scope' => $roads[$roadId]['scope'],
+                    'power_state' => $power,
+                    ...$this->comparison($byStage[self::WHOLE_RUN] ?? []),
+                    ...($stages->isEmpty() ? [] : ['stages' => $stages->map(fn (array $byMode): array => $this->comparison($byMode))->all()]),
+                ];
             }
         }
 
@@ -70,6 +76,26 @@ class RoadWaitMetrics
             ->sortBy([['scope', 'asc'], ['name', 'asc'], ['power_state', 'asc']])
             ->values()
             ->all();
+    }
+
+    /**
+     * Each controller's mean and the paired differences, from one road's (or one stage's) per-seed waits.
+     *
+     * @param  array<string, array<string, array<int, float>>>  $byMode  mode => seed => the sensors' mean waits
+     * @return array<string, mixed>
+     */
+    private function comparison(array $byMode): array
+    {
+        $means = collect($byMode)->map(fn (array $seeds): array => collect($seeds)->map(fn (array $waits): float => collect($waits)->avg())->all());
+        $comparison = [];
+        foreach (self::MODES as $mode) {
+            $comparison[$mode] = isset($means[$mode]) ? round(collect($means[$mode])->avg(), 1) : null;
+        }
+        foreach (self::PAIRS as $label => [$subject, $baseline]) {
+            $comparison[$label] = $this->paired($means[$subject] ?? [], $means[$baseline] ?? []);
+        }
+
+        return $comparison;
     }
 
     /**
