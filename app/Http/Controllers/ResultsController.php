@@ -853,6 +853,7 @@ class ResultsController extends Controller
             ! empty($coordination['freeCycleZones']) ? "A2 free cycle while another zone is dark ({$zones($coordination['freeCycleZones'])})" : null,
             ($coordination['connectorRouteMarriage'] ?? true) === false ? 'A3 Jan Shoba route marriage off' : null,
             ! empty($coordination['noPlatoonMessageZones']) ? "A4 platoon messages off while another zone is dark ({$zones($coordination['noPlatoonMessageZones'])})" : null,
+            ! empty($coordination['holdStartsLikeAdaptive']) ? 'A5 held junctions start on the arterial green' : null,
         ])->filter();
 
         return $arms->isEmpty() ? null : 'ablation '.$arms->implode(', ');

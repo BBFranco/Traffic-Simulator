@@ -171,6 +171,11 @@ export class CoordinatedAdaptiveController {
         this.pendingMarried = married && !this.married;
     }
 
+    /** Ablation A5 (`coord.holdStartsLikeAdaptive`): start as adaptive.js does - the arterial's through green, nothing elapsed. */
+    startLikeAdaptive() {
+        this._enter(this.layout.stages.findIndex((s) => s.phase === 0 && !s.turn), 'green', 0);
+    }
+
     /** Is the coordinated road's through green showing - the arterial's, or the cross street's on a connector route. */
     isCoordinatedGreen() {
         return this.stageIndex === this.layout.coordinatedIndex && this.phaseState === 'green';

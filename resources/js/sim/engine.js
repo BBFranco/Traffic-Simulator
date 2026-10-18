@@ -2413,6 +2413,7 @@ export class SimulationEngine {
         for (const info of nodeInfos) {
             const holding = this.simTimeS < (this.recoveryHoldUntil.get(info.node.id) ?? -Infinity);
             const controller = new CoordinatedAdaptiveController(plan.nodes.get(info.node.id), this.simTimeS, { coord, married: !holding && marriedNodes.has(info.node.id) });
+            if (holding && coord.holdStartsLikeAdaptive) controller.startLikeAdaptive();
             if (tuner) {
                 controller.onGreenEnd = (end) => {
                     const stage = controller.layout.stages[end.stageIndex];

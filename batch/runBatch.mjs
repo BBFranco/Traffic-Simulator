@@ -19,7 +19,7 @@
  *     [--power-outage-start-tick=9000] [--power-outage-end-tick=18000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
- *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4]
+ *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|A5]
  *
  * --ablation runs coordinated adaptive with one of ablationArms.mjs's coordination overrides (baseline: none). The
  * overrides land in every coordinated run's raw config, which the batch line reads. Stored as a 'sensitivity' batch,
