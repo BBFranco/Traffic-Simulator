@@ -853,10 +853,28 @@ class ResultsController extends Controller
             ! empty($coordination['freeCycleZones']) ? "A2 free cycle while another zone is dark ({$zones($coordination['freeCycleZones'])})" : null,
             ($coordination['connectorRouteMarriage'] ?? true) === false ? 'A3 Jan Shoba route marriage off' : null,
             ! empty($coordination['noPlatoonMessageZones']) ? "A4 platoon messages off while another zone is dark ({$zones($coordination['noPlatoonMessageZones'])})" : null,
-            ! empty($coordination['holdStartsLikeAdaptive']) ? 'A5 held junctions start on the arterial green' : null,
         ])->filter();
 
         return $arms->isEmpty() ? null : 'ablation '.$arms->implode(', ');
+    }
+
+    /**
+     * How the batch's coordinated junctions restarted when power came back: on the arterial green (restartOnArterialGreen,
+     * the default since 2026-10-18 - the A5 arm before that) or part-way into the background plan (the legacy restart,
+     * which runs from before the flag existed used).
+     *
+     * @param  array<string, mixed>|null  $coordination
+     */
+    private function restartLabel(?array $coordination): ?string
+    {
+        if ($coordination === null) {
+            return null;
+        }
+        if (array_key_exists('restartOnArterialGreen', $coordination)) {
+            return $coordination['restartOnArterialGreen'] ? 'coordinated restart on the arterial green' : 'coordinated restart mid-plan (legacy)';
+        }
+
+        return ! empty($coordination['holdStartsLikeAdaptive']) ? 'coordinated restart on the arterial green (ablation A5)' : 'coordinated restart mid-plan (legacy)';
     }
 
     /**
@@ -962,6 +980,7 @@ class ResultsController extends Controller
                 $controllerLabel,
                 $sensorSpecs['label'],
                 isset($coordination['crossShiftS']) ? "coordinated cross shift {$coordination['crossShiftS']} s" : null,
+                $this->restartLabel($coordination),
                 $this->ablationLabel($coordination),
                 RoutingMode::tryFrom((string) $latest->routing_mode)?->label(),
                 isset($config['routingTiersHash']) && $latest->routing_mode === RoutingMode::Destination->value ? "tiers {$config['routingTiersHash']}" : null,

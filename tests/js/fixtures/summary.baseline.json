@@ -6850,15 +6850,15 @@
       "controllerMode": "coordinated_adaptive",
       "routingMode": "destination",
       "routing": {
-        "trips": 1298,
-        "meanTripS": 142.50747303545637,
-        "meanTripDelayS": 68.0610505420033,
-        "toExit": 736,
-        "pulledOff": 562,
-        "divertedPct": 0.539291217257319,
-        "missedTurns": 51,
+        "trips": 1308,
+        "meanTripS": 141.99166666668367,
+        "meanTripDelayS": 66.97125499109279,
+        "toExit": 729,
+        "pulledOff": 579,
+        "divertedPct": 0.764525993883792,
+        "missedTurns": 52,
         "missedBy": {
-          "wrongLane": 51,
+          "wrongLane": 52,
           "blockedTurn": 0,
           "peelNoRoom": 0
         },
@@ -6866,27 +6866,27 @@
         "pulledOffByBlock": {
           "ARC-3": 6,
           "DYR-1": 7,
-          "LYN-3": 4,
+          "LYN-3": 5,
           "GRO-5": 10,
           "DUX-2": 6,
-          "HIL-4": 9,
+          "HIL-4": 11,
           "DUX-4": 5,
           "HIL-1": 7,
-          "BRN-2": 14,
+          "BRN-2": 13,
           "BRN-1": 13,
           "PRO-3": 5,
-          "STZ-4": 6,
+          "STZ-4": 7,
           "STZ-2": 12,
           "LYN-2": 14,
           "JSH-2": 9,
           "PRO-2": 6,
-          "BRN-3": 10,
+          "BRN-3": 12,
           "PRO-1": 3,
           "ARC-2": 6,
           "FRB-1": 5,
-          "LYN-1": 9,
-          "JSH-3N": 5,
-          "LYN-4": 3,
+          "LYN-1": 10,
+          "JSH-3N": 6,
+          "LYN-4": 4,
           "PRO-5": 7,
           "FRB-2": 7,
           "JSH-1N": 2,
@@ -6894,34 +6894,34 @@
           "BUR-1": 2,
           "JSH-3S": 5,
           "HIL-2": 8,
-          "PRE-2": 12,
+          "PRE-2": 11,
           "HER-1": 4,
           "FES-5": 9,
           "HER-2": 4,
           "GRO-3": 17,
-          "DUX-1": 8,
+          "DUX-1": 9,
           "STZ-1": 5,
           "PRE-3": 9,
           "JSH-5": 10,
-          "STZ-5": 9,
-          "JSH-2S": 6,
+          "STZ-5": 11,
+          "JSH-2S": 5,
           "GRO-1": 2,
           "BRN-4": 4,
           "HIL-5": 8,
-          "JSH-7": 26,
+          "JSH-7": 29,
           "PRE-1": 12,
-          "FRB-5": 10,
+          "FRB-5": 11,
           "FES-1": 6,
-          "HIL-8": 4,
-          "PRE-4": 3,
+          "HIL-8": 3,
+          "PRE-4": 4,
           "DXW-1": 3,
           "PAR-1": 3,
           "GRO-6": 9,
           "SOU-5": 5,
-          "DUX-3": 7,
+          "DUX-3": 8,
           "JSH-6": 8,
           "JSH-3": 2,
-          "HIL-6": 14,
+          "HIL-6": 13,
           "FES-2": 7,
           "SOU-2": 5,
           "FRB-6": 5,
@@ -6931,39 +6931,39 @@
           "LUN-1": 1,
           "FRB-4": 5,
           "FES-4": 5,
-          "JSH-1": 6,
+          "JSH-1": 7,
           "PRE-6": 3,
-          "SOU-4": 1,
+          "SOU-4": 2,
           "FRB-3": 6,
           "PRE-5": 3,
           "MAL-2": 4,
-          "HIL-3": 5,
+          "HIL-3": 6,
           "GRO-4": 3,
           "STZ-3": 9,
-          "PRK-2": 6,
-          "LYN-0": 4,
+          "PRK-2": 8,
+          "LYN-0": 2,
           "SOU-1": 6,
           "JSH-4": 6,
           "LNW-0": 2,
           "ARC-1": 2,
           "DYR-2": 5,
           "JSH-1S": 5,
-          "LUN-3": 1,
           "LNW-1": 1,
           "PRO-4": 1,
+          "LUN-3": 1,
           "MAL-1": 4,
-          "LUN-2": 1,
+          "LUN-2": 2,
           "JSH-2N": 1
         },
-        "missedDriveways": 8,
+        "missedDriveways": 9,
         "missedDrivewaysBy": {
-          "wrongLane": 8,
+          "wrongLane": 9,
           "noGap": 0
         },
         "drivewayFallbacks": {
           "sameBlock": 6,
-          "nextBlock": 1,
-          "exit": 1
+          "nextBlock": 3,
+          "exit": 0
         },
         "pulledOffByDriveway": {
           "ARC-3-A2": 2,
@@ -6976,7 +6976,7 @@
           "HIL-1-A1": 4,
           "DUX-2-B1": 2,
           "BRN-2-A2": 2,
-          "BRN-1-A2": 2,
+          "BRN-1-A2": 3,
           "PRO-3-A1": 2,
           "STZ-4-B2": 3,
           "STZ-2-A2": 3,
@@ -6988,8 +6988,8 @@
           "ARC-2-B2": 2,
           "FRB-1-B2": 1,
           "LYN-1-B3": 1,
-          "JSH-3N-A1": 3,
-          "BRN-2-B2": 4,
+          "JSH-3N-A1": 4,
+          "BRN-2-B2": 3,
           "LYN-4-B1": 1,
           "PRO-5-A2": 2,
           "FRB-2-A1": 2,
@@ -7000,10 +7000,10 @@
           "JSH-3S-B1": 2,
           "HIL-4-B3": 2,
           "HIL-2-A1": 1,
-          "PRE-2-A2": 4,
-          "BRN-3-A3": 4,
+          "PRE-2-A2": 3,
+          "BRN-3-A3": 6,
           "HER-1-A1": 2,
-          "LYN-1-A2": 3,
+          "LYN-1-A2": 4,
           "HER-1-B1": 2,
           "FES-5-B1": 4,
           "HER-2-B1": 1,
@@ -7011,14 +7011,14 @@
           "GRO-3-A1": 2,
           "DUX-1-B1": 5,
           "FES-5-A1": 5,
-          "STZ-1-A1": 3,
-          "PRE-3-A2": 2,
+          "STZ-1-A1": 2,
+          "PRE-3-A2": 3,
           "JSH-5-A2": 3,
           "LYN-2-A2": 3,
           "JSH-5-B1": 3,
           "STZ-5-A1": 4,
           "STZ-2-B2": 5,
-          "JSH-2S-A1": 3,
+          "JSH-2S-A1": 2,
           "GRO-1-A1": 1,
           "BRN-4-B1": 3,
           "HIL-5-B1": 1,
@@ -7026,11 +7026,11 @@
           "GRO-3-B1": 4,
           "HIL-5-A1": 1,
           "JSH-2S-B1": 3,
-          "PRE-1-A2": 3,
+          "PRE-1-A2": 2,
           "FRB-5-A2": 3,
           "FES-1-B2": 1,
           "HIL-8-A1": 2,
-          "PRE-4-A1": 1,
+          "PRE-4-A1": 2,
           "DXW-1-A1": 2,
           "PAR-1-B1": 2,
           "GRO-2-B1": 3,
@@ -7039,8 +7039,8 @@
           "GRO-6-B1": 1,
           "PRE-4-A2": 2,
           "SOU-5-A2": 1,
-          "DUX-3-B1": 4,
-          "STZ-5-A2": 3,
+          "DUX-3-B1": 5,
+          "STZ-5-A2": 5,
           "PRE-1-B2": 3,
           "PRO-5-B3": 1,
           "JSH-6-A1": 3,
@@ -7049,16 +7049,16 @@
           "FRB-1-A2": 3,
           "FES-2-A2": 2,
           "FES-2-B2": 2,
-          "FRB-5-B2": 1,
+          "FRB-5-B2": 2,
           "JSH-3S-A1": 3,
           "HIL-5-A2": 3,
           "BRN-1-A1": 1,
           "SOU-2-B1": 1,
           "FRB-6-A1": 2,
           "STZ-6-A2": 2,
-          "LYN-4-B2": 1,
+          "LYN-4-B2": 2,
           "HER-2-A1": 3,
-          "DUX-1-A1": 3,
+          "DUX-1-A1": 4,
           "PRK-1-A1": 1,
           "PRK-1-A2": 3,
           "HIL-7-B1": 5,
@@ -7067,7 +7067,7 @@
           "LUN-1-B1": 1,
           "DUX-3-A1": 3,
           "JSH-7-A3": 5,
-          "JSH-7-B1": 7,
+          "JSH-7-B1": 8,
           "STZ-6-B2": 2,
           "FRB-4-A1": 4,
           "DUX-4-A2": 1,
@@ -7077,16 +7077,16 @@
           "PRE-2-B2": 4,
           "LYN-1-B2": 2,
           "PRO-5-A1": 2,
-          "JSH-1-A1": 4,
+          "JSH-1-A1": 5,
           "PRE-6-B2": 2,
-          "SOU-4-A1": 1,
+          "SOU-4-A1": 2,
           "LYN-2-B1": 1,
           "GRO-6-A2": 2,
           "FRB-3-A2": 2,
           "PRE-5-A1": 1,
           "FES-2-B1": 2,
           "MAL-2-A1": 1,
-          "HIL-3-B1": 3,
+          "HIL-3-B1": 4,
           "GRO-5-A1": 2,
           "STZ-2-B1": 3,
           "HIL-1-B1": 3,
@@ -7116,109 +7116,109 @@
           "PRK-1-B2": 3,
           "PRO-5-B1": 1,
           "FRB-5-B1": 3,
-          "STZ-3-A1": 2,
           "SOU-1-B1": 3,
+          "STZ-3-A1": 2,
           "HIL-4-B1": 3,
           "FES-1-A1": 4,
           "FRB-5-A1": 2,
-          "STZ-4-A1": 2,
+          "STZ-4-A1": 3,
           "ARC-3-A1": 2,
           "LYN-1-A1": 2,
-          "GRO-3-B3": 2,
-          "PRK-2-A1": 2,
           "LNW-0-B1": 1,
-          "HIL-3-A1": 2,
-          "JSH-6-B1": 5,
           "GRO-3-A3": 6,
+          "GRO-3-B3": 2,
+          "PRK-2-A1": 4,
           "FRB-4-B1": 1,
-          "PRE-3-A1": 2,
+          "JSH-6-B1": 5,
+          "HIL-3-A1": 2,
+          "SOU-5-B1": 3,
           "JSH-4-A2": 3,
           "LYN-1-A3": 1,
           "GRO-6-B2": 5,
-          "SOU-5-B1": 3,
+          "PRE-3-A1": 1,
           "ARC-2-A2": 1,
           "ARC-1-A1": 1,
           "FRB-2-B2": 2,
           "PRE-2-A1": 3,
-          "FRB-2-B1": 1,
+          "PRO-2-B1": 2,
           "DYR-2-B1": 3,
           "JSH-1S-B1": 4,
+          "FRB-2-B1": 1,
           "STZ-3-A2": 1,
-          "PRO-2-B1": 2,
           "STZ-4-A2": 1,
           "BRN-2-A1": 2,
           "LNW-0-A2": 1,
           "LYN-2-B2": 3,
-          "JSH-1-B1": 2,
+          "HIL-6-A1": 2,
           "HIL-5-B2": 3,
-          "HIL-6-A1": 3,
-          "HIL-6-B1": 3,
-          "LUN-3-B1": 1,
-          "PRE-5-B1": 1,
+          "JSH-1-B1": 2,
           "LNW-1-A1": 1,
-          "ARC-1-B1": 1,
+          "HIL-6-B1": 3,
           "GRO-4-A2": 1,
-          "LYN-0-A1": 2,
           "PRO-4-A1": 1,
+          "PRE-5-B1": 1,
+          "ARC-1-B1": 1,
+          "LUN-3-B1": 1,
           "STZ-5-B1": 1,
-          "GRO-1-B1": 1,
           "BRN-3-B1": 1,
-          "PRE-3-B1": 1,
-          "MAL-1-B1": 2,
-          "STZ-2-A1": 1,
           "FRB-1-A1": 1,
+          "MAL-1-B1": 2,
+          "GRO-1-B1": 1,
+          "STZ-2-A1": 1,
+          "JSH-7-B3": 5,
           "LYN-3-B1": 1,
-          "JSH-7-B3": 4,
-          "STZ-5-B2": 1,
-          "BRN-1-B3": 6,
           "PRE-2-B1": 1,
+          "PRE-3-B1": 1,
+          "JSH-7-B2": 4,
+          "DUX-4-A1": 1,
           "STZ-1-B2": 1,
-          "GRO-6-A1": 1,
-          "FRB-3-B2": 1,
-          "DYR-2-A1": 2,
-          "STZ-6-B1": 2,
+          "STZ-5-B2": 1,
+          "BRN-1-B3": 5,
           "BRN-1-B2": 2,
-          "JSH-1S-A1": 1,
-          "HIL-4-B2": 1,
-          "HIL-8-B1": 2,
-          "GRO-3-B2": 1,
+          "GRO-6-A1": 1,
+          "DYR-2-A1": 2,
+          "HIL-8-B1": 1,
           "FES-4-B1": 1,
+          "HIL-4-B2": 3,
+          "JSH-1S-A1": 1,
+          "STZ-6-B1": 2,
+          "GRO-3-B2": 1,
           "PRO-5-B2": 1,
           "MAL-2-A3": 1,
           "BRN-2-B1": 2,
-          "DUX-4-A1": 1,
-          "JSH-7-B2": 3,
-          "BRN-1-A3": 2,
-          "LUN-2-A1": 1,
+          "LUN-2-A1": 2,
+          "PRE-1-B1": 2,
+          "LYN-0-A1": 1,
+          "MAL-1-A1": 2,
+          "JSH-4-B2": 1,
+          "FRB-3-B2": 1,
           "MAL-2-B3": 1,
-          "PRE-1-B1": 1,
+          "SOU-5-B2": 1,
+          "DUX-4-B2": 1,
+          "BRN-1-A3": 2,
           "BRN-4-A1": 1,
           "JSH-3N-B1": 2,
-          "SOU-5-B2": 1,
-          "JSH-4-B2": 1,
-          "MAL-1-A1": 2,
-          "STZ-3-B1": 3,
+          "STZ-1-A2": 2,
           "PRO-1-B1": 1,
           "FRB-2-A2": 2,
-          "JSH-2N-A1": 1,
+          "STZ-3-B1": 3,
           "HIL-4-A1": 1,
-          "MAL-2-B1": 1,
-          "DXW-1-B1": 1,
-          "LYN-3-A1": 1,
-          "PAR-1-A1": 1,
-          "STZ-1-A2": 1,
+          "JSH-2N-A1": 1,
           "LYN-3-B3": 1,
-          "FRB-3-B1": 1,
-          "GRO-5-B2": 1,
-          "LYN-0-B2": 1,
-          "DUX-4-B2": 1,
-          "FRB-3-A1": 2,
-          "BRN-3-A2": 1,
-          "PRK-1-B1": 1,
           "FES-1-B1": 1,
+          "MAL-2-B1": 1,
+          "FRB-3-A1": 2,
+          "LYN-3-A1": 1,
+          "DXW-1-B1": 1,
+          "BRN-3-A1": 1,
           "FES-2-A1": 1,
+          "PRE-6-B1": 1,
           "LYN-4-A2": 1,
-          "PRE-6-A2": 1
+          "PRK-1-B1": 1,
+          "FRB-3-B1": 1,
+          "PAR-1-A1": 1,
+          "GRO-5-B2": 1,
+          "LYN-3-A2": 1
         },
         "departed": 448,
         "departedByDriveway": {
@@ -7383,8 +7383,8 @@
           "LUN-2-B1": 1,
           "FES-2-B2": 1,
           "JSH-2S-A1": 1,
-          "STZ-1-A1": 2,
           "PRO-1-A1": 1,
+          "STZ-1-A1": 2,
           "LYN-3-B3": 1,
           "HER-1-A1": 3,
           "LNW-0-B2": 1,
@@ -7414,21 +7414,21 @@
           "PRE-3-B2": 1,
           "LNW-1-A1": 2,
           "LUN-3-B1": 2,
-          "PRE-2-A2": 2,
           "FRB-4-A1": 2,
+          "PRE-2-A2": 2,
           "GRO-3-A3": 2,
           "DUX-4-B2": 1,
           "BRN-3-A2": 2,
           "SOU-5-A3": 1,
           "FES-2-A2": 2,
           "STZ-1-B1": 1,
+          "LYN-4-A1": 2,
           "LYN-2-A1": 2,
           "BRN-2-B1": 2,
-          "LYN-4-A1": 2,
           "MAL-2-A3": 1,
-          "DUX-2-B1": 1,
           "PRE-1-A1": 1,
           "PRK-1-B1": 1,
+          "DUX-2-B1": 1,
           "PRO-4-B1": 1,
           "PRO-5-A1": 1,
           "STZ-3-A1": 2,
@@ -7440,36 +7440,36 @@
           "DUX-4-A1": 1,
           "PRO-5-A2": 1,
           "FRB-2-A2": 1,
+          "PRE-3-A2": 2,
           "BRN-3-A3": 2,
           "MAL-2-A1": 1,
           "BRN-4-A1": 1,
           "FRB-5-A2": 1,
-          "PRE-3-A2": 2,
-          "HIL-5-A2": 1,
           "BUR-1-A1": 1,
           "HIL-6-B2": 1,
+          "HIL-5-A2": 1,
           "FES-3-A1": 1,
-          "JSH-1-B2": 1,
           "DUX-3-A1": 1,
+          "JSH-1-B2": 1,
           "HIL-5-B1": 1,
           "GRO-4-A2": 1
         },
         "departuresWaiting": 0,
-        "meanDrivewayWaitS": 0.8910714285715363,
+        "meanDrivewayWaitS": 0.841294642857239,
         "longestDrivewayWaitS": 0,
         "departuresWaitingByDriveway": {}
       },
       "diagnostics": {
-        "arrivalsLost": 5,
+        "arrivalsLost": 4,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 88,
+          "longestStillS": 90,
           "longestStill": {
-            "seconds": 88,
-            "carId": 1120,
-            "nodeId": "lynnwood_duxbury",
-            "place": "Duxbury, lane 1, 893 m",
-            "atS": 530
+            "seconds": 90,
+            "carId": 1544,
+            "nodeId": "lynnwood_janshoba",
+            "place": "Jan Shoba, lane 2, 187 m",
+            "atS": 579
           },
           "locked": null,
           "starved": null,
@@ -7486,358 +7486,1026 @@
         "errorsOn": false
       },
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 23.105007704160347,
-      "avgWaitTimeArterial": 18.232925764192217,
-      "avgWaitTimeSideStreet": 12.087002652519931,
-      "throughputPerMin": 162.25,
-      "throughputPerMinArterial": 143.125,
-      "throughputPerMinSideStreet": 94.25,
-      "pctClearedWithoutStop": 7.627118644067797,
-      "pctClearedWithoutStopArterial": 17.554585152838428,
-      "pctClearedWithoutStopSideStreet": 21.352785145888596,
-      "medianWait": 18.19999999999999,
-      "p95Wait": 63.700000000000635,
-      "maxWait": 121.49999999999737,
-      "p95WaitArterial": 57.90000000000055,
-      "maxWaitArterial": 119.99999999999746,
-      "p95WaitSideStreet": 40.0000000000003,
-      "maxWaitSideStreet": 113.8999999999978,
+      "avgWaitTime": 22.529510703363957,
+      "avgWaitTimeArterial": 17.55246326707005,
+      "avgWaitTimeSideStreet": 12.181382978723443,
+      "throughputPerMin": 163.5,
+      "throughputPerMinArterial": 144.625,
+      "throughputPerMinSideStreet": 94,
+      "pctClearedWithoutStop": 8.486238532110093,
+      "pctClearedWithoutStopArterial": 18.236819360414867,
+      "pctClearedWithoutStopSideStreet": 23.27127659574468,
+      "medianWait": 17.899999999999984,
+      "p95Wait": 60.70000000000059,
+      "maxWait": 140.29999999999632,
+      "p95WaitArterial": 55.80000000000052,
+      "maxWaitArterial": 140.29999999999632,
+      "p95WaitSideStreet": 45.300000000000374,
+      "maxWaitSideStreet": 91.39999999999908,
       "roadWaits": {
         "pretorius": {
           "name": "Pretorius Street",
           "scope": "arterial",
-          "vehicles": 236,
-          "meanWait": 13.83,
-          "maxWait": 68.1
+          "vehicles": 254,
+          "meanWait": 13.65,
+          "maxWait": 62.2,
+          "stages": {
+            "pre": {
+              "vehicles": 77,
+              "meanWait": 7.26
+            },
+            "during": {
+              "vehicles": 54,
+              "meanWait": 16.56
+            },
+            "post": {
+              "vehicles": 123,
+              "meanWait": 16.37
+            }
+          }
         },
         "conn_jan_shoba_nb": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 149,
-          "meanWait": 5.86,
-          "maxWait": 31.4
+          "vehicles": 153,
+          "meanWait": 6.45,
+          "maxWait": 49.5,
+          "stages": {
+            "pre": {
+              "vehicles": 54,
+              "meanWait": 3.58
+            },
+            "during": {
+              "vehicles": 39,
+              "meanWait": 6.76
+            },
+            "post": {
+              "vehicles": 60,
+              "meanWait": 8.84
+            }
+          }
         },
         "park": {
           "name": "Park Street",
           "scope": "side",
           "vehicles": 51,
-          "meanWait": 4.54,
-          "maxWait": 34.8
+          "meanWait": 4.77,
+          "maxWait": 34.8,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 5.92
+            },
+            "during": {
+              "vehicles": 19,
+              "meanWait": 5.44
+            },
+            "post": {
+              "vehicles": 19,
+              "meanWait": 3.31
+            }
+          }
         },
         "conn_grosvenor_south": {
           "name": "Grosvenor",
           "scope": "side",
-          "vehicles": 107,
-          "meanWait": 5.42,
-          "maxWait": 31.5
+          "vehicles": 103,
+          "meanWait": 5.24,
+          "maxWait": 35.5,
+          "stages": {
+            "pre": {
+              "vehicles": 27,
+              "meanWait": 2.79
+            },
+            "during": {
+              "vehicles": 43,
+              "meanWait": 5.64
+            },
+            "post": {
+              "vehicles": 33,
+              "meanWait": 6.71
+            }
+          }
         },
         "arcadia": {
           "name": "Arcadia Street",
           "scope": "side",
           "vehicles": 72,
-          "meanWait": 2.28,
-          "maxWait": 20.6
+          "meanWait": 2.44,
+          "maxWait": 20.6,
+          "stages": {
+            "pre": {
+              "vehicles": 24,
+              "meanWait": 3.05
+            },
+            "during": {
+              "vehicles": 20,
+              "meanWait": 0.88
+            },
+            "post": {
+              "vehicles": 28,
+              "meanWait": 3.04
+            }
+          }
         },
         "conn_arcadia_east": {
           "name": "Arcadia",
           "scope": "side",
           "vehicles": 52,
-          "meanWait": 2.73,
-          "maxWait": 24.5
+          "meanWait": 2.38,
+          "maxWait": 22.7,
+          "stages": {
+            "pre": {
+              "vehicles": 15,
+              "meanWait": 1.25
+            },
+            "during": {
+              "vehicles": 15,
+              "meanWait": 2.86
+            },
+            "post": {
+              "vehicles": 22,
+              "meanWait": 2.82
+            }
+          }
         },
         "conn_jan_shoba": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 353,
-          "meanWait": 10.76,
-          "maxWait": 96.5
+          "vehicles": 349,
+          "meanWait": 11.19,
+          "maxWait": 140.3,
+          "stages": {
+            "pre": {
+              "vehicles": 96,
+              "meanWait": 5.49
+            },
+            "during": {
+              "vehicles": 95,
+              "meanWait": 8.33
+            },
+            "post": {
+              "vehicles": 158,
+              "meanWait": 16.37
+            }
+          }
         },
         "lynnwood": {
           "name": "Lynnwood Road",
           "scope": "arterial",
-          "vehicles": 280,
-          "meanWait": 17.67,
-          "maxWait": 120
+          "vehicles": 286,
+          "meanWait": 14.11,
+          "maxWait": 100.5,
+          "stages": {
+            "pre": {
+              "vehicles": 74,
+              "meanWait": 7
+            },
+            "during": {
+              "vehicles": 74,
+              "meanWait": 14.78
+            },
+            "post": {
+              "vehicles": 138,
+              "meanWait": 17.55
+            }
+          }
         },
         "francisbaard": {
           "name": "Francis Baard Street",
           "scope": "arterial",
-          "vehicles": 313,
-          "meanWait": 9.97,
-          "maxWait": 72.8
+          "vehicles": 309,
+          "meanWait": 9.87,
+          "maxWait": 68.5,
+          "stages": {
+            "pre": {
+              "vehicles": 98,
+              "meanWait": 2.85
+            },
+            "during": {
+              "vehicles": 71,
+              "meanWait": 9.87
+            },
+            "post": {
+              "vehicles": 140,
+              "meanWait": 14.79
+            }
+          }
         },
         "conn_festival": {
           "name": "Festival",
           "scope": "side",
-          "vehicles": 96,
-          "meanWait": 7.71,
-          "maxWait": 41.3
+          "vehicles": 91,
+          "meanWait": 8.97,
+          "maxWait": 61.6,
+          "stages": {
+            "pre": {
+              "vehicles": 28,
+              "meanWait": 4.4
+            },
+            "during": {
+              "vehicles": 19,
+              "meanWait": 11.68
+            },
+            "post": {
+              "vehicles": 44,
+              "meanWait": 10.72
+            }
+          }
         },
         "stanza": {
           "name": "Stanza Bopape Street",
           "scope": "arterial",
-          "vehicles": 256,
-          "meanWait": 7.17,
-          "maxWait": 45.9
+          "vehicles": 255,
+          "meanWait": 5.68,
+          "maxWait": 49.7,
+          "stages": {
+            "pre": {
+              "vehicles": 81,
+              "meanWait": 4.97
+            },
+            "during": {
+              "vehicles": 53,
+              "meanWait": 6.99
+            },
+            "post": {
+              "vehicles": 121,
+              "meanWait": 5.58
+            }
+          }
         },
         "conn_dyer": {
           "name": "Dyer Road",
           "scope": "side",
-          "vehicles": 65,
-          "meanWait": 3.7,
-          "maxWait": 26.8
+          "vehicles": 60,
+          "meanWait": 2.78,
+          "maxWait": 16.1,
+          "stages": {
+            "pre": {
+              "vehicles": 15,
+              "meanWait": 3.36
+            },
+            "during": {
+              "vehicles": 18,
+              "meanWait": 2.82
+            },
+            "post": {
+              "vehicles": 27,
+              "meanWait": 2.42
+            }
+          }
         },
         "conn_park_east": {
           "name": "Park",
           "scope": "side",
-          "vehicles": 21,
-          "meanWait": 2.1,
-          "maxWait": 10.3
+          "vehicles": 22,
+          "meanWait": 2.29,
+          "maxWait": 10.3,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 1.97
+            },
+            "during": {
+              "vehicles": 7,
+              "meanWait": 2.1
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 2.98
+            }
+          }
         },
         "conn_grosvenor": {
           "name": "Grosvenor",
           "scope": "side",
-          "vehicles": 131,
-          "meanWait": 8.51,
-          "maxWait": 39.1
+          "vehicles": 129,
+          "meanWait": 8.18,
+          "maxWait": 49.9,
+          "stages": {
+            "pre": {
+              "vehicles": 31,
+              "meanWait": 5.42
+            },
+            "during": {
+              "vehicles": 39,
+              "meanWait": 6.11
+            },
+            "post": {
+              "vehicles": 59,
+              "meanWait": 10.99
+            }
+          }
         },
         "conn_prospect_east": {
           "name": "Prospect",
           "scope": "side",
           "vehicles": 21,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 9,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_e_on": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 13,
-          "meanWait": 0.24,
-          "maxWait": 3.1
+          "vehicles": 14,
+          "meanWait": 0,
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "slip_duxbury_janshoba_southbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 10,
-          "meanWait": 0,
-          "maxWait": 0
+          "vehicles": 14,
+          "meanWait": 0.21,
+          "maxWait": 3,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 9,
+              "meanWait": 0.33
+            }
+          }
         },
         "conn_duxbury_east": {
           "name": "Duxbury",
           "scope": "side",
-          "vehicles": 80,
-          "meanWait": 12.82,
-          "maxWait": 113.9
+          "vehicles": 85,
+          "meanWait": 13.19,
+          "maxWait": 60,
+          "stages": {
+            "pre": {
+              "vehicles": 18,
+              "meanWait": 8.14
+            },
+            "during": {
+              "vehicles": 21,
+              "meanWait": 8.44
+            },
+            "post": {
+              "vehicles": 46,
+              "meanWait": 17.33
+            }
+          }
         },
         "conn_hilda": {
           "name": "Hilda",
           "scope": "side",
           "vehicles": 124,
-          "meanWait": 5.57,
-          "maxWait": 33.9
+          "meanWait": 6,
+          "maxWait": 54.1,
+          "stages": {
+            "pre": {
+              "vehicles": 35,
+              "meanWait": 2.37
+            },
+            "during": {
+              "vehicles": 32,
+              "meanWait": 6.5
+            },
+            "post": {
+              "vehicles": 57,
+              "meanWait": 7.95
+            }
+          }
         },
         "conn_duxbury_south": {
           "name": "Duxbury",
           "scope": "side",
-          "vehicles": 22,
-          "meanWait": 5.91,
-          "maxWait": 60.9
+          "vehicles": 23,
+          "meanWait": 5.62,
+          "maxWait": 60.9,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 3.72
+            },
+            "during": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 18,
+              "meanWait": 6.35
+            }
+          }
         },
         "arcadia_west": {
           "name": "Arcadia Street",
           "scope": "side",
           "vehicles": 14,
-          "meanWait": 3.28,
-          "maxWait": 10.4
+          "meanWait": 3.18,
+          "maxWait": 10.4,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 3.7
+            },
+            "during": {
+              "vehicles": 2,
+              "meanWait": 2.8
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 3.01
+            }
+          }
         },
         "dyer_mall": {
           "name": "Mall Road",
           "scope": "side",
-          "vehicles": 46,
-          "meanWait": 0.19,
-          "maxWait": 3.7
+          "vehicles": 45,
+          "meanWait": 0.1,
+          "maxWait": 0.9,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 0.12
+            },
+            "during": {
+              "vehicles": 10,
+              "meanWait": 0.17
+            },
+            "post": {
+              "vehicles": 22,
+              "meanWait": 0.06
+            }
+          }
         },
         "lunnon": {
           "name": "Lunnon Road",
           "scope": "side",
-          "vehicles": 59,
-          "meanWait": 5.92,
-          "maxWait": 21.4
+          "vehicles": 56,
+          "meanWait": 5.86,
+          "maxWait": 25.5,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 1.79
+            },
+            "during": {
+              "vehicles": 21,
+              "meanWait": 7.23
+            },
+            "post": {
+              "vehicles": 26,
+              "meanWait": 6.15
+            }
+          }
         },
         "south": {
           "name": "South Street",
           "scope": "side",
           "vehicles": 78,
-          "meanWait": 0.44,
-          "maxWait": 10.6
+          "meanWait": 0.77,
+          "maxWait": 13.8,
+          "stages": {
+            "pre": {
+              "vehicles": 18,
+              "meanWait": 0.32
+            },
+            "during": {
+              "vehicles": 27,
+              "meanWait": 1.25
+            },
+            "post": {
+              "vehicles": 33,
+              "meanWait": 0.63
+            }
+          }
         },
         "burnett": {
           "name": "Burnett Street",
           "scope": "side",
-          "vehicles": 133,
-          "meanWait": 6.04,
-          "maxWait": 43.1
+          "vehicles": 130,
+          "meanWait": 5.56,
+          "maxWait": 44,
+          "stages": {
+            "pre": {
+              "vehicles": 26,
+              "meanWait": 4.73
+            },
+            "during": {
+              "vehicles": 38,
+              "meanWait": 7.71
+            },
+            "post": {
+              "vehicles": 66,
+              "meanWait": 4.66
+            }
+          }
         },
         "slip_burnett_janshoba_northbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 21,
+          "vehicles": 20,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 10,
+              "meanWait": 0
+            }
+          }
         },
         "conn_hilda_south": {
           "name": "Hilda",
           "scope": "side",
-          "vehicles": 144,
-          "meanWait": 1.41,
-          "maxWait": 15.5
+          "vehicles": 143,
+          "meanWait": 1.26,
+          "maxWait": 16.8,
+          "stages": {
+            "pre": {
+              "vehicles": 25,
+              "meanWait": 0.13
+            },
+            "during": {
+              "vehicles": 48,
+              "meanWait": 0.98
+            },
+            "post": {
+              "vehicles": 70,
+              "meanWait": 1.86
+            }
+          }
         },
         "prospect": {
           "name": "Prospect Street",
           "scope": "side",
-          "vehicles": 84,
-          "meanWait": 5.04,
-          "maxWait": 21.4
+          "vehicles": 83,
+          "meanWait": 4.95,
+          "maxWait": 21.4,
+          "stages": {
+            "pre": {
+              "vehicles": 19,
+              "meanWait": 4.5
+            },
+            "during": {
+              "vehicles": 30,
+              "meanWait": 4.72
+            },
+            "post": {
+              "vehicles": 34,
+              "meanWait": 5.41
+            }
+          }
         },
         "conn_jan_shoba_sb": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 175,
-          "meanWait": 14.66,
-          "maxWait": 91.2
+          "vehicles": 172,
+          "meanWait": 17.53,
+          "maxWait": 86.6,
+          "stages": {
+            "pre": {
+              "vehicles": 60,
+              "meanWait": 7.79
+            },
+            "during": {
+              "vehicles": 28,
+              "meanWait": 11.63
+            },
+            "post": {
+              "vehicles": 84,
+              "meanWait": 26.45
+            }
+          }
         },
         "conn_lunnon_e_on": {
           "name": "Lunnon",
           "scope": "side",
-          "vehicles": 20,
-          "meanWait": 0,
-          "maxWait": 0
+          "vehicles": 16,
+          "meanWait": 0.26,
+          "maxWait": 4.2,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0.7
+            }
+          }
         },
         "south_janshoba_divided": {
           "name": "South Street",
           "scope": "side",
           "vehicles": 47,
-          "meanWait": 4,
-          "maxWait": 32.4
+          "meanWait": 4.53,
+          "maxWait": 25.2,
+          "stages": {
+            "pre": {
+              "vehicles": 17,
+              "meanWait": 0.82
+            },
+            "during": {
+              "vehicles": 9,
+              "meanWait": 4.49
+            },
+            "post": {
+              "vehicles": 21,
+              "meanWait": 7.56
+            }
+          }
         },
         "conn_burnett_east": {
           "name": "Burnett",
           "scope": "side",
           "vehicles": 15,
-          "meanWait": 7.07,
-          "maxWait": 35.9
+          "meanWait": 6.01,
+          "maxWait": 24.5,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 1.6
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 4.67
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 11.14
+            }
+          }
         },
         "conn_jan_shoba_nb_south": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 39,
-          "meanWait": 11.91,
-          "maxWait": 40.2
+          "vehicles": 41,
+          "meanWait": 9.65,
+          "maxWait": 39.9,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 10.41
+            },
+            "during": {
+              "vehicles": 12,
+              "meanWait": 12.23
+            },
+            "post": {
+              "vehicles": 20,
+              "meanWait": 7.76
+            }
+          }
         },
         "conn_jan_shoba_sb_merge": {
           "name": "Jan Shoba",
           "scope": "arterial",
           "vehicles": 62,
           "meanWait": 0.09,
-          "maxWait": 0.9
+          "maxWait": 1.6,
+          "stages": {
+            "pre": {
+              "vehicles": 18,
+              "meanWait": 0.02
+            },
+            "during": {
+              "vehicles": 17,
+              "meanWait": 0.14
+            },
+            "post": {
+              "vehicles": 27,
+              "meanWait": 0.1
+            }
+          }
         },
         "conn_south_east": {
           "name": "South",
           "scope": "side",
           "vehicles": 22,
-          "meanWait": 0.04,
-          "maxWait": 0.8
+          "meanWait": 0.03,
+          "maxWait": 0.7,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 0.12
+            },
+            "post": {
+              "vehicles": 7,
+              "meanWait": 0
+            }
+          }
         },
         "conn_herold": {
           "name": "Herold Street",
           "scope": "side",
-          "vehicles": 85,
-          "meanWait": 13.32,
-          "maxWait": 64
+          "vehicles": 86,
+          "meanWait": 14.4,
+          "maxWait": 65.6,
+          "stages": {
+            "pre": {
+              "vehicles": 16,
+              "meanWait": 17.76
+            },
+            "during": {
+              "vehicles": 31,
+              "meanWait": 14.17
+            },
+            "post": {
+              "vehicles": 39,
+              "meanWait": 13.2
+            }
+          }
         },
         "conn_festival_south": {
           "name": "Festival",
           "scope": "side",
-          "vehicles": 37,
-          "meanWait": 6.3,
-          "maxWait": 21.8
+          "vehicles": 35,
+          "meanWait": 6.87,
+          "maxWait": 26.1,
+          "stages": {
+            "pre": {
+              "vehicles": 6,
+              "meanWait": 5.37
+            },
+            "during": {
+              "vehicles": 8,
+              "meanWait": 3.84
+            },
+            "post": {
+              "vehicles": 21,
+              "meanWait": 8.46
+            }
+          }
         },
         "duxbury_west": {
           "name": "Duxbury Road",
           "scope": "side",
-          "vehicles": 124,
-          "meanWait": 0.47,
-          "maxWait": 9
+          "vehicles": 125,
+          "meanWait": 0.41,
+          "maxWait": 9,
+          "stages": {
+            "pre": {
+              "vehicles": 21,
+              "meanWait": 0.24
+            },
+            "during": {
+              "vehicles": 40,
+              "meanWait": 0.84
+            },
+            "post": {
+              "vehicles": 64,
+              "meanWait": 0.19
+            }
+          }
         },
         "duxbury": {
           "name": "Duxbury Road",
           "scope": "side",
-          "vehicles": 73,
-          "meanWait": 4.74,
-          "maxWait": 33.2
+          "vehicles": 71,
+          "meanWait": 4.67,
+          "maxWait": 32.2,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 3.04
+            },
+            "during": {
+              "vehicles": 19,
+              "meanWait": 0.47
+            },
+            "post": {
+              "vehicles": 39,
+              "meanWait": 7.26
+            }
+          }
         },
         "lunnon_west": {
           "name": "Lunnon Road",
           "scope": "side",
-          "vehicles": 35,
-          "meanWait": 0.5,
-          "maxWait": 5.1
+          "vehicles": 33,
+          "meanWait": 0.48,
+          "maxWait": 5.1,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 1.06
+            },
+            "during": {
+              "vehicles": 12,
+              "meanWait": 0.43
+            },
+            "post": {
+              "vehicles": 13,
+              "meanWait": 0.17
+            }
+          }
         },
         "conn_lunnon_w_off": {
           "name": "Lunnon",
           "scope": "side",
-          "vehicles": 12,
+          "vehicles": 13,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 0
+            }
+          }
         },
         "slip_lynnwood_duxbury_eastbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 8,
+          "vehicles": 9,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 0
+            }
+          }
         },
         "conn_arcadia_oneway": {
           "name": "Arcadia",
           "scope": "side",
           "vehicles": 12,
-          "meanWait": 4.75,
-          "maxWait": 12.8
+          "meanWait": 4.58,
+          "maxWait": 9.1,
+          "stages": {
+            "pre": {
+              "vehicles": 3,
+              "meanWait": 5.7
+            },
+            "during": {
+              "vehicles": 4,
+              "meanWait": 1.03
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 6.76
+            }
+          }
         },
         "conn_prospect_e_off": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 8,
+          "vehicles": 7,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 3,
+              "meanWait": 0
+            }
+          }
         },
         "conn_lunnon_e_off": {
           "name": "Lunnon",
           "scope": "side",
           "vehicles": 11,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 7,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_w_on": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 10,
+          "vehicles": 11,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "conn_lunnon_w_on": {
           "name": "Lunnon",
           "scope": "side",
-          "vehicles": 8,
+          "vehicles": 7,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 3,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_w_off": {
           "name": "Prospect",
           "scope": "side",
           "vehicles": 4,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "during": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 3,
+              "meanWait": 0
+            }
+          }
         }
       },
       "coordination": {
@@ -7979,17 +8647,17 @@
             "retunes": 4
           },
           "pretorius": {
-            "meanCycleS": 39,
+            "meanCycleS": 38.8,
             "minCycleS": 34.2,
-            "maxCycleS": 45,
-            "finalCycleS": 45,
+            "maxCycleS": 44.4,
+            "finalCycleS": 44.4,
             "retunes": 2
           },
           "francisbaard": {
-            "meanCycleS": 34.4,
+            "meanCycleS": 34.6,
             "minCycleS": 31.6,
-            "maxCycleS": 38.2,
-            "finalCycleS": 38.2,
+            "maxCycleS": 38.6,
+            "finalCycleS": 38.6,
             "retunes": 2
           },
           "arcadia_west": {
@@ -8045,13 +8713,13 @@
         "recoveryHolds": 1,
         "recoveryHoldS": 300,
         "platoon": {
-          "messages": 1595,
+          "messages": 1583,
           "holds": 0,
           "holdS": 0
         },
         "greenEnds": {
-          "gapOut": 411,
-          "maxOut": 32,
+          "gapOut": 407,
+          "maxOut": 31,
           "yield": 21,
           "platoonEarly": 6,
           "forceOff": 5
@@ -8084,14 +8752,14 @@
         "clearedTotal": 384
       },
       "duringOutage": {
-        "avgWaitTime": 22.533436532507856,
-        "throughputPerMin": 129.2,
-        "clearedTotal": 323
+        "avgWaitTime": 22.5540880503146,
+        "throughputPerMin": 127.2,
+        "clearedTotal": 318
       },
       "postRecovery": {
-        "avgWaitTime": 30.738409475465453,
-        "throughputPerMin": 197,
-        "clearedTotal": 591
+        "avgWaitTime": 29.291749174917495,
+        "throughputPerMin": 202,
+        "clearedTotal": 606
       },
       "preOutageArterial": {
         "avgWaitTime": 8.865597667638498,
@@ -8099,14 +8767,14 @@
         "clearedTotal": 343
       },
       "duringOutageArterial": {
-        "avgWaitTime": 16.450000000000077,
-        "throughputPerMin": 112,
-        "clearedTotal": 280
+        "avgWaitTime": 16.626086956521814,
+        "throughputPerMin": 110.4,
+        "clearedTotal": 276
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 25.344444444444562,
-        "throughputPerMin": 174,
-        "clearedTotal": 522
+        "avgWaitTime": 23.565985130111564,
+        "throughputPerMin": 179.33333333333334,
+        "clearedTotal": 538
       },
       "preOutageSideStreet": {
         "avgWaitTime": 7.523500000000018,
@@ -8114,14 +8782,14 @@
         "clearedTotal": 200
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 12.664928909952659,
-        "throughputPerMin": 84.4,
-        "clearedTotal": 211
+        "avgWaitTime": 12.420192307692368,
+        "throughputPerMin": 83.2,
+        "clearedTotal": 208
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 14.392419825072924,
-        "throughputPerMin": 114.33333333333333,
-        "clearedTotal": 343
+        "avgWaitTime": 14.74505813953492,
+        "throughputPerMin": 114.66666666666667,
+        "clearedTotal": 344
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -8140,13 +8808,13 @@
       ],
       "zoneStats": {
         "zone1": {
-          "avgWaitTime": 23.73164835164841,
-          "medianWait": 18.29999999999999,
-          "p95Wait": 72.50000000000016,
-          "maxWait": 119.99999999999746,
-          "throughputPerMin": 56.875,
-          "clearedTotal": 455,
-          "pctClearedWithoutStop": 12.307692307692308,
+          "avgWaitTime": 22.16607929515425,
+          "medianWait": 18.000000000000256,
+          "p95Wait": 60.70000000000059,
+          "maxWait": 118.09999999999627,
+          "throughputPerMin": 56.75,
+          "clearedTotal": 454,
+          "pctClearedWithoutStop": 12.995594713656388,
           "segments": {
             "pre": {
               "avgWaitTime": 13.249557522123933,
@@ -8154,14 +8822,14 @@
               "clearedTotal": 113
             },
             "during": {
-              "avgWaitTime": 20.374590163934535,
+              "avgWaitTime": 20.885245901639472,
               "throughputPerMin": 48.8,
               "clearedTotal": 122
             },
             "post": {
-              "avgWaitTime": 30.97727272727277,
-              "throughputPerMin": 73.33333333333333,
-              "clearedTotal": 220
+              "avgWaitTime": 27.4803652968037,
+              "throughputPerMin": 73,
+              "clearedTotal": 219
             }
           },
           "restoreSeconds": 300,
@@ -8170,13 +8838,13 @@
           "timeToRecoveryWaitSeconds": null
         },
         "zone2": {
-          "avgWaitTime": 9.865413533834628,
-          "medianWait": 7.099999999999975,
-          "p95Wait": 30.000000000000156,
-          "maxWait": 52.799999999999905,
-          "throughputPerMin": 66.5,
-          "clearedTotal": 532,
-          "pctClearedWithoutStop": 15.977443609022558,
+          "avgWaitTime": 9.505816135084471,
+          "medianWait": 6.5999999999999925,
+          "p95Wait": 30.90000000000044,
+          "maxWait": 54.90000000000051,
+          "throughputPerMin": 66.625,
+          "clearedTotal": 533,
+          "pctClearedWithoutStop": 18.94934333958724,
           "segments": {
             "pre": {
               "avgWaitTime": 5.646153846153855,
@@ -8184,14 +8852,14 @@
               "clearedTotal": 130
             },
             "during": {
-              "avgWaitTime": 9.61772151898737,
+              "avgWaitTime": 9.359493670886108,
               "throughputPerMin": 63.2,
               "clearedTotal": 158
             },
             "post": {
-              "avgWaitTime": 12.273770491803347,
-              "throughputPerMin": 81.33333333333333,
-              "clearedTotal": 244
+              "avgWaitTime": 11.64816326530619,
+              "throughputPerMin": 81.66666666666667,
+              "clearedTotal": 245
             }
           },
           "restoreSeconds": 300,
@@ -8200,13 +8868,13 @@
           "timeToRecoveryWaitSeconds": null
         },
         "zone3": {
-          "avgWaitTime": 18.054792746114053,
-          "medianWait": 13.999999999999966,
-          "p95Wait": 51.800000000000466,
-          "maxWait": 97.19999999999875,
-          "throughputPerMin": 96.5,
-          "clearedTotal": 772,
-          "pctClearedWithoutStop": 10.362694300518134,
+          "avgWaitTime": 18.235623409669294,
+          "medianWait": 13.599999999999968,
+          "p95Wait": 55.70000000000052,
+          "maxWait": 98.09999999999866,
+          "throughputPerMin": 98.25,
+          "clearedTotal": 786,
+          "pctClearedWithoutStop": 12.213740458015266,
           "segments": {
             "pre": {
               "avgWaitTime": 9.723109243697497,
@@ -8214,14 +8882,14 @@
               "clearedTotal": 238
             },
             "during": {
-              "avgWaitTime": 18.27150837988836,
-              "throughputPerMin": 71.6,
-              "clearedTotal": 179
+              "avgWaitTime": 17.857954545454668,
+              "throughputPerMin": 70.4,
+              "clearedTotal": 176
             },
             "post": {
-              "avgWaitTime": 23.531267605633882,
-              "throughputPerMin": 118.33333333333333,
-              "clearedTotal": 355
+              "avgWaitTime": 23.860483870967844,
+              "throughputPerMin": 124,
+              "clearedTotal": 372
             }
           },
           "restoreSeconds": 300,
@@ -8233,30 +8901,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 7.169921875000016,
-          "throughputPerMin": 32,
-          "clearedTotal": 256,
-          "waitSumTotal": 1835.500000000004,
-          "clearedWithoutStopTotal": 102,
-          "pctClearedWithoutStop": 39.84375
+          "avgWaitTime": 5.678823529411775,
+          "throughputPerMin": 31.875,
+          "clearedTotal": 255,
+          "waitSumTotal": 1448.1000000000026,
+          "clearedWithoutStopTotal": 106,
+          "pctClearedWithoutStop": 41.568627450980394
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 13.83389830508482,
-          "throughputPerMin": 29.5,
-          "clearedTotal": 236,
-          "waitSumTotal": 3264.8000000000175,
-          "clearedWithoutStopTotal": 59,
-          "pctClearedWithoutStop": 25
+          "avgWaitTime": 13.651574803149682,
+          "throughputPerMin": 31.75,
+          "clearedTotal": 254,
+          "waitSumTotal": 3467.500000000019,
+          "clearedWithoutStopTotal": 66,
+          "pctClearedWithoutStop": 25.984251968503933
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 9.971246006389812,
-          "throughputPerMin": 39.125,
-          "clearedTotal": 313,
-          "waitSumTotal": 3121.000000000011,
-          "clearedWithoutStopTotal": 112,
-          "pctClearedWithoutStop": 35.78274760383386
+          "avgWaitTime": 9.874110032362498,
+          "throughputPerMin": 38.625,
+          "clearedTotal": 309,
+          "waitSumTotal": 3051.100000000012,
+          "clearedWithoutStopTotal": 111,
+          "pctClearedWithoutStop": 35.92233009708738
         },
         {
           "id": "arcadia_west",
@@ -8341,12 +9009,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 17.672857142857193,
-          "throughputPerMin": 35,
-          "clearedTotal": 280,
-          "waitSumTotal": 4948.400000000014,
-          "clearedWithoutStopTotal": 81,
-          "pctClearedWithoutStop": 28.92857142857143
+          "avgWaitTime": 14.105594405594447,
+          "throughputPerMin": 35.75,
+          "clearedTotal": 286,
+          "waitSumTotal": 4034.2000000000116,
+          "clearedWithoutStopTotal": 89,
+          "pctClearedWithoutStop": 31.11888111888112
         },
         {
           "id": "dyer_mall",
@@ -8377,18 +9045,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 12.61374795417355,
-          "throughputPerMin": 76.375,
-          "clearedTotal": 611,
-          "waitSumTotal": 7707.000000000039,
-          "clearedWithoutStopTotal": 212,
-          "pctClearedWithoutStop": 34.697217675941076
+          "avgWaitTime": 13.663322368421108,
+          "throughputPerMin": 76,
+          "clearedTotal": 608,
+          "waitSumTotal": 8307.300000000034,
+          "clearedWithoutStopTotal": 215,
+          "pctClearedWithoutStop": 35.36184210526316
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1864,
-        "totalClearedNetwork": 1380,
-        "onRoadNetwork": 484,
+        "totalSpawned": 1865,
+        "totalClearedNetwork": 1390,
+        "onRoadNetwork": 475,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -8425,6 +9093,11 @@
             "freezeAfterWarmup": false,
             "recoveryHold": true,
             "recoveryHoldS": 300,
+            "recoveryHoldThroughOutageZones": [],
+            "freeCycleZones": [],
+            "noPlatoonMessageZones": [],
+            "connectorRouteMarriage": true,
+            "restartOnArterialGreen": true,
             "forceRoutes": false,
             "connectorRoutes": true,
             "selective": true,
@@ -8448,7 +9121,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "8d675944aaca8298"
+    "rowsHash": "854f8332c14a3aff"
   },
   "2|coordinated_adaptive|destination|true": {
     "summary": {
@@ -8456,68 +9129,68 @@
       "controllerMode": "coordinated_adaptive",
       "routingMode": "destination",
       "routing": {
-        "trips": 1294,
-        "meanTripS": 144.38724884082046,
-        "meanTripDelayS": 69.25474289958308,
-        "toExit": 741,
-        "pulledOff": 553,
-        "divertedPct": 0.7727975270479135,
-        "missedTurns": 50,
+        "trips": 1313,
+        "meanTripS": 142.94600152324568,
+        "meanTripDelayS": 68.15313673934644,
+        "toExit": 749,
+        "pulledOff": 564,
+        "divertedPct": 0.7616146230007617,
+        "missedTurns": 42,
         "missedBy": {
-          "wrongLane": 50,
+          "wrongLane": 42,
           "blockedTurn": 0,
           "peelNoRoom": 0
         },
         "rerouted": 0,
         "pulledOffByBlock": {
           "FES-2": 10,
-          "JSH-7": 22,
-          "DUX-2": 6,
+          "JSH-7": 25,
+          "DUX-2": 7,
           "BRN-2": 15,
           "GRO-2": 6,
-          "GRO-4": 11,
+          "GRO-4": 12,
           "BRN-1": 12,
           "PRE-1": 13,
-          "STZ-6": 8,
-          "FRB-1": 5,
-          "PRE-2": 10,
+          "STZ-6": 7,
+          "FRB-1": 6,
+          "PRE-2": 9,
           "JSH-6": 8,
-          "FRB-6": 6,
+          "FRB-6": 5,
           "HIL-5": 6,
           "STZ-3": 10,
-          "GRO-3": 14,
+          "GRO-3": 17,
           "HIL-1": 5,
           "DUX-3": 13,
           "SOU-5": 7,
-          "ARC-3": 6,
-          "JSH-5": 6,
+          "ARC-3": 9,
+          "JSH-5": 7,
           "HIL-3": 5,
           "FRB-4": 5,
-          "HIL-8": 8,
-          "LYN-1": 15,
+          "HIL-8": 7,
+          "LYN-1": 14,
           "JSH-1": 6,
-          "PAR-1": 3,
-          "PRO-2": 5,
+          "PAR-1": 2,
+          "PRO-2": 6,
           "LUN-1": 3,
-          "FRB-2": 7,
+          "FRB-2": 9,
           "PRE-3": 13,
           "GRO-1": 5,
           "LUN-2": 3,
           "DUX-4": 5,
-          "PRO-4": 3,
+          "PRO-4": 2,
           "ARC-2": 11,
           "HER-1": 6,
           "LNW-0": 2,
-          "JSH-1N": 5,
-          "PRE-4": 6,
+          "JSH-1N": 6,
+          "PRE-4": 4,
           "PRE-5": 7,
-          "LYN-2": 10,
+          "LYN-2": 9,
           "FRB-3": 6,
           "STZ-2": 8,
           "MAL-2": 4,
           "ARC-1": 1,
-          "LYN-3": 8,
-          "FRB-5": 15,
+          "LYN-3": 7,
+          "FRB-5": 16,
           "HIL-2": 4,
           "STZ-4": 5,
           "GRO-7": 3,
@@ -8526,10 +9199,10 @@
           "FES-4": 9,
           "HIL-6": 7,
           "GRO-6": 7,
-          "STZ-5": 5,
+          "STZ-5": 6,
           "PRO-3": 4,
-          "LYN-0": 7,
-          "JSH-4": 9,
+          "LYN-0": 8,
+          "JSH-4": 10,
           "SOU-4": 2,
           "LYN-4": 1,
           "HIL-4": 8,
@@ -8545,43 +9218,43 @@
           "PRO-5": 3,
           "LNW-1": 3,
           "FES-5": 2,
-          "JSH-3": 3,
           "PRK-2": 7,
+          "JSH-3": 3,
           "DYR-2": 3,
+          "PRE-6": 4,
           "SOU-2": 6,
-          "PRE-6": 3,
           "SOU-3": 2,
           "BRN-4": 1,
-          "PRO-1": 1,
           "HIL-7": 4,
-          "JSH-1S": 3,
+          "PRO-1": 1,
+          "JSH-1S": 2,
           "LUN-3": 2,
           "JSH-3N": 3,
+          "JSH-2S": 2,
           "ARC-4": 1,
           "DYR-1": 2,
-          "JSH-2S": 1,
           "FES-3": 1
         },
-        "missedDriveways": 10,
+        "missedDriveways": 8,
         "missedDrivewaysBy": {
-          "wrongLane": 9,
+          "wrongLane": 7,
           "noGap": 1
         },
         "drivewayFallbacks": {
-          "sameBlock": 8,
-          "nextBlock": 2,
+          "sameBlock": 3,
+          "nextBlock": 5,
           "exit": 0
         },
         "pulledOffByDriveway": {
           "FES-2-A2": 5,
-          "JSH-7-B3": 4,
-          "DUX-2-B1": 2,
+          "JSH-7-B3": 6,
+          "DUX-2-B1": 3,
           "BRN-2-B3": 3,
           "GRO-2-B1": 4,
           "GRO-4-B1": 4,
           "BRN-1-B3": 1,
-          "JSH-7-B2": 3,
-          "PRE-1-B1": 5,
+          "JSH-7-B2": 4,
+          "PRE-1-B1": 6,
           "STZ-6-A2": 3,
           "FRB-1-A2": 1,
           "PRE-2-B1": 2,
@@ -8590,26 +9263,26 @@
           "GRO-2-A1": 2,
           "HIL-5-B2": 4,
           "STZ-3-B2": 2,
-          "GRO-3-A2": 4,
-          "PRE-2-B2": 3,
+          "GRO-3-A2": 6,
+          "PRE-2-B2": 2,
           "HIL-1-B1": 2,
           "DUX-3-B1": 13,
           "HIL-1-A1": 3,
           "SOU-5-B2": 2,
           "BRN-1-B2": 2,
-          "ARC-3-A2": 2,
+          "ARC-3-A2": 3,
           "JSH-5-A1": 1,
           "HIL-3-A1": 3,
           "FRB-4-A1": 3,
-          "HIL-8-B1": 6,
+          "HIL-8-B1": 5,
           "LYN-1-A3": 2,
           "JSH-1-A1": 2,
           "JSH-1-A2": 4,
-          "PAR-1-A1": 3,
-          "PRO-2-B1": 4,
+          "PAR-1-A1": 2,
+          "PRO-2-B1": 5,
           "LUN-1-B1": 2,
           "FRB-2-A2": 2,
-          "PRE-3-B1": 1,
+          "PRE-3-B1": 2,
           "GRO-1-A1": 3,
           "GRO-4-A2": 4,
           "LUN-2-A1": 3,
@@ -8617,25 +9290,25 @@
           "PRO-4-A1": 2,
           "ARC-2-A3": 1,
           "HER-1-B1": 5,
-          "STZ-6-B2": 3,
+          "STZ-6-B2": 2,
           "LNW-0-B1": 2,
-          "ARC-3-A3": 3,
-          "JSH-1N-B1": 2,
+          "ARC-3-A3": 4,
+          "JSH-1N-B1": 3,
           "PRO-2-A1": 1,
           "PRE-4-B2": 2,
           "PRE-5-A2": 3,
           "PRE-4-A1": 2,
           "LYN-2-A3": 2,
-          "LYN-2-B1": 3,
-          "FRB-3-A2": 4,
+          "LYN-2-B1": 2,
+          "FRB-3-A2": 3,
           "STZ-2-B2": 3,
-          "FRB-1-A1": 3,
+          "FRB-1-A1": 4,
           "MAL-2-A3": 2,
           "ARC-1-A1": 1,
           "GRO-3-B3": 2,
           "LYN-3-B1": 2,
           "GRO-1-B1": 2,
-          "FRB-5-B1": 4,
+          "FRB-5-B1": 5,
           "LYN-1-B1": 1,
           "PRE-2-A2": 3,
           "HIL-2-A1": 2,
@@ -8657,12 +9330,12 @@
           "GRO-6-B2": 3,
           "JSH-1N-A1": 3,
           "PRE-3-B2": 4,
-          "STZ-5-A2": 1,
+          "STZ-5-A2": 2,
           "PRO-3-B1": 3,
           "HIL-3-B1": 2,
           "LYN-0-A2": 2,
           "FRB-5-B3": 3,
-          "GRO-3-A1": 1,
+          "GRO-3-A1": 2,
           "ARC-2-B1": 2,
           "JSH-4-A1": 3,
           "GRO-6-B1": 2,
@@ -8670,11 +9343,11 @@
           "LYN-1-A1": 3,
           "BRN-1-A1": 3,
           "FES-2-A1": 2,
-          "FRB-2-B1": 4,
+          "FRB-2-B1": 5,
           "SOU-4-A1": 2,
           "PRE-1-B2": 2,
           "LYN-4-A2": 1,
-          "HIL-4-A2": 2,
+          "HIL-4-A2": 3,
           "SOU-5-A2": 2,
           "DUX-1-A1": 4,
           "BRN-2-A2": 1,
@@ -8691,7 +9364,7 @@
           "HIL-6-B1": 3,
           "HIL-5-A2": 1,
           "STZ-5-A1": 2,
-          "BRN-3-A2": 3,
+          "BRN-3-A2": 2,
           "PRO-3-A1": 1,
           "SOU-1-B1": 1,
           "GRO-4-B2": 3,
@@ -8710,119 +9383,120 @@
           "PRE-5-B1": 1,
           "PRO-5-B1": 2,
           "LNW-1-A1": 2,
-          "FES-5-A1": 2,
           "SOU-5-A1": 2,
+          "FES-5-A1": 2,
           "JSH-2-B1": 3,
-          "HER-1-A1": 1,
           "FRB-3-B2": 1,
           "DUX-4-A2": 2,
-          "JSH-5-B1": 2,
-          "JSH-3-A1": 2,
-          "LUN-1-A1": 1,
+          "HER-1-A1": 1,
+          "JSH-5-B1": 3,
           "PRK-2-A1": 5,
+          "LUN-1-A1": 1,
+          "JSH-3-A1": 2,
           "GRO-7-B1": 2,
           "FRB-5-A1": 3,
           "FRB-5-B2": 2,
           "DYR-2-A1": 2,
-          "BRN-2-A3": 5,
           "STZ-5-B2": 1,
-          "PRE-3-A2": 5,
-          "PRE-1-A2": 5,
-          "JSH-7-A3": 1,
+          "BRN-2-A3": 5,
+          "PRE-1-A2": 4,
+          "PRE-3-A2": 3,
+          "PRE-6-A1": 3,
           "SOU-2-A1": 5,
-          "PRE-6-A1": 2,
+          "JSH-7-A3": 1,
           "LYN-3-B3": 1,
           "HIL-8-A1": 2,
-          "BRN-3-B1": 1,
-          "SOU-3-A1": 1,
-          "BRN-2-B1": 1,
+          "BRN-3-B1": 2,
           "GRO-5-B1": 1,
-          "SOU-5-B1": 1,
+          "BRN-2-B1": 1,
+          "SOU-3-A1": 1,
           "LNW-1-B1": 1,
+          "SOU-5-B1": 1,
           "STZ-3-A1": 1,
           "BRN-4-A1": 1,
           "DUX-4-B1": 1,
+          "LYN-0-A1": 3,
           "LYN-3-B2": 1,
           "PRE-5-A1": 1,
-          "PRO-1-B1": 1,
           "LYN-1-B2": 3,
-          "LYN-0-A1": 2,
-          "LYN-2-A1": 2,
           "HIL-7-A1": 3,
           "GRO-6-A1": 1,
+          "LYN-2-A1": 2,
+          "PRO-1-B1": 1,
+          "DUX-4-B2": 1,
           "JSH-4-B2": 2,
           "HIL-5-B1": 1,
-          "FRB-3-A1": 1,
-          "DUX-4-B2": 1,
           "FRB-5-A3": 2,
           "STZ-3-B1": 1,
+          "FRB-3-A1": 1,
           "FRB-4-B1": 2,
           "STZ-1-A1": 1,
-          "BRN-3-A3": 1,
+          "JSH-1S-A1": 1,
+          "FRB-6-B1": 2,
           "HIL-7-B1": 1,
-          "FRB-6-B1": 3,
-          "JSH-1S-A1": 2,
-          "LYN-0-B2": 1,
+          "BRN-3-A3": 1,
           "LUN-3-A1": 1,
           "JSH-3N-A1": 2,
-          "HIL-6-A1": 2,
-          "LYN-3-A1": 1,
-          "LYN-3-A3": 3,
-          "FES-1-B2": 1,
           "PRE-1-A1": 1,
-          "LYN-1-B3": 2,
-          "PRK-1-B1": 1,
-          "DXW-1-B1": 1,
-          "PRK-2-B1": 2,
-          "STZ-2-A2": 1,
-          "ARC-4-B1": 1,
+          "LYN-3-A3": 2,
+          "HIL-6-A1": 2,
           "LYN-1-A2": 4,
-          "PRE-3-A1": 3,
-          "DYR-1-A1": 1,
+          "LYN-3-A1": 1,
+          "DXW-1-B1": 1,
+          "GRO-3-B2": 2,
+          "PRK-1-B1": 1,
+          "PRK-2-B1": 2,
+          "PRE-3-A1": 4,
+          "LYN-1-B3": 1,
+          "LYN-0-B2": 1,
+          "FES-1-B2": 1,
+          "STZ-4-B1": 1,
+          "PRE-6-A2": 1,
+          "JSH-2S-B1": 1,
+          "ARC-4-B1": 1,
+          "STZ-2-A2": 1,
           "HIL-4-B2": 1,
           "LUN-3-B1": 1,
-          "STZ-4-B1": 1,
-          "GRO-3-B2": 2,
-          "PRE-6-A2": 1,
+          "DYR-1-A1": 1,
           "DYR-1-B1": 1,
-          "JSH-5-B2": 2,
-          "GRO-5-A1": 1,
-          "JSH-2S-B1": 1,
-          "STZ-5-B1": 1,
-          "ARC-2-B2": 1,
-          "JSH-3S-A1": 3,
-          "GRO-6-A2": 1,
-          "JSH-4-A2": 2,
-          "FES-3-A1": 1,
-          "FRB-2-A1": 1,
-          "STZ-4-A1": 1,
-          "PRE-2-A1": 2,
-          "BRN-3-B3": 1,
           "HIL-2-B1": 2,
-          "STZ-1-A2": 2,
-          "STZ-6-A1": 1,
+          "ARC-2-B2": 1,
+          "STZ-5-B1": 1,
+          "FES-3-A1": 1,
+          "BRN-3-B3": 1,
+          "JSH-5-B2": 2,
+          "JSH-4-A2": 3,
+          "FRB-2-A1": 1,
+          "GRO-5-A1": 1,
+          "STZ-4-A1": 1,
+          "GRO-6-A2": 1,
+          "PRE-2-A1": 2,
           "SOU-2-B1": 1,
-          "MAL-2-A2": 1,
-          "FRB-1-B2": 1,
+          "STZ-1-A2": 2,
           "PRO-5-A3": 1,
-          "ARC-3-A1": 1,
-          "BRN-1-A2": 1,
+          "JSH-3S-A1": 3,
+          "JSH-2S-A1": 1,
+          "STZ-6-A1": 1,
           "DYR-2-B1": 1,
+          "FRB-1-B2": 1,
+          "STZ-6-B1": 1,
+          "ARC-3-A1": 2,
+          "GRO-4-A1": 1,
+          "MAL-2-A2": 1,
+          "BRN-1-A2": 1,
+          "FRB-3-B1": 1,
           "BRN-3-B2": 1,
-          "HIL-4-A1": 1,
           "JSH-3N-B1": 1,
           "JSH-5-A2": 1,
-          "PRO-4-B1": 1,
-          "STZ-6-B1": 1,
-          "PRE-4-A2": 2,
+          "FRB-2-B2": 1,
+          "MAL-2-B3": 1,
           "STZ-4-B2": 1,
           "JSH-1S-B1": 1,
-          "MAL-2-B3": 1,
+          "SOU-3-B1": 1,
           "HIL-4-B3": 1,
-          "JSH-3-B1": 1,
-          "SOU-3-B1": 1
+          "JSH-3-B1": 1
         },
-        "departed": 461,
+        "departed": 463,
         "departedByDriveway": {
           "LNW-1-B1": 3,
           "SOU-2-B1": 2,
@@ -8854,7 +9528,7 @@
           "LYN-0-A1": 1,
           "BRN-4-A1": 2,
           "STZ-1-A1": 3,
-          "HIL-8-B1": 5,
+          "HIL-8-B1": 6,
           "FES-1-B1": 1,
           "JSH-1S-A1": 3,
           "FRB-3-A1": 2,
@@ -8871,7 +9545,7 @@
           "FRB-5-B2": 1,
           "FES-2-A2": 3,
           "FES-2-B2": 1,
-          "GRO-2-A1": 2,
+          "GRO-2-A1": 3,
           "PRO-4-B1": 1,
           "STZ-2-A2": 2,
           "JSH-1-A2": 2,
@@ -9006,27 +9680,27 @@
           "JSH-2N-A1": 1,
           "BRN-2-B3": 2,
           "STZ-5-B2": 2,
-          "SOU-5-B3": 1,
           "DYR-2-A1": 1,
+          "SOU-5-B3": 1,
           "LYN-1-A2": 2,
           "GRO-4-A1": 2,
           "LUN-1-B1": 3,
           "FRB-2-B1": 1,
-          "PRE-3-B1": 1,
           "JSH-3S-B1": 1,
+          "PRE-3-B1": 1,
           "BRN-1-B1": 2,
-          "DYR-1-B1": 2,
           "JSH-4-A2": 1,
+          "DYR-1-B1": 2,
           "PRO-1-B1": 1,
           "LYN-2-B1": 2,
           "PRO-1-A1": 1,
           "PRE-6-A2": 1,
-          "SOU-4-B1": 1,
           "ARC-3-A3": 1,
           "FES-1-A1": 1,
+          "SOU-4-B1": 1,
           "LYN-0-B3": 1,
-          "HIL-5-A2": 1,
           "PRE-3-A1": 3,
+          "HIL-5-A2": 1,
           "MAL-2-B3": 1,
           "FES-1-A2": 1,
           "STZ-3-B2": 1,
@@ -9043,32 +9717,29 @@
           "LUN-3-B1": 1,
           "HIL-4-A3": 1,
           "STZ-4-A1": 2,
-          "HIL-3-B1": 1,
           "SOU-5-A1": 1,
+          "HIL-3-B1": 1,
           "HIL-4-B1": 1,
           "LYN-3-A2": 1,
           "HIL-4-A2": 1,
           "LYN-3-B2": 1
         },
-        "departuresWaiting": 2,
-        "meanDrivewayWaitS": 0.7425162689805871,
-        "longestDrivewayWaitS": 8.200000000001864,
-        "departuresWaitingByDriveway": {
-          "HIL-8:S": 1,
-          "GRO-2:S": 1
-        }
+        "departuresWaiting": 0,
+        "meanDrivewayWaitS": 0.5961123110151958,
+        "longestDrivewayWaitS": 0,
+        "departuresWaitingByDriveway": {}
       },
       "diagnostics": {
-        "arrivalsLost": 2,
+        "arrivalsLost": 1,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 94,
+          "longestStillS": 85,
           "longestStill": {
-            "seconds": 94,
-            "carId": 699,
+            "seconds": 85,
+            "carId": 1112,
             "nodeId": "lynnwood_janshoba",
-            "place": "Lynnwood Road, eastbound, lane 3, 337 m",
-            "atS": 502
+            "place": "Lynnwood Road, eastbound, lane 1, 337 m",
+            "atS": 524
           },
           "locked": null,
           "starved": null,
@@ -9085,358 +9756,1006 @@
         "errorsOn": false
       },
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 24.23384853168478,
-      "avgWaitTimeArterial": 19.605086206896615,
-      "avgWaitTimeSideStreet": 12.309571428571486,
-      "throughputPerMin": 161.75,
-      "throughputPerMinArterial": 145,
-      "throughputPerMinSideStreet": 87.5,
-      "pctClearedWithoutStop": 7.2642967542503865,
-      "pctClearedWithoutStopArterial": 15.431034482758621,
-      "pctClearedWithoutStopSideStreet": 23.42857142857143,
-      "medianWait": 19.70000000000001,
+      "avgWaitTime": 23.589108910891188,
+      "avgWaitTimeArterial": 18.850508474576344,
+      "avgWaitTimeSideStreet": 12.416642958748284,
+      "throughputPerMin": 164.125,
+      "throughputPerMinArterial": 147.5,
+      "throughputPerMinSideStreet": 87.875,
+      "pctClearedWithoutStop": 7.920792079207921,
+      "pctClearedWithoutStopArterial": 16.101694915254235,
+      "pctClearedWithoutStopSideStreet": 22.617354196301566,
+      "medianWait": 18.29999999999999,
       "p95Wait": 65.60000000000055,
-      "maxWait": 140.4999999999963,
-      "p95WaitArterial": 59.70000000000058,
-      "maxWaitArterial": 132.19999999999678,
-      "p95WaitSideStreet": 43.00000000000034,
-      "maxWaitSideStreet": 77.49999999999987,
+      "maxWait": 119.89999999999746,
+      "p95WaitArterial": 58.30000000000056,
+      "maxWaitArterial": 109.99999999999802,
+      "p95WaitSideStreet": 42.00000000000033,
+      "maxWaitSideStreet": 88.49999999999883,
       "roadWaits": {
         "south": {
           "name": "South Street",
           "scope": "side",
-          "vehicles": 71,
-          "meanWait": 0.6,
-          "maxWait": 11.4
+          "vehicles": 72,
+          "meanWait": 0.43,
+          "maxWait": 5.5,
+          "stages": {
+            "pre": {
+              "vehicles": 15,
+              "meanWait": 0.36
+            },
+            "during": {
+              "vehicles": 24,
+              "meanWait": 0.74
+            },
+            "post": {
+              "vehicles": 33,
+              "meanWait": 0.24
+            }
+          }
         },
         "conn_hilda_south": {
           "name": "Hilda",
           "scope": "side",
-          "vehicles": 144,
-          "meanWait": 0.96,
-          "maxWait": 13.4
+          "vehicles": 140,
+          "meanWait": 1.66,
+          "maxWait": 35.5,
+          "stages": {
+            "pre": {
+              "vehicles": 29,
+              "meanWait": 0.41
+            },
+            "during": {
+              "vehicles": 50,
+              "meanWait": 1.24
+            },
+            "post": {
+              "vehicles": 61,
+              "meanWait": 2.59
+            }
+          }
         },
         "prospect": {
           "name": "Prospect Street",
           "scope": "side",
-          "vehicles": 77,
-          "meanWait": 5.3,
-          "maxWait": 26.1
+          "vehicles": 80,
+          "meanWait": 4.88,
+          "maxWait": 19.9,
+          "stages": {
+            "pre": {
+              "vehicles": 11,
+              "meanWait": 1.34
+            },
+            "during": {
+              "vehicles": 28,
+              "meanWait": 4.51
+            },
+            "post": {
+              "vehicles": 41,
+              "meanWait": 6.08
+            }
+          }
         },
         "conn_festival_south": {
           "name": "Festival",
           "scope": "side",
-          "vehicles": 31,
-          "meanWait": 4.77,
-          "maxWait": 23.4
+          "vehicles": 32,
+          "meanWait": 4.38,
+          "maxWait": 15,
+          "stages": {
+            "pre": {
+              "vehicles": 3,
+              "meanWait": 0.9
+            },
+            "during": {
+              "vehicles": 11,
+              "meanWait": 4
+            },
+            "post": {
+              "vehicles": 18,
+              "meanWait": 5.19
+            }
+          }
         },
         "conn_festival": {
           "name": "Festival",
           "scope": "side",
-          "vehicles": 91,
-          "meanWait": 10.72,
-          "maxWait": 54.7
+          "vehicles": 92,
+          "meanWait": 10.11,
+          "maxWait": 45,
+          "stages": {
+            "pre": {
+              "vehicles": 23,
+              "meanWait": 5.12
+            },
+            "during": {
+              "vehicles": 26,
+              "meanWait": 12.81
+            },
+            "post": {
+              "vehicles": 43,
+              "meanWait": 11.15
+            }
+          }
         },
         "conn_jan_shoba_sb": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 193,
-          "meanWait": 11.65,
-          "maxWait": 68.1
+          "vehicles": 198,
+          "meanWait": 14.55,
+          "maxWait": 75.4,
+          "stages": {
+            "pre": {
+              "vehicles": 55,
+              "meanWait": 8.24
+            },
+            "during": {
+              "vehicles": 45,
+              "meanWait": 9.28
+            },
+            "post": {
+              "vehicles": 98,
+              "meanWait": 20.5
+            }
+          }
         },
         "stanza": {
           "name": "Stanza Bopape Street",
           "scope": "arterial",
-          "vehicles": 242,
-          "meanWait": 9.51,
-          "maxWait": 53.3
+          "vehicles": 252,
+          "meanWait": 8.3,
+          "maxWait": 53.3,
+          "stages": {
+            "pre": {
+              "vehicles": 65,
+              "meanWait": 5.24
+            },
+            "during": {
+              "vehicles": 73,
+              "meanWait": 8.47
+            },
+            "post": {
+              "vehicles": 114,
+              "meanWait": 9.94
+            }
+          }
         },
         "conn_jan_shoba": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 353,
-          "meanWait": 13.17,
-          "maxWait": 111
+          "vehicles": 355,
+          "meanWait": 13.03,
+          "maxWait": 82,
+          "stages": {
+            "pre": {
+              "vehicles": 84,
+              "meanWait": 6.87
+            },
+            "during": {
+              "vehicles": 95,
+              "meanWait": 10.95
+            },
+            "post": {
+              "vehicles": 176,
+              "meanWait": 17.09
+            }
+          }
         },
         "francisbaard": {
           "name": "Francis Baard Street",
           "scope": "arterial",
-          "vehicles": 320,
-          "meanWait": 10.56,
-          "maxWait": 66.3
+          "vehicles": 331,
+          "meanWait": 10.55,
+          "maxWait": 55.7,
+          "stages": {
+            "pre": {
+              "vehicles": 98,
+              "meanWait": 5.03
+            },
+            "during": {
+              "vehicles": 87,
+              "meanWait": 12.2
+            },
+            "post": {
+              "vehicles": 146,
+              "meanWait": 13.28
+            }
+          }
         },
         "conn_duxbury_south": {
           "name": "Duxbury",
           "scope": "side",
-          "vehicles": 24,
-          "meanWait": 5.44,
-          "maxWait": 29.5
+          "vehicles": 23,
+          "meanWait": 5.73,
+          "maxWait": 29.5,
+          "stages": {
+            "pre": {
+              "vehicles": 7,
+              "meanWait": 5.51
+            },
+            "during": {
+              "vehicles": 11,
+              "meanWait": 5.49
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 6.56
+            }
+          }
         },
         "conn_duxbury_east": {
           "name": "Duxbury",
           "scope": "side",
           "vehicles": 70,
-          "meanWait": 8.26,
-          "maxWait": 41.2
+          "meanWait": 7.74,
+          "maxWait": 39,
+          "stages": {
+            "pre": {
+              "vehicles": 12,
+              "meanWait": 6.19
+            },
+            "during": {
+              "vehicles": 27,
+              "meanWait": 10.47
+            },
+            "post": {
+              "vehicles": 31,
+              "meanWait": 5.96
+            }
+          }
         },
         "conn_grosvenor_south": {
           "name": "Grosvenor",
           "scope": "side",
-          "vehicles": 88,
-          "meanWait": 7.16,
-          "maxWait": 51.1
+          "vehicles": 90,
+          "meanWait": 7.63,
+          "maxWait": 46.4,
+          "stages": {
+            "pre": {
+              "vehicles": 16,
+              "meanWait": 1.72
+            },
+            "during": {
+              "vehicles": 29,
+              "meanWait": 7.86
+            },
+            "post": {
+              "vehicles": 45,
+              "meanWait": 9.58
+            }
+          }
         },
         "burnett": {
           "name": "Burnett Street",
           "scope": "side",
-          "vehicles": 100,
-          "meanWait": 6.65,
-          "maxWait": 40.8
+          "vehicles": 99,
+          "meanWait": 6.85,
+          "maxWait": 43.4,
+          "stages": {
+            "pre": {
+              "vehicles": 23,
+              "meanWait": 3.27
+            },
+            "during": {
+              "vehicles": 37,
+              "meanWait": 7.84
+            },
+            "post": {
+              "vehicles": 39,
+              "meanWait": 8.02
+            }
+          }
         },
         "conn_grosvenor": {
           "name": "Grosvenor",
           "scope": "side",
-          "vehicles": 117,
-          "meanWait": 9.08,
-          "maxWait": 49.8
+          "vehicles": 127,
+          "meanWait": 10.95,
+          "maxWait": 62.2,
+          "stages": {
+            "pre": {
+              "vehicles": 42,
+              "meanWait": 6.66
+            },
+            "during": {
+              "vehicles": 30,
+              "meanWait": 12.42
+            },
+            "post": {
+              "vehicles": 55,
+              "meanWait": 13.42
+            }
+          }
         },
         "lynnwood": {
           "name": "Lynnwood Road",
           "scope": "arterial",
-          "vehicles": 282,
-          "meanWait": 18.59,
-          "maxWait": 122.8
+          "vehicles": 289,
+          "meanWait": 16.07,
+          "maxWait": 109.7,
+          "stages": {
+            "pre": {
+              "vehicles": 87,
+              "meanWait": 12.76
+            },
+            "during": {
+              "vehicles": 74,
+              "meanWait": 14.75
+            },
+            "post": {
+              "vehicles": 128,
+              "meanWait": 19.08
+            }
+          }
         },
         "conn_dyer": {
           "name": "Dyer Road",
           "scope": "side",
           "vehicles": 58,
-          "meanWait": 2.59,
-          "maxWait": 14.5
+          "meanWait": 3.09,
+          "maxWait": 24.5,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 1.48
+            },
+            "during": {
+              "vehicles": 18,
+              "meanWait": 4.33
+            },
+            "post": {
+              "vehicles": 27,
+              "meanWait": 3.03
+            }
+          }
         },
         "dyer_mall": {
           "name": "Mall Road",
           "scope": "side",
-          "vehicles": 51,
-          "meanWait": 0.29,
-          "maxWait": 5.1
+          "vehicles": 50,
+          "meanWait": 0.17,
+          "maxWait": 2.4,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 0.25
+            },
+            "during": {
+              "vehicles": 15,
+              "meanWait": 0.11
+            },
+            "post": {
+              "vehicles": 22,
+              "meanWait": 0.16
+            }
+          }
         },
         "arcadia_west": {
           "name": "Arcadia Street",
           "scope": "side",
           "vehicles": 17,
-          "meanWait": 2.44,
-          "maxWait": 10.7
+          "meanWait": 1.95,
+          "maxWait": 9.5,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 1.06
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 2.95
+            }
+          }
         },
         "conn_arcadia_oneway": {
           "name": "Arcadia",
           "scope": "side",
           "vehicles": 14,
-          "meanWait": 4.16,
-          "maxWait": 11.3
+          "meanWait": 5.44,
+          "maxWait": 17.9,
+          "stages": {
+            "pre": {
+              "vehicles": 7,
+              "meanWait": 4.64
+            },
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 8.74
+            }
+          }
         },
         "conn_hilda": {
           "name": "Hilda",
           "scope": "side",
-          "vehicles": 132,
-          "meanWait": 7.11,
-          "maxWait": 45.1
+          "vehicles": 126,
+          "meanWait": 7.04,
+          "maxWait": 52.3,
+          "stages": {
+            "pre": {
+              "vehicles": 40,
+              "meanWait": 3.41
+            },
+            "during": {
+              "vehicles": 31,
+              "meanWait": 5.97
+            },
+            "post": {
+              "vehicles": 55,
+              "meanWait": 10.29
+            }
+          }
         },
         "park": {
           "name": "Park Street",
           "scope": "side",
-          "vehicles": 41,
-          "meanWait": 4.82,
-          "maxWait": 26.3
+          "vehicles": 40,
+          "meanWait": 5.26,
+          "maxWait": 26.3,
+          "stages": {
+            "pre": {
+              "vehicles": 12,
+              "meanWait": 6.1
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 7.87
+            },
+            "post": {
+              "vehicles": 22,
+              "meanWait": 4.08
+            }
+          }
         },
         "slip_burnett_janshoba_northbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 17,
+          "vehicles": 16,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 7,
+              "meanWait": 0
+            }
+          }
         },
         "conn_jan_shoba_nb": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 157,
-          "meanWait": 7.41,
-          "maxWait": 57
+          "vehicles": 160,
+          "meanWait": 8.76,
+          "maxWait": 55.3,
+          "stages": {
+            "pre": {
+              "vehicles": 49,
+              "meanWait": 3.55
+            },
+            "during": {
+              "vehicles": 37,
+              "meanWait": 12.03
+            },
+            "post": {
+              "vehicles": 74,
+              "meanWait": 10.56
+            }
+          }
         },
         "pretorius": {
           "name": "Pretorius Street",
           "scope": "arterial",
-          "vehicles": 276,
-          "meanWait": 11.34,
-          "maxWait": 70.5
+          "vehicles": 280,
+          "meanWait": 8.8,
+          "maxWait": 65.6,
+          "stages": {
+            "pre": {
+              "vehicles": 86,
+              "meanWait": 6.48
+            },
+            "during": {
+              "vehicles": 62,
+              "meanWait": 11.39
+            },
+            "post": {
+              "vehicles": 132,
+              "meanWait": 9.1
+            }
+          }
         },
         "arcadia": {
           "name": "Arcadia Street",
           "scope": "side",
-          "vehicles": 66,
-          "meanWait": 3.53,
-          "maxWait": 38.7
+          "vehicles": 68,
+          "meanWait": 1.99,
+          "maxWait": 23.2,
+          "stages": {
+            "pre": {
+              "vehicles": 24,
+              "meanWait": 2.05
+            },
+            "during": {
+              "vehicles": 12,
+              "meanWait": 2.15
+            },
+            "post": {
+              "vehicles": 32,
+              "meanWait": 1.9
+            }
+          }
         },
         "lunnon": {
           "name": "Lunnon Road",
           "scope": "side",
-          "vehicles": 46,
-          "meanWait": 3.99,
-          "maxWait": 18.9
+          "vehicles": 44,
+          "meanWait": 4.08,
+          "maxWait": 17.5,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 5.22
+            },
+            "during": {
+              "vehicles": 16,
+              "meanWait": 3.81
+            },
+            "post": {
+              "vehicles": 20,
+              "meanWait": 3.83
+            }
+          }
         },
         "conn_burnett_east": {
           "name": "Burnett",
           "scope": "side",
-          "vehicles": 20,
-          "meanWait": 5.92,
-          "maxWait": 26.9
+          "vehicles": 19,
+          "meanWait": 5.48,
+          "maxWait": 26.9,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 6.03
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 5.9
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 4.77
+            }
+          }
         },
         "conn_jan_shoba_sb_merge": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 73,
-          "meanWait": 0.05,
-          "maxWait": 0.9
+          "vehicles": 72,
+          "meanWait": 0.06,
+          "maxWait": 0.9,
+          "stages": {
+            "pre": {
+              "vehicles": 12,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 23,
+              "meanWait": 0.1
+            },
+            "post": {
+              "vehicles": 37,
+              "meanWait": 0.05
+            }
+          }
         },
         "conn_arcadia_east": {
           "name": "Arcadia",
           "scope": "side",
-          "vehicles": 40,
-          "meanWait": 2.58,
-          "maxWait": 17.3
+          "vehicles": 43,
+          "meanWait": 2.94,
+          "maxWait": 18.2,
+          "stages": {
+            "pre": {
+              "vehicles": 10,
+              "meanWait": 1.73
+            },
+            "during": {
+              "vehicles": 11,
+              "meanWait": 1.93
+            },
+            "post": {
+              "vehicles": 22,
+              "meanWait": 4
+            }
+          }
         },
         "conn_park_east": {
           "name": "Park",
           "scope": "side",
-          "vehicles": 15,
-          "meanWait": 1.41,
-          "maxWait": 13.1
+          "vehicles": 14,
+          "meanWait": 1.89,
+          "maxWait": 13.1,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0.2
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 4.37
+            },
+            "post": {
+              "vehicles": 7,
+              "meanWait": 1.79
+            }
+          }
         },
         "conn_jan_shoba_nb_south": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 48,
-          "meanWait": 12.88,
-          "maxWait": 60.5
+          "vehicles": 49,
+          "meanWait": 13.06,
+          "maxWait": 61.2,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 5.35
+            },
+            "during": {
+              "vehicles": 10,
+              "meanWait": 15.33
+            },
+            "post": {
+              "vehicles": 31,
+              "meanWait": 14.32
+            }
+          }
         },
         "conn_south_east": {
           "name": "South",
           "scope": "side",
-          "vehicles": 25,
-          "meanWait": 0.06,
-          "maxWait": 0.9
+          "vehicles": 24,
+          "meanWait": 0.07,
+          "maxWait": 0.9,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 0.2
+            },
+            "during": {
+              "vehicles": 10,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "south_janshoba_divided": {
           "name": "South Street",
           "scope": "side",
           "vehicles": 51,
-          "meanWait": 6.5,
-          "maxWait": 38.1
+          "meanWait": 6.27,
+          "maxWait": 41,
+          "stages": {
+            "pre": {
+              "vehicles": 12,
+              "meanWait": 4.27
+            },
+            "during": {
+              "vehicles": 18,
+              "meanWait": 7.65
+            },
+            "post": {
+              "vehicles": 21,
+              "meanWait": 6.22
+            }
+          }
         },
         "duxbury": {
           "name": "Duxbury Road",
           "scope": "side",
-          "vehicles": 72,
-          "meanWait": 9.1,
-          "maxWait": 52.2
+          "vehicles": 69,
+          "meanWait": 8.08,
+          "maxWait": 59,
+          "stages": {
+            "pre": {
+              "vehicles": 12,
+              "meanWait": 1.01
+            },
+            "during": {
+              "vehicles": 25,
+              "meanWait": 5.56
+            },
+            "post": {
+              "vehicles": 32,
+              "meanWait": 12.7
+            }
+          }
         },
         "duxbury_west": {
           "name": "Duxbury Road",
           "scope": "side",
-          "vehicles": 118,
-          "meanWait": 0.19,
-          "maxWait": 2.5
+          "vehicles": 113,
+          "meanWait": 0.18,
+          "maxWait": 2.5,
+          "stages": {
+            "pre": {
+              "vehicles": 22,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 40,
+              "meanWait": 0.3
+            },
+            "post": {
+              "vehicles": 51,
+              "meanWait": 0.16
+            }
+          }
         },
         "conn_herold": {
           "name": "Herold Street",
           "scope": "side",
-          "vehicles": 81,
-          "meanWait": 9.25,
-          "maxWait": 59.4
+          "vehicles": 82,
+          "meanWait": 8.52,
+          "maxWait": 59.4,
+          "stages": {
+            "pre": {
+              "vehicles": 24,
+              "meanWait": 9.73
+            },
+            "during": {
+              "vehicles": 21,
+              "meanWait": 6.25
+            },
+            "post": {
+              "vehicles": 37,
+              "meanWait": 9.03
+            }
+          }
         },
         "conn_lunnon_w_off": {
           "name": "Lunnon",
           "scope": "side",
-          "vehicles": 10,
+          "vehicles": 11,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "lunnon_west": {
           "name": "Lunnon Road",
           "scope": "side",
-          "vehicles": 27,
-          "meanWait": 0.37,
-          "maxWait": 3.7
+          "vehicles": 28,
+          "meanWait": 0.28,
+          "maxWait": 3.7,
+          "stages": {
+            "pre": {
+              "vehicles": 6,
+              "meanWait": 0.2
+            },
+            "during": {
+              "vehicles": 10,
+              "meanWait": 0.61
+            },
+            "post": {
+              "vehicles": 12,
+              "meanWait": 0.04
+            }
+          }
         },
         "conn_lunnon_e_off": {
           "name": "Lunnon",
           "scope": "side",
-          "vehicles": 12,
+          "vehicles": 11,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 4,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_e_off": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 6,
+          "vehicles": 5,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 1,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_east": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 19,
-          "meanWait": 0.02,
-          "maxWait": 0.4
+          "vehicles": 16,
+          "meanWait": 0.03,
+          "maxWait": 0.4,
+          "stages": {
+            "pre": {
+              "vehicles": 5,
+              "meanWait": 0.08
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_w_off": {
           "name": "Prospect",
           "scope": "side",
           "vehicles": 5,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 1,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_e_on": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 12,
+          "vehicles": 10,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "slip_lynnwood_duxbury_eastbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 12,
+          "vehicles": 13,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "during": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 0
+            }
+          }
         },
         "conn_lunnon_w_on": {
           "name": "Lunnon",
           "scope": "side",
           "vehicles": 2,
           "meanWait": 2.4,
-          "maxWait": 4.8
+          "maxWait": 4.8,
+          "stages": {
+            "during": {
+              "vehicles": 2,
+              "meanWait": 2.4
+            }
+          }
         },
         "slip_duxbury_janshoba_southbound": {
           "name": "",
           "scope": "side",
           "vehicles": 7,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 0
+            }
+          }
         },
         "conn_lunnon_e_on": {
           "name": "Lunnon",
           "scope": "side",
           "vehicles": 10,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "during": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_w_on": {
           "name": "Prospect",
           "scope": "side",
           "vehicles": 10,
-          "meanWait": 0.28,
-          "maxWait": 2.8
+          "meanWait": 0,
+          "maxWait": 0,
+          "stages": {
+            "during": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 9,
+              "meanWait": 0
+            }
+          }
         }
       },
       "coordination": {
@@ -9578,18 +10897,18 @@
             "retunes": 4
           },
           "pretorius": {
-            "meanCycleS": 39.3,
+            "meanCycleS": 40.2,
             "minCycleS": 37.1,
-            "maxCycleS": 41.7,
-            "finalCycleS": 41.2,
+            "maxCycleS": 44.4,
+            "finalCycleS": 44.4,
             "retunes": 2
           },
           "francisbaard": {
-            "meanCycleS": 33.3,
+            "meanCycleS": 34.3,
             "minCycleS": 30.6,
-            "maxCycleS": 38.5,
-            "finalCycleS": 38.5,
-            "retunes": 3
+            "maxCycleS": 38.6,
+            "finalCycleS": 38.6,
+            "retunes": 2
           },
           "arcadia_west": {
             "meanCycleS": 22.4,
@@ -9644,16 +10963,16 @@
         "recoveryHolds": 1,
         "recoveryHoldS": 300,
         "platoon": {
-          "messages": 1543,
+          "messages": 1552,
           "holds": 0,
           "holdS": 0
         },
         "greenEnds": {
-          "gapOut": 415,
+          "gapOut": 393,
           "yield": 24,
           "platoonEarly": 7,
           "forceOff": 3,
-          "maxOut": 31
+          "maxOut": 34
         },
         "byStage": {
           "pre": {
@@ -9683,14 +11002,14 @@
         "clearedTotal": 385
       },
       "duringOutage": {
-        "avgWaitTime": 24.342941176470713,
-        "throughputPerMin": 136,
-        "clearedTotal": 340
+        "avgWaitTime": 24.150439882698084,
+        "throughputPerMin": 136.4,
+        "clearedTotal": 341
       },
       "postRecovery": {
-        "avgWaitTime": 31.554130052724165,
-        "throughputPerMin": 189.66666666666666,
-        "clearedTotal": 569
+        "avgWaitTime": 29.999148211243725,
+        "throughputPerMin": 195.66666666666666,
+        "clearedTotal": 587
       },
       "preOutageArterial": {
         "avgWaitTime": 10.83381502890177,
@@ -9698,14 +11017,14 @@
         "clearedTotal": 346
       },
       "duringOutageArterial": {
-        "avgWaitTime": 18.586754966887515,
+        "avgWaitTime": 18.334437086092848,
         "throughputPerMin": 120.8,
         "clearedTotal": 302
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 26.133203125000062,
-        "throughputPerMin": 170.66666666666666,
-        "clearedTotal": 512
+        "avgWaitTime": 24.35733082706773,
+        "throughputPerMin": 177.33333333333334,
+        "clearedTotal": 532
       },
       "preOutageSideStreet": {
         "avgWaitTime": 7.146113989637322,
@@ -9713,14 +11032,14 @@
         "clearedTotal": 193
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 13.185148514851555,
-        "throughputPerMin": 80.8,
-        "clearedTotal": 202
+        "avgWaitTime": 13.292118226601044,
+        "throughputPerMin": 81.2,
+        "clearedTotal": 203
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 14.997049180327945,
-        "throughputPerMin": 101.66666666666667,
-        "clearedTotal": 305
+        "avgWaitTime": 15.151140065146674,
+        "throughputPerMin": 102.33333333333333,
+        "clearedTotal": 307
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -9739,13 +11058,13 @@
       ],
       "zoneStats": {
         "zone1": {
-          "avgWaitTime": 24.02934782608701,
-          "medianWait": 17.299999999999976,
-          "p95Wait": 69.20000000000034,
-          "maxWait": 140.4999999999963,
-          "throughputPerMin": 57.5,
-          "clearedTotal": 460,
-          "pctClearedWithoutStop": 12.608695652173912,
+          "avgWaitTime": 22.191466083151028,
+          "medianWait": 15.89999999999996,
+          "p95Wait": 67.50000000000044,
+          "maxWait": 109.69999999999804,
+          "throughputPerMin": 57.125,
+          "clearedTotal": 457,
+          "pctClearedWithoutStop": 12.691466083150985,
           "segments": {
             "pre": {
               "avgWaitTime": 15.909600000000065,
@@ -9753,14 +11072,14 @@
               "clearedTotal": 125
             },
             "during": {
-              "avgWaitTime": 20.211718750000124,
-              "throughputPerMin": 51.2,
-              "clearedTotal": 128
+              "avgWaitTime": 20.228346456693036,
+              "throughputPerMin": 50.8,
+              "clearedTotal": 127
             },
             "post": {
-              "avgWaitTime": 31.293236714975855,
-              "throughputPerMin": 69,
-              "clearedTotal": 207
+              "avgWaitTime": 27.238048780487787,
+              "throughputPerMin": 68.33333333333333,
+              "clearedTotal": 205
             }
           },
           "restoreSeconds": 300,
@@ -9769,13 +11088,13 @@
           "timeToRecoveryWaitSeconds": null
         },
         "zone2": {
-          "avgWaitTime": 10.490347490347546,
+          "avgWaitTime": 10.685057471264422,
           "medianWait": 6.499999999999993,
-          "p95Wait": 35.30000000000023,
-          "maxWait": 57.300000000000544,
-          "throughputPerMin": 64.75,
-          "clearedTotal": 518,
-          "pctClearedWithoutStop": 19.111969111969113,
+          "p95Wait": 34.00000000000021,
+          "maxWait": 59.90000000000058,
+          "throughputPerMin": 65.25,
+          "clearedTotal": 522,
+          "pctClearedWithoutStop": 19.923371647509576,
           "segments": {
             "pre": {
               "avgWaitTime": 5.069172932330831,
@@ -9783,14 +11102,14 @@
               "clearedTotal": 133
             },
             "during": {
-              "avgWaitTime": 10.538926174496709,
-              "throughputPerMin": 59.6,
-              "clearedTotal": 149
+              "avgWaitTime": 10.821379310344895,
+              "throughputPerMin": 58,
+              "clearedTotal": 145
             },
             "post": {
-              "avgWaitTime": 13.514830508474653,
-              "throughputPerMin": 78.66666666666667,
-              "clearedTotal": 236
+              "avgWaitTime": 13.665163934426305,
+              "throughputPerMin": 81.33333333333333,
+              "clearedTotal": 244
             }
           },
           "restoreSeconds": 300,
@@ -9799,13 +11118,13 @@
           "timeToRecoveryWaitSeconds": null
         },
         "zone3": {
-          "avgWaitTime": 18.29913793103456,
-          "medianWait": 14.699999999999964,
-          "p95Wait": 50.20000000000044,
-          "maxWait": 74.20000000000006,
-          "throughputPerMin": 101.5,
-          "clearedTotal": 812,
-          "pctClearedWithoutStop": 10.960591133004927,
+          "avgWaitTime": 18.345848375451343,
+          "medianWait": 14.499999999999964,
+          "p95Wait": 52.30000000000047,
+          "maxWait": 109.59999999999805,
+          "throughputPerMin": 103.875,
+          "clearedTotal": 831,
+          "pctClearedWithoutStop": 11.913357400722022,
           "segments": {
             "pre": {
               "avgWaitTime": 10.488510638297894,
@@ -9813,14 +11132,14 @@
               "clearedTotal": 235
             },
             "during": {
-              "avgWaitTime": 19.691866028708247,
+              "avgWaitTime": 19.589473684210645,
               "throughputPerMin": 83.6,
               "clearedTotal": 209
             },
             "post": {
-              "avgWaitTime": 22.495923913043573,
-              "throughputPerMin": 122.66666666666667,
-              "clearedTotal": 368
+              "avgWaitTime": 22.4454780361758,
+              "throughputPerMin": 129,
+              "clearedTotal": 387
             }
           },
           "restoreSeconds": 300,
@@ -9832,30 +11151,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 9.513636363636392,
-          "throughputPerMin": 30.25,
-          "clearedTotal": 242,
-          "waitSumTotal": 2302.300000000007,
-          "clearedWithoutStopTotal": 93,
-          "pctClearedWithoutStop": 38.429752066115704
+          "avgWaitTime": 8.300793650793679,
+          "throughputPerMin": 31.5,
+          "clearedTotal": 252,
+          "waitSumTotal": 2091.800000000007,
+          "clearedWithoutStopTotal": 94,
+          "pctClearedWithoutStop": 37.301587301587304
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 11.344202898550764,
-          "throughputPerMin": 34.5,
-          "clearedTotal": 276,
-          "waitSumTotal": 3131.000000000011,
-          "clearedWithoutStopTotal": 84,
-          "pctClearedWithoutStop": 30.434782608695656
+          "avgWaitTime": 8.802500000000018,
+          "throughputPerMin": 35,
+          "clearedTotal": 280,
+          "waitSumTotal": 2464.700000000005,
+          "clearedWithoutStopTotal": 83,
+          "pctClearedWithoutStop": 29.642857142857142
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 10.562500000000043,
-          "throughputPerMin": 40,
-          "clearedTotal": 320,
-          "waitSumTotal": 3380.0000000000136,
-          "clearedWithoutStopTotal": 109,
-          "pctClearedWithoutStop": 34.0625
+          "avgWaitTime": 10.554380664652609,
+          "throughputPerMin": 41.375,
+          "clearedTotal": 331,
+          "waitSumTotal": 3493.500000000013,
+          "clearedWithoutStopTotal": 119,
+          "pctClearedWithoutStop": 35.95166163141994
         },
         {
           "id": "arcadia_west",
@@ -9940,12 +11259,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 18.59468085106385,
-          "throughputPerMin": 35.25,
-          "clearedTotal": 282,
-          "waitSumTotal": 5243.700000000005,
+          "avgWaitTime": 16.066435986159217,
+          "throughputPerMin": 36.125,
+          "clearedTotal": 289,
+          "waitSumTotal": 4643.2000000000135,
           "clearedWithoutStopTotal": 73,
-          "pctClearedWithoutStop": 25.886524822695034
+          "pctClearedWithoutStop": 25.259515570934255
         },
         {
           "id": "dyer_mall",
@@ -9976,18 +11295,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 13.985346215781048,
-          "throughputPerMin": 77.625,
-          "clearedTotal": 621,
-          "waitSumTotal": 8684.90000000003,
-          "clearedWithoutStopTotal": 189,
-          "pctClearedWithoutStop": 30.434782608695656
+          "avgWaitTime": 15.135340729001644,
+          "throughputPerMin": 78.875,
+          "clearedTotal": 631,
+          "waitSumTotal": 9550.400000000038,
+          "clearedWithoutStopTotal": 193,
+          "pctClearedWithoutStop": 30.58637083993661
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1838,
-        "totalClearedNetwork": 1391,
-        "onRoadNetwork": 447,
+        "totalSpawned": 1841,
+        "totalClearedNetwork": 1410,
+        "onRoadNetwork": 431,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -10024,6 +11343,11 @@
             "freezeAfterWarmup": false,
             "recoveryHold": true,
             "recoveryHoldS": 300,
+            "recoveryHoldThroughOutageZones": [],
+            "freeCycleZones": [],
+            "noPlatoonMessageZones": [],
+            "connectorRouteMarriage": true,
+            "restartOnArterialGreen": true,
             "forceRoutes": false,
             "connectorRoutes": true,
             "selective": true,
@@ -10047,7 +11371,7 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "1a520c23d213b41f"
+    "rowsHash": "c91c08da3c19a0f0"
   },
   "1|adaptive|destination|true|magnetometer": {
     "summary": {
@@ -15487,15 +16811,15 @@
       "controllerMode": "coordinated_adaptive",
       "routingMode": "destination",
       "routing": {
-        "trips": 1349,
-        "meanTripS": 136.9069681245531,
-        "meanTripDelayS": 61.09313550117682,
-        "toExit": 766,
-        "pulledOff": 583,
-        "divertedPct": 0.5930318754633062,
-        "missedTurns": 47,
+        "trips": 1348,
+        "meanTripS": 136.28278931752357,
+        "meanTripDelayS": 60.41642728900743,
+        "toExit": 757,
+        "pulledOff": 591,
+        "divertedPct": 0.44510385756676557,
+        "missedTurns": 46,
         "missedBy": {
-          "wrongLane": 47,
+          "wrongLane": 46,
           "blockedTurn": 0,
           "peelNoRoom": 0
         },
@@ -15505,17 +16829,17 @@
           "DYR-1": 7,
           "LYN-3": 5,
           "GRO-5": 10,
-          "DUX-2": 6,
-          "HIL-4": 9,
-          "DUX-4": 6,
-          "HIL-1": 6,
-          "BRN-2": 14,
-          "BRN-1": 14,
+          "DUX-2": 7,
+          "HIL-4": 10,
+          "DUX-4": 5,
+          "HIL-1": 7,
+          "BRN-2": 15,
+          "BRN-1": 15,
           "PRO-3": 5,
           "STZ-4": 6,
           "STZ-2": 12,
-          "LYN-2": 15,
-          "JSH-2": 8,
+          "LYN-2": 16,
+          "JSH-2": 9,
           "PRO-2": 6,
           "BRN-3": 12,
           "PRO-1": 3,
@@ -15523,7 +16847,7 @@
           "FRB-1": 5,
           "LYN-1": 10,
           "JSH-3N": 6,
-          "LYN-4": 4,
+          "LYN-4": 3,
           "PRO-5": 7,
           "FRB-2": 7,
           "JSH-1N": 2,
@@ -15536,27 +16860,27 @@
           "FES-5": 9,
           "HER-2": 4,
           "GRO-3": 18,
-          "DUX-1": 8,
+          "DUX-1": 9,
           "STZ-1": 5,
           "PRE-3": 9,
           "JSH-5": 9,
-          "STZ-5": 12,
+          "STZ-5": 11,
           "JSH-2S": 5,
           "GRO-1": 2,
           "BRN-4": 3,
           "HIL-5": 8,
-          "JSH-7": 30,
-          "PRE-1": 11,
-          "FRB-5": 12,
+          "JSH-7": 31,
+          "PRE-1": 12,
+          "FRB-5": 11,
           "FES-1": 6,
-          "HIL-8": 4,
-          "PRE-4": 4,
+          "HIL-8": 3,
+          "PRE-4": 3,
           "DXW-1": 4,
           "PAR-1": 3,
           "GRO-6": 9,
-          "SOU-5": 5,
+          "SOU-5": 6,
           "DUX-3": 8,
-          "JSH-6": 7,
+          "JSH-6": 8,
           "JSH-3": 2,
           "HIL-6": 13,
           "FES-2": 7,
@@ -15564,32 +16888,32 @@
           "FRB-6": 5,
           "STZ-6": 6,
           "PRK-1": 8,
-          "HIL-7": 5,
+          "HIL-7": 6,
           "LUN-1": 1,
           "FRB-4": 5,
           "FES-4": 5,
-          "JSH-1": 7,
-          "PRE-6": 3,
+          "JSH-1": 6,
+          "PRE-6": 5,
           "SOU-4": 2,
           "FRB-3": 6,
           "PRE-5": 3,
           "MAL-2": 4,
-          "HIL-3": 6,
+          "HIL-3": 5,
           "GRO-4": 3,
           "STZ-3": 9,
           "PRK-2": 7,
           "LYN-0": 4,
-          "SOU-1": 6,
-          "JSH-4": 6,
-          "ARC-1": 2,
+          "SOU-1": 5,
+          "JSH-4": 7,
           "LNW-0": 2,
+          "ARC-1": 2,
           "PRO-4": 1,
-          "JSH-1S": 5,
           "DYR-2": 5,
+          "JSH-1S": 5,
           "LUN-3": 1,
+          "LUN-2": 2,
           "MAL-1": 4,
           "LNW-1": 1,
-          "LUN-2": 1,
           "JSH-2N": 1
         },
         "missedDriveways": 8,
@@ -15599,15 +16923,15 @@
         },
         "drivewayFallbacks": {
           "sameBlock": 6,
-          "nextBlock": 1,
-          "exit": 1
+          "nextBlock": 2,
+          "exit": 0
         },
         "pulledOffByDriveway": {
           "ARC-3-A2": 3,
           "DYR-1-A1": 5,
           "LYN-3-B2": 1,
           "GRO-5-A2": 3,
-          "DUX-2-A1": 4,
+          "DUX-2-A1": 5,
           "HIL-4-A3": 1,
           "DUX-4-B1": 2,
           "HIL-1-A1": 4,
@@ -15618,7 +16942,7 @@
           "STZ-4-B2": 3,
           "STZ-2-A2": 3,
           "LYN-2-A1": 4,
-          "JSH-2-A1": 4,
+          "JSH-2-A1": 5,
           "PRO-2-A1": 4,
           "BRN-3-B3": 3,
           "PRO-1-A1": 2,
@@ -15626,7 +16950,7 @@
           "FRB-1-B2": 1,
           "LYN-1-B3": 1,
           "JSH-3N-A1": 4,
-          "BRN-2-B2": 3,
+          "BRN-2-B2": 4,
           "LYN-4-B1": 1,
           "PRO-5-A2": 2,
           "FRB-2-A1": 2,
@@ -15648,12 +16972,12 @@
           "GRO-3-A1": 2,
           "DUX-1-B1": 5,
           "FES-5-A1": 5,
-          "STZ-1-A1": 2,
+          "STZ-1-A1": 3,
           "PRE-3-A2": 2,
           "JSH-5-A2": 3,
           "LYN-2-A2": 4,
           "JSH-5-B1": 3,
-          "STZ-5-A1": 4,
+          "STZ-5-A1": 3,
           "STZ-2-B2": 5,
           "JSH-2S-A1": 2,
           "GRO-1-A1": 1,
@@ -15664,10 +16988,10 @@
           "HIL-5-A1": 1,
           "JSH-2S-B1": 3,
           "PRE-1-A2": 2,
-          "FRB-5-A2": 4,
+          "FRB-5-A2": 3,
           "FES-1-B2": 1,
-          "HIL-8-A1": 2,
-          "PRE-4-A1": 2,
+          "HIL-8-A1": 1,
+          "PRE-4-A1": 1,
           "DXW-1-A1": 2,
           "PAR-1-B1": 2,
           "GRO-2-B1": 3,
@@ -15678,24 +17002,24 @@
           "SOU-5-A2": 1,
           "DUX-3-B1": 5,
           "STZ-5-A2": 6,
-          "PRE-1-B2": 2,
+          "PRE-1-B2": 3,
           "PRO-5-B3": 1,
           "JSH-6-A1": 3,
           "JSH-3-A1": 2,
-          "HIL-6-A2": 4,
-          "FRB-1-A2": 3,
+          "HIL-6-A2": 5,
+          "FRB-1-A2": 4,
           "FES-2-A2": 2,
           "FES-2-B2": 2,
-          "FRB-5-B2": 2,
+          "FRB-5-B2": 1,
           "JSH-3S-A1": 3,
           "HIL-5-A2": 3,
           "BRN-1-A1": 2,
           "SOU-2-B1": 1,
           "FRB-6-A1": 2,
           "STZ-6-A2": 2,
-          "LYN-4-B2": 2,
+          "LYN-4-B2": 1,
           "HER-2-A1": 3,
-          "DUX-1-A1": 3,
+          "DUX-1-A1": 4,
           "PRK-1-A1": 1,
           "PRK-1-A2": 3,
           "HIL-7-B1": 5,
@@ -15704,7 +17028,7 @@
           "LUN-1-B1": 1,
           "DUX-3-A1": 3,
           "JSH-7-A3": 5,
-          "JSH-7-B1": 7,
+          "JSH-7-B1": 9,
           "STZ-6-B2": 2,
           "FRB-4-A1": 4,
           "DUX-4-A2": 1,
@@ -15714,7 +17038,7 @@
           "PRE-2-B2": 4,
           "LYN-1-B2": 2,
           "PRO-5-A1": 2,
-          "JSH-1-A1": 5,
+          "JSH-1-A1": 4,
           "PRE-6-B2": 2,
           "SOU-4-A1": 2,
           "LYN-2-B1": 1,
@@ -15723,10 +17047,10 @@
           "PRE-5-A1": 1,
           "FES-2-B1": 2,
           "MAL-2-A1": 1,
-          "HIL-3-B1": 4,
+          "HIL-3-B1": 3,
           "GRO-5-A1": 2,
           "STZ-2-B1": 3,
-          "HIL-1-B1": 2,
+          "HIL-1-B1": 3,
           "JSH-7-A2": 5,
           "FRB-6-B1": 3,
           "HIL-4-A2": 1,
@@ -15737,7 +17061,7 @@
           "PRK-2-B1": 4,
           "BRN-3-B2": 1,
           "LYN-0-A2": 1,
-          "SOU-1-A1": 3,
+          "SOU-1-A1": 2,
           "JSH-5-A1": 2,
           "PRO-3-B1": 3,
           "SOU-2-A1": 4,
@@ -15757,109 +17081,110 @@
           "SOU-1-B1": 3,
           "STZ-3-A1": 2,
           "FES-1-A1": 4,
-          "FRB-5-A1": 2,
           "PRK-2-A1": 3,
+          "FRB-5-A1": 3,
           "ARC-3-A1": 3,
           "STZ-4-A1": 2,
           "GRO-6-B2": 5,
-          "ARC-1-A1": 1,
+          "LNW-0-B1": 1,
           "LYN-1-A1": 2,
+          "ARC-1-A1": 1,
+          "FRB-4-B1": 1,
+          "GRO-3-A3": 7,
           "GRO-3-B3": 2,
           "JSH-4-A2": 3,
           "HIL-3-A1": 2,
-          "LNW-0-B1": 1,
           "PRO-2-B1": 2,
+          "JSH-6-B1": 5,
           "ARC-2-A2": 1,
-          "JSH-6-B1": 4,
-          "FRB-4-B1": 1,
-          "GRO-3-A3": 7,
-          "SOU-5-B1": 3,
-          "PRE-3-A1": 2,
-          "LYN-1-A3": 1,
-          "STZ-3-A2": 1,
-          "FRB-2-B1": 1,
-          "PRO-4-A1": 1,
-          "FRB-2-B2": 2,
           "PRE-2-A1": 3,
-          "JSH-1S-B1": 4,
+          "LYN-1-A3": 1,
+          "PRE-3-A1": 2,
+          "SOU-5-B1": 4,
+          "FRB-2-B2": 2,
+          "PRO-4-A1": 1,
+          "FRB-2-A2": 3,
           "DYR-2-B1": 3,
-          "FRB-1-A1": 1,
-          "BRN-2-A1": 2,
+          "LYN-2-B2": 3,
+          "JSH-1S-B1": 4,
           "HIL-6-B1": 3,
+          "STZ-3-A2": 1,
+          "BRN-2-A1": 2,
           "STZ-4-A2": 1,
-          "GRO-1-B1": 1,
           "LNW-0-A2": 1,
-          "LUN-3-B1": 1,
-          "HIL-6-A1": 4,
-          "JSH-1-B1": 2,
+          "HIL-6-A1": 3,
           "HIL-5-B2": 3,
-          "LYN-2-B2": 2,
-          "PRE-3-B1": 1,
-          "MAL-1-B1": 2,
+          "JSH-1-B1": 2,
+          "GRO-1-B1": 1,
           "ARC-1-B1": 1,
-          "LNW-1-A1": 1,
-          "STZ-2-A1": 1,
+          "PRE-1-B1": 2,
+          "JSH-7-B3": 4,
+          "DYR-2-A1": 2,
+          "LUN-3-B1": 1,
+          "PRE-3-B1": 1,
           "PRE-5-B1": 1,
           "STZ-5-B1": 1,
-          "DYR-2-A1": 2,
-          "HIL-8-B1": 2,
-          "JSH-7-B3": 6,
-          "PRE-1-B1": 2,
-          "GRO-4-A2": 1,
-          "BRN-3-B1": 1,
+          "STZ-2-A1": 1,
           "DUX-4-B2": 1,
-          "LYN-0-A1": 2,
-          "LYN-3-B1": 1,
-          "STZ-1-B2": 1,
-          "BRN-1-B3": 6,
-          "LUN-2-A1": 1,
-          "GRO-6-A1": 1,
-          "STZ-5-B2": 1,
-          "STZ-6-B1": 2,
-          "JSH-1S-A1": 1,
-          "MAL-2-A3": 1,
-          "BRN-1-B2": 2,
-          "HIL-4-B2": 1,
-          "FES-4-B1": 1,
+          "GRO-4-A2": 1,
+          "LUN-2-A1": 2,
+          "HIL-8-B1": 2,
           "PRE-2-B1": 1,
-          "BRN-2-B1": 2,
-          "JSH-3N-B1": 2,
-          "JSH-7-B2": 4,
+          "MAL-2-A3": 1,
+          "LYN-3-B1": 1,
+          "FES-4-B1": 1,
+          "BRN-3-B1": 1,
+          "DUX-4-A1": 1,
+          "MAL-1-B1": 2,
+          "STZ-5-B2": 1,
+          "STZ-1-B1": 1,
+          "STZ-6-B1": 2,
+          "LNW-1-A1": 1,
+          "JSH-1S-A1": 1,
+          "JSH-7-B2": 5,
+          "BRN-1-B3": 6,
+          "BRN-1-B2": 2,
           "HIL-4-A1": 1,
-          "GRO-3-B2": 1,
-          "FRB-2-A2": 2,
+          "BRN-2-B1": 2,
           "MAL-1-A1": 2,
-          "JSH-4-B2": 1,
-          "FRB-3-B2": 1,
-          "BRN-4-A1": 1,
+          "GRO-6-A1": 1,
+          "HIL-4-B2": 2,
           "PRO-5-B2": 1,
-          "DUX-4-A1": 2,
-          "STZ-3-B1": 3,
           "FRB-3-A1": 2,
-          "MAL-2-B3": 1,
-          "FRB-3-B1": 1,
-          "DXW-1-B1": 2,
-          "SOU-5-B2": 1,
-          "STZ-1-A2": 2,
-          "PRK-1-B1": 1,
           "LYN-3-A1": 1,
-          "BRN-1-A3": 1,
+          "LYN-0-A1": 2,
+          "JSH-3N-B1": 2,
+          "GRO-3-B2": 1,
+          "FRB-3-B2": 1,
+          "MAL-2-B3": 1,
+          "SOU-5-B2": 1,
+          "STZ-3-B1": 3,
+          "BRN-4-A1": 1,
+          "FRB-3-B1": 1,
+          "JSH-4-B2": 2,
+          "BRN-1-A3": 2,
+          "PRK-1-B1": 1,
           "PRO-1-B1": 1,
+          "DXW-1-B1": 2,
+          "JSH-2N-A1": 1,
           "MAL-2-B1": 1,
-          "LYN-0-B2": 1,
           "LYN-3-B3": 1,
+          "PAR-1-A1": 1,
           "ARC-2-A1": 1,
           "LYN-4-A2": 1,
-          "JSH-2N-A1": 1,
-          "LYN-3-A2": 1,
-          "BRN-3-A1": 1,
-          "PRE-6-B1": 1,
-          "PAR-1-A1": 1,
-          "FES-1-B1": 1,
+          "LYN-0-B2": 1,
           "GRO-5-B2": 1,
-          "FES-2-A1": 1
+          "FES-2-A1": 1,
+          "BRN-3-A1": 1,
+          "STZ-1-A2": 1,
+          "LYN-3-A2": 1,
+          "PRE-6-B1": 1,
+          "HIL-7-A1": 1,
+          "PRE-6-A1": 1,
+          "PRE-6-A2": 1,
+          "FES-1-B1": 1
         },
-        "departed": 448,
+        "departed": 447,
         "departedByDriveway": {
           "JSH-6-A1": 7,
           "FRB-5-A3": 2,
@@ -16050,19 +17375,19 @@
           "BRN-3-B2": 2,
           "GRO-7-B1": 1,
           "PRO-5-A3": 1,
-          "PRE-3-B2": 1,
-          "LNW-1-A1": 2,
           "LUN-3-B1": 2,
+          "LNW-1-A1": 2,
+          "PRE-3-B2": 1,
           "PRE-2-A2": 2,
           "FRB-4-A1": 2,
           "GRO-3-A3": 2,
-          "SOU-5-A3": 1,
           "DUX-4-B2": 1,
           "BRN-3-A2": 2,
+          "LYN-4-A1": 2,
+          "SOU-5-A3": 1,
+          "FES-2-A2": 2,
           "STZ-1-B1": 1,
           "LYN-2-A1": 2,
-          "LYN-4-A1": 2,
-          "FES-2-A2": 2,
           "BRN-2-B1": 2,
           "MAL-2-A3": 1,
           "DUX-2-B1": 1,
@@ -16079,36 +17404,37 @@
           "DUX-4-A1": 1,
           "PRO-5-A2": 1,
           "FRB-2-A2": 1,
-          "PRE-3-A2": 2,
           "BRN-3-A3": 2,
           "MAL-2-A1": 1,
           "BRN-4-A1": 1,
+          "PRE-3-A2": 2,
           "FRB-5-A2": 1,
-          "HIL-5-A2": 1,
           "BUR-1-A1": 1,
-          "FES-3-A1": 1,
           "HIL-6-B2": 1,
+          "HIL-5-A2": 1,
+          "FES-3-A1": 1,
           "JSH-1-B2": 1,
           "DUX-3-A1": 1,
-          "HIL-5-B1": 1,
-          "GRO-4-A2": 1
+          "HIL-5-B1": 1
         },
-        "departuresWaiting": 0,
-        "meanDrivewayWaitS": 0.8897321428572501,
-        "longestDrivewayWaitS": 0,
-        "departuresWaitingByDriveway": {}
+        "departuresWaiting": 1,
+        "meanDrivewayWaitS": 0.9333333333334503,
+        "longestDrivewayWaitS": 2.0000000000004547,
+        "departuresWaitingByDriveway": {
+          "GRO-4:S": 1
+        }
       },
       "diagnostics": {
-        "arrivalsLost": 2,
+        "arrivalsLost": 1,
         "roundaboutOverruns": 0,
         "lockup": {
-          "longestStillS": 84,
+          "longestStillS": 75,
           "longestStill": {
-            "seconds": 84,
-            "carId": 943,
-            "nodeId": "lynnwood_janshoba",
-            "place": "Lynnwood Road, eastbound, lane 0, 337 m",
-            "atS": 456
+            "seconds": 75,
+            "carId": 1482,
+            "nodeId": "burnett_janshoba",
+            "place": "Burnett, lane 0, 237 m",
+            "atS": 547
           },
           "locked": null,
           "starved": null,
@@ -16125,358 +17451,1198 @@
         "errorsOn": false
       },
       "corridorConfig": "hatfield-realistic",
-      "avgWaitTime": 20.038028169014183,
-      "avgWaitTimeArterial": 15.916277128547632,
-      "avgWaitTimeSideStreet": 10.288888888888929,
-      "throughputPerMin": 168.625,
-      "throughputPerMinArterial": 149.75,
+      "avgWaitTime": 19.175816023738935,
+      "avgWaitTimeArterial": 14.529573934837133,
+      "avgWaitTimeSideStreet": 10.926485788113729,
+      "throughputPerMin": 168.5,
+      "throughputPerMinArterial": 149.625,
       "throughputPerMinSideStreet": 96.75,
-      "pctClearedWithoutStop": 7.93180133432172,
-      "pctClearedWithoutStopArterial": 18.614357262103507,
-      "pctClearedWithoutStopSideStreet": 22.997416020671835,
-      "medianWait": 15.199999999999962,
-      "p95Wait": 57.400000000000546,
-      "maxWait": 133.6999999999967,
-      "p95WaitArterial": 52.70000000000048,
-      "maxWaitArterial": 119.4999999999975,
-      "p95WaitSideStreet": 33.80000000000031,
-      "maxWaitSideStreet": 94.29999999999892,
+      "pctClearedWithoutStop": 9.495548961424333,
+      "pctClearedWithoutStopArterial": 20.46783625730994,
+      "pctClearedWithoutStopSideStreet": 24.160206718346252,
+      "medianWait": 14.599999999999964,
+      "p95Wait": 55.50000000000052,
+      "maxWait": 105.0999999999983,
+      "p95WaitArterial": 49.000000000000426,
+      "maxWaitArterial": 91.79999999999906,
+      "p95WaitSideStreet": 35.10000000000023,
+      "maxWaitSideStreet": 98.89999999999866,
       "roadWaits": {
         "pretorius": {
           "name": "Pretorius Street",
           "scope": "arterial",
-          "vehicles": 251,
-          "meanWait": 11.81,
-          "maxWait": 56
+          "vehicles": 258,
+          "meanWait": 11.56,
+          "maxWait": 77.3,
+          "stages": {
+            "pre": {
+              "vehicles": 77,
+              "meanWait": 7.26
+            },
+            "stage1": {
+              "vehicles": 27,
+              "meanWait": 9.35
+            },
+            "stage2": {
+              "vehicles": 41,
+              "meanWait": 15.65
+            },
+            "post": {
+              "vehicles": 113,
+              "meanWait": 13.53
+            }
+          }
         },
         "conn_jan_shoba_nb": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 154,
-          "meanWait": 6.61,
-          "maxWait": 37.9
+          "vehicles": 152,
+          "meanWait": 6.4,
+          "maxWait": 54,
+          "stages": {
+            "pre": {
+              "vehicles": 54,
+              "meanWait": 3.58
+            },
+            "stage1": {
+              "vehicles": 19,
+              "meanWait": 5.06
+            },
+            "stage2": {
+              "vehicles": 24,
+              "meanWait": 5.77
+            },
+            "post": {
+              "vehicles": 55,
+              "meanWait": 9.92
+            }
+          }
         },
         "park": {
           "name": "Park Street",
           "scope": "side",
           "vehicles": 53,
-          "meanWait": 5.79,
-          "maxWait": 34.8
+          "meanWait": 5.36,
+          "maxWait": 34.8,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 5.92
+            },
+            "stage1": {
+              "vehicles": 15,
+              "meanWait": 6.07
+            },
+            "stage2": {
+              "vehicles": 3,
+              "meanWait": 0.27
+            },
+            "post": {
+              "vehicles": 22,
+              "meanWait": 5.25
+            }
+          }
         },
         "conn_grosvenor_south": {
           "name": "Grosvenor",
           "scope": "side",
-          "vehicles": 107,
-          "meanWait": 4.71,
-          "maxWait": 31.4
+          "vehicles": 106,
+          "meanWait": 4.82,
+          "maxWait": 36.1,
+          "stages": {
+            "pre": {
+              "vehicles": 27,
+              "meanWait": 2.79
+            },
+            "stage1": {
+              "vehicles": 31,
+              "meanWait": 5
+            },
+            "stage2": {
+              "vehicles": 13,
+              "meanWait": 2.9
+            },
+            "post": {
+              "vehicles": 35,
+              "meanWait": 6.95
+            }
+          }
         },
         "arcadia": {
           "name": "Arcadia Street",
           "scope": "side",
-          "vehicles": 77,
-          "meanWait": 3.03,
-          "maxWait": 29
+          "vehicles": 75,
+          "meanWait": 2.96,
+          "maxWait": 24.1,
+          "stages": {
+            "pre": {
+              "vehicles": 24,
+              "meanWait": 3.05
+            },
+            "stage1": {
+              "vehicles": 14,
+              "meanWait": 1.24
+            },
+            "stage2": {
+              "vehicles": 6,
+              "meanWait": 0.05
+            },
+            "post": {
+              "vehicles": 31,
+              "meanWait": 4.22
+            }
+          }
         },
         "conn_arcadia_east": {
           "name": "Arcadia",
           "scope": "side",
-          "vehicles": 56,
-          "meanWait": 2.25,
-          "maxWait": 22.7
+          "vehicles": 54,
+          "meanWait": 2.39,
+          "maxWait": 22.7,
+          "stages": {
+            "pre": {
+              "vehicles": 15,
+              "meanWait": 1.25
+            },
+            "stage1": {
+              "vehicles": 10,
+              "meanWait": 2.2
+            },
+            "stage2": {
+              "vehicles": 5,
+              "meanWait": 5.3
+            },
+            "post": {
+              "vehicles": 24,
+              "meanWait": 2.58
+            }
+          }
         },
         "conn_jan_shoba": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 367,
-          "meanWait": 9.98,
-          "maxWait": 96
+          "vehicles": 370,
+          "meanWait": 9.34,
+          "maxWait": 61,
+          "stages": {
+            "pre": {
+              "vehicles": 96,
+              "meanWait": 5.49
+            },
+            "stage1": {
+              "vehicles": 53,
+              "meanWait": 7.2
+            },
+            "stage2": {
+              "vehicles": 49,
+              "meanWait": 10.09
+            },
+            "post": {
+              "vehicles": 172,
+              "meanWait": 11.93
+            }
+          }
         },
         "lynnwood": {
           "name": "Lynnwood Road",
           "scope": "arterial",
-          "vehicles": 296,
-          "meanWait": 16.33,
-          "maxWait": 113.1
+          "vehicles": 302,
+          "meanWait": 12.51,
+          "maxWait": 87.9,
+          "stages": {
+            "pre": {
+              "vehicles": 74,
+              "meanWait": 7
+            },
+            "stage1": {
+              "vehicles": 38,
+              "meanWait": 13.5
+            },
+            "stage2": {
+              "vehicles": 40,
+              "meanWait": 11.4
+            },
+            "post": {
+              "vehicles": 150,
+              "meanWait": 15.27
+            }
+          }
         },
         "francisbaard": {
           "name": "Francis Baard Street",
           "scope": "arterial",
-          "vehicles": 331,
-          "meanWait": 6.91,
-          "maxWait": 61.3
+          "vehicles": 319,
+          "meanWait": 6.29,
+          "maxWait": 56.4,
+          "stages": {
+            "pre": {
+              "vehicles": 98,
+              "meanWait": 2.85
+            },
+            "stage1": {
+              "vehicles": 43,
+              "meanWait": 6.05
+            },
+            "stage2": {
+              "vehicles": 40,
+              "meanWait": 11.09
+            },
+            "post": {
+              "vehicles": 138,
+              "meanWait": 7.42
+            }
+          }
         },
         "conn_festival": {
           "name": "Festival",
           "scope": "side",
           "vehicles": 96,
-          "meanWait": 7.37,
-          "maxWait": 40.2
+          "meanWait": 8.73,
+          "maxWait": 54.2,
+          "stages": {
+            "pre": {
+              "vehicles": 28,
+              "meanWait": 4.4
+            },
+            "stage1": {
+              "vehicles": 8,
+              "meanWait": 12.19
+            },
+            "stage2": {
+              "vehicles": 14,
+              "meanWait": 9.79
+            },
+            "post": {
+              "vehicles": 46,
+              "meanWait": 10.44
+            }
+          }
         },
         "stanza": {
           "name": "Stanza Bopape Street",
           "scope": "arterial",
-          "vehicles": 273,
-          "meanWait": 5.54,
-          "maxWait": 45
+          "vehicles": 262,
+          "meanWait": 5.52,
+          "maxWait": 36.2,
+          "stages": {
+            "pre": {
+              "vehicles": 81,
+              "meanWait": 4.97
+            },
+            "stage1": {
+              "vehicles": 28,
+              "meanWait": 6.41
+            },
+            "stage2": {
+              "vehicles": 30,
+              "meanWait": 5.61
+            },
+            "post": {
+              "vehicles": 123,
+              "meanWait": 5.66
+            }
+          }
         },
         "conn_dyer": {
           "name": "Dyer Road",
           "scope": "side",
-          "vehicles": 65,
-          "meanWait": 3.83,
-          "maxWait": 53
+          "vehicles": 68,
+          "meanWait": 3.1,
+          "maxWait": 25.1,
+          "stages": {
+            "pre": {
+              "vehicles": 15,
+              "meanWait": 3.36
+            },
+            "stage1": {
+              "vehicles": 6,
+              "meanWait": 2.77
+            },
+            "stage2": {
+              "vehicles": 13,
+              "meanWait": 2.59
+            },
+            "post": {
+              "vehicles": 34,
+              "meanWait": 3.24
+            }
+          }
         },
         "conn_park_east": {
           "name": "Park",
           "scope": "side",
           "vehicles": 23,
-          "meanWait": 4.06,
-          "maxWait": 32.8
+          "meanWait": 4.23,
+          "maxWait": 32.5,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 1.97
+            },
+            "stage1": {
+              "vehicles": 3,
+              "meanWait": 1.53
+            },
+            "stage2": {
+              "vehicles": 3,
+              "meanWait": 1.2
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 8.93
+            }
+          }
         },
         "conn_grosvenor": {
           "name": "Grosvenor",
           "scope": "side",
-          "vehicles": 132,
-          "meanWait": 6.48,
-          "maxWait": 34.1
+          "vehicles": 130,
+          "meanWait": 6.46,
+          "maxWait": 34.1,
+          "stages": {
+            "pre": {
+              "vehicles": 31,
+              "meanWait": 5.42
+            },
+            "stage1": {
+              "vehicles": 31,
+              "meanWait": 5.31
+            },
+            "stage2": {
+              "vehicles": 16,
+              "meanWait": 7.61
+            },
+            "post": {
+              "vehicles": 52,
+              "meanWait": 7.41
+            }
+          }
         },
         "conn_prospect_east": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 23,
+          "vehicles": 22,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 3,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 9,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_e_on": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 15,
+          "vehicles": 14,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 6,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 0
+            }
+          }
         },
         "slip_duxbury_janshoba_southbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 14,
-          "meanWait": 0.16,
-          "maxWait": 2.2
+          "vehicles": 15,
+          "meanWait": 0.12,
+          "maxWait": 1.8,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 9,
+              "meanWait": 0.2
+            }
+          }
         },
         "conn_duxbury_east": {
           "name": "Duxbury",
           "scope": "side",
-          "vehicles": 87,
-          "meanWait": 8.96,
-          "maxWait": 41.3
+          "vehicles": 91,
+          "meanWait": 8.27,
+          "maxWait": 40.9,
+          "stages": {
+            "pre": {
+              "vehicles": 18,
+              "meanWait": 8.14
+            },
+            "stage1": {
+              "vehicles": 7,
+              "meanWait": 10.01
+            },
+            "stage2": {
+              "vehicles": 17,
+              "meanWait": 7.46
+            },
+            "post": {
+              "vehicles": 49,
+              "meanWait": 8.34
+            }
+          }
         },
         "conn_hilda": {
           "name": "Hilda",
           "scope": "side",
-          "vehicles": 130,
-          "meanWait": 4.56,
-          "maxWait": 30
+          "vehicles": 128,
+          "meanWait": 4.73,
+          "maxWait": 34.7,
+          "stages": {
+            "pre": {
+              "vehicles": 35,
+              "meanWait": 2.37
+            },
+            "stage1": {
+              "vehicles": 17,
+              "meanWait": 2.68
+            },
+            "stage2": {
+              "vehicles": 19,
+              "meanWait": 5.82
+            },
+            "post": {
+              "vehicles": 57,
+              "meanWait": 6.42
+            }
+          }
         },
         "conn_duxbury_south": {
           "name": "Duxbury",
           "scope": "side",
-          "vehicles": 24,
-          "meanWait": 5.02,
-          "maxWait": 60.9
+          "vehicles": 22,
+          "meanWait": 6.9,
+          "maxWait": 60.9,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 3.72
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 16,
+              "meanWait": 8.56
+            }
+          }
         },
         "arcadia_west": {
           "name": "Arcadia Street",
           "scope": "side",
           "vehicles": 14,
-          "meanWait": 3.96,
-          "maxWait": 16.7
+          "meanWait": 4.01,
+          "maxWait": 13.9,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 3.7
+            },
+            "stage1": {
+              "vehicles": 2,
+              "meanWait": 2.8
+            },
+            "post": {
+              "vehicles": 8,
+              "meanWait": 4.47
+            }
+          }
         },
         "dyer_mall": {
           "name": "Mall Road",
           "scope": "side",
           "vehicles": 49,
           "meanWait": 0.11,
-          "maxWait": 0.9
+          "maxWait": 0.9,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 0.12
+            },
+            "stage1": {
+              "vehicles": 3,
+              "meanWait": 0.17
+            },
+            "stage2": {
+              "vehicles": 7,
+              "meanWait": 0.13
+            },
+            "post": {
+              "vehicles": 26,
+              "meanWait": 0.1
+            }
+          }
         },
         "lunnon": {
           "name": "Lunnon Road",
           "scope": "side",
-          "vehicles": 59,
-          "meanWait": 5.23,
-          "maxWait": 28.2
+          "vehicles": 64,
+          "meanWait": 5.06,
+          "maxWait": 19.7,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 1.79
+            },
+            "stage1": {
+              "vehicles": 7,
+              "meanWait": 3.59
+            },
+            "stage2": {
+              "vehicles": 14,
+              "meanWait": 6.79
+            },
+            "post": {
+              "vehicles": 34,
+              "meanWait": 5.52
+            }
+          }
         },
         "south": {
           "name": "South Street",
           "scope": "side",
-          "vehicles": 80,
-          "meanWait": 0.66,
-          "maxWait": 8.9
+          "vehicles": 81,
+          "meanWait": 0.63,
+          "maxWait": 8.2,
+          "stages": {
+            "pre": {
+              "vehicles": 18,
+              "meanWait": 0.32
+            },
+            "stage1": {
+              "vehicles": 19,
+              "meanWait": 0.59
+            },
+            "stage2": {
+              "vehicles": 9,
+              "meanWait": 1.53
+            },
+            "post": {
+              "vehicles": 35,
+              "meanWait": 0.57
+            }
+          }
         },
         "burnett": {
           "name": "Burnett Street",
           "scope": "side",
-          "vehicles": 132,
-          "meanWait": 4.32,
-          "maxWait": 33.8
+          "vehicles": 133,
+          "meanWait": 4.56,
+          "maxWait": 33.8,
+          "stages": {
+            "pre": {
+              "vehicles": 26,
+              "meanWait": 4.73
+            },
+            "stage1": {
+              "vehicles": 21,
+              "meanWait": 5.71
+            },
+            "stage2": {
+              "vehicles": 23,
+              "meanWait": 4.81
+            },
+            "post": {
+              "vehicles": 63,
+              "meanWait": 4.01
+            }
+          }
         },
         "slip_burnett_janshoba_northbound": {
           "name": "",
           "scope": "side",
           "vehicles": 22,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 5,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 11,
+              "meanWait": 0
+            }
+          }
         },
         "conn_hilda_south": {
           "name": "Hilda",
           "scope": "side",
-          "vehicles": 150,
-          "meanWait": 1.08,
-          "maxWait": 12.8
+          "vehicles": 154,
+          "meanWait": 1.14,
+          "maxWait": 19.2,
+          "stages": {
+            "pre": {
+              "vehicles": 25,
+              "meanWait": 0.13
+            },
+            "stage1": {
+              "vehicles": 29,
+              "meanWait": 0.33
+            },
+            "stage2": {
+              "vehicles": 25,
+              "meanWait": 1.2
+            },
+            "post": {
+              "vehicles": 75,
+              "meanWait": 1.77
+            }
+          }
         },
         "prospect": {
           "name": "Prospect Street",
           "scope": "side",
-          "vehicles": 86,
-          "meanWait": 4.98,
-          "maxWait": 21.4
+          "vehicles": 87,
+          "meanWait": 5.44,
+          "maxWait": 21.4,
+          "stages": {
+            "pre": {
+              "vehicles": 19,
+              "meanWait": 4.5
+            },
+            "stage1": {
+              "vehicles": 17,
+              "meanWait": 4.82
+            },
+            "stage2": {
+              "vehicles": 14,
+              "meanWait": 5.33
+            },
+            "post": {
+              "vehicles": 37,
+              "meanWait": 6.25
+            }
+          }
         },
         "conn_jan_shoba_sb": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 195,
-          "meanWait": 12.15,
-          "maxWait": 65.5
+          "vehicles": 192,
+          "meanWait": 12.4,
+          "maxWait": 49.8,
+          "stages": {
+            "pre": {
+              "vehicles": 60,
+              "meanWait": 7.79
+            },
+            "stage1": {
+              "vehicles": 11,
+              "meanWait": 11.33
+            },
+            "stage2": {
+              "vehicles": 23,
+              "meanWait": 8.76
+            },
+            "post": {
+              "vehicles": 98,
+              "meanWait": 16.21
+            }
+          }
         },
         "conn_lunnon_e_on": {
           "name": "Lunnon",
           "scope": "side",
-          "vehicles": 18,
-          "meanWait": 0.21,
-          "maxWait": 3.8
+          "vehicles": 21,
+          "meanWait": 0.35,
+          "maxWait": 7.4,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 5,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 11,
+              "meanWait": 0.67
+            }
+          }
         },
         "south_janshoba_divided": {
           "name": "South Street",
           "scope": "side",
           "vehicles": 47,
-          "meanWait": 2.98,
-          "maxWait": 30.2
+          "meanWait": 2.92,
+          "maxWait": 28.9,
+          "stages": {
+            "pre": {
+              "vehicles": 17,
+              "meanWait": 0.82
+            },
+            "stage1": {
+              "vehicles": 8,
+              "meanWait": 2.75
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 20,
+              "meanWait": 5.06
+            }
+          }
         },
         "conn_burnett_east": {
           "name": "Burnett",
           "scope": "side",
-          "vehicles": 16,
-          "meanWait": 4.29,
-          "maxWait": 23
+          "vehicles": 15,
+          "meanWait": 6.31,
+          "maxWait": 28.9,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 1.6
+            },
+            "stage1": {
+              "vehicles": 3,
+              "meanWait": 0.1
+            },
+            "stage2": {
+              "vehicles": 3,
+              "meanWait": 12.97
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 9.82
+            }
+          }
         },
         "conn_jan_shoba_nb_south": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 44,
-          "meanWait": 9.45,
-          "maxWait": 48.7
+          "vehicles": 38,
+          "meanWait": 9.56,
+          "maxWait": 34,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 10.41
+            },
+            "stage1": {
+              "vehicles": 8,
+              "meanWait": 11.55
+            },
+            "stage2": {
+              "vehicles": 6,
+              "meanWait": 14.87
+            },
+            "post": {
+              "vehicles": 15,
+              "meanWait": 5.87
+            }
+          }
         },
         "conn_jan_shoba_sb_merge": {
           "name": "Jan Shoba",
           "scope": "arterial",
-          "vehicles": 63,
-          "meanWait": 0.07,
-          "maxWait": 0.9
+          "vehicles": 65,
+          "meanWait": 0.08,
+          "maxWait": 0.9,
+          "stages": {
+            "pre": {
+              "vehicles": 18,
+              "meanWait": 0.02
+            },
+            "stage1": {
+              "vehicles": 9,
+              "meanWait": 0.24
+            },
+            "stage2": {
+              "vehicles": 10,
+              "meanWait": 0.02
+            },
+            "post": {
+              "vehicles": 28,
+              "meanWait": 0.08
+            }
+          }
         },
         "conn_south_east": {
           "name": "South",
           "scope": "side",
-          "vehicles": 21,
+          "vehicles": 22,
           "meanWait": 0.01,
-          "maxWait": 0.3
+          "maxWait": 0.3,
+          "stages": {
+            "pre": {
+              "vehicles": 9,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 6,
+              "meanWait": 0.05
+            },
+            "stage2": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "conn_herold": {
           "name": "Herold Street",
           "scope": "side",
-          "vehicles": 88,
-          "meanWait": 11.76,
-          "maxWait": 64
+          "vehicles": 92,
+          "meanWait": 14.19,
+          "maxWait": 64,
+          "stages": {
+            "pre": {
+              "vehicles": 16,
+              "meanWait": 17.76
+            },
+            "stage1": {
+              "vehicles": 20,
+              "meanWait": 16.92
+            },
+            "stage2": {
+              "vehicles": 13,
+              "meanWait": 11.17
+            },
+            "post": {
+              "vehicles": 43,
+              "meanWait": 12.5
+            }
+          }
         },
         "conn_festival_south": {
           "name": "Festival",
           "scope": "side",
-          "vehicles": 38,
-          "meanWait": 5.48,
-          "maxWait": 18.1
+          "vehicles": 39,
+          "meanWait": 4.71,
+          "maxWait": 17.9,
+          "stages": {
+            "pre": {
+              "vehicles": 6,
+              "meanWait": 5.37
+            },
+            "stage1": {
+              "vehicles": 4,
+              "meanWait": 4.33
+            },
+            "stage2": {
+              "vehicles": 5,
+              "meanWait": 1.12
+            },
+            "post": {
+              "vehicles": 24,
+              "meanWait": 5.36
+            }
+          }
         },
         "duxbury_west": {
           "name": "Duxbury Road",
           "scope": "side",
-          "vehicles": 129,
-          "meanWait": 0.43,
-          "maxWait": 9
+          "vehicles": 134,
+          "meanWait": 0.42,
+          "maxWait": 9,
+          "stages": {
+            "pre": {
+              "vehicles": 21,
+              "meanWait": 0.24
+            },
+            "stage1": {
+              "vehicles": 26,
+              "meanWait": 0.94
+            },
+            "stage2": {
+              "vehicles": 19,
+              "meanWait": 0.52
+            },
+            "post": {
+              "vehicles": 68,
+              "meanWait": 0.24
+            }
+          }
         },
         "duxbury": {
           "name": "Duxbury Road",
           "scope": "side",
-          "vehicles": 74,
-          "meanWait": 3.1,
-          "maxWait": 32.3
+          "vehicles": 76,
+          "meanWait": 3.13,
+          "maxWait": 32.8,
+          "stages": {
+            "pre": {
+              "vehicles": 13,
+              "meanWait": 3.04
+            },
+            "stage1": {
+              "vehicles": 12,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 10,
+              "meanWait": 7.42
+            },
+            "post": {
+              "vehicles": 41,
+              "meanWait": 3.02
+            }
+          }
         },
         "lunnon_west": {
           "name": "Lunnon Road",
           "scope": "side",
           "vehicles": 35,
-          "meanWait": 0.57,
-          "maxWait": 5.1
+          "meanWait": 0.7,
+          "maxWait": 6.7,
+          "stages": {
+            "pre": {
+              "vehicles": 8,
+              "meanWait": 1.06
+            },
+            "stage1": {
+              "vehicles": 6,
+              "meanWait": 0.6
+            },
+            "stage2": {
+              "vehicles": 6,
+              "meanWait": 0.25
+            },
+            "post": {
+              "vehicles": 15,
+              "meanWait": 0.73
+            }
+          }
         },
         "conn_lunnon_w_off": {
           "name": "Lunnon",
           "scope": "side",
           "vehicles": 12,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 4,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 0
+            }
+          }
         },
         "slip_lynnwood_duxbury_eastbound": {
           "name": "",
           "scope": "side",
-          "vehicles": 9,
+          "vehicles": 10,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0
+            }
+          }
         },
         "conn_arcadia_oneway": {
           "name": "Arcadia",
           "scope": "side",
           "vehicles": 12,
-          "meanWait": 4.05,
-          "maxWait": 6.7
+          "meanWait": 5.69,
+          "maxWait": 19.2,
+          "stages": {
+            "pre": {
+              "vehicles": 3,
+              "meanWait": 5.7
+            },
+            "stage1": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 4
+            },
+            "post": {
+              "vehicles": 5,
+              "meanWait": 8.64
+            }
+          }
         },
         "conn_prospect_e_off": {
           "name": "Prospect",
           "scope": "side",
           "vehicles": 8,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 4,
+              "meanWait": 0
+            }
+          }
         },
         "conn_lunnon_e_off": {
           "name": "Lunnon",
           "scope": "side",
           "vehicles": 11,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "pre": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 7,
+              "meanWait": 0
+            }
+          }
         },
         "conn_prospect_w_on": {
           "name": "Prospect",
           "scope": "side",
-          "vehicles": 12,
-          "meanWait": 0,
-          "maxWait": 0
+          "vehicles": 11,
+          "meanWait": 0.3,
+          "maxWait": 3.3,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 6,
+              "meanWait": 0.55
+            }
+          }
         },
         "conn_lunnon_w_on": {
           "name": "Lunnon",
           "scope": "side",
           "vehicles": 8,
-          "meanWait": 0,
-          "maxWait": 0
+          "meanWait": 0.55,
+          "maxWait": 2.7,
+          "stages": {
+            "pre": {
+              "vehicles": 2,
+              "meanWait": 0
+            },
+            "stage1": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "stage2": {
+              "vehicles": 1,
+              "meanWait": 0
+            },
+            "post": {
+              "vehicles": 4,
+              "meanWait": 1.1
+            }
+          }
         },
         "conn_prospect_w_off": {
           "name": "Prospect",
           "scope": "side",
           "vehicles": 4,
           "meanWait": 0,
-          "maxWait": 0
+          "maxWait": 0,
+          "stages": {
+            "post": {
+              "vehicles": 4,
+              "meanWait": 0
+            }
+          }
         }
       },
       "coordination": {
@@ -16618,18 +18784,18 @@
             "retunes": 5
           },
           "pretorius": {
-            "meanCycleS": 39,
+            "meanCycleS": 38.8,
             "minCycleS": 34.2,
-            "maxCycleS": 45,
-            "finalCycleS": 45,
+            "maxCycleS": 44.4,
+            "finalCycleS": 44.4,
             "retunes": 2
           },
           "francisbaard": {
-            "meanCycleS": 33.9,
+            "meanCycleS": 33.5,
             "minCycleS": 31.6,
-            "maxCycleS": 37.6,
-            "finalCycleS": 37.6,
-            "retunes": 2
+            "maxCycleS": 36,
+            "finalCycleS": 34.6,
+            "retunes": 3
           },
           "arcadia_west": {
             "meanCycleS": 22.4,
@@ -16674,23 +18840,23 @@
             "retunes": 0
           },
           "route:Jan Shoba": {
-            "meanCycleS": 67.3,
+            "meanCycleS": 66.9,
             "minCycleS": 48,
             "maxCycleS": 70.9,
-            "finalCycleS": 70.9,
+            "finalCycleS": 64.9,
             "retunes": 2
           }
         },
         "recoveryHolds": 2,
         "recoveryHoldS": 600,
         "platoon": {
-          "messages": 1829,
+          "messages": 1823,
           "holds": 0,
           "holdS": 0
         },
         "greenEnds": {
-          "gapOut": 513,
-          "maxOut": 33,
+          "gapOut": 526,
+          "maxOut": 31,
           "yield": 21,
           "platoonEarly": 6,
           "forceOff": 5
@@ -16710,7 +18876,7 @@
           },
           "post": {
             "marriedShare": 0,
-            "routeCycleS": 70.9
+            "routeCycleS": 69.7
           }
         },
         "restores": [
@@ -16732,14 +18898,14 @@
         "clearedTotal": 384
       },
       "duringOutage": {
-        "avgWaitTime": 20.640226628895302,
-        "throughputPerMin": 141.2,
-        "clearedTotal": 353
+        "avgWaitTime": 19.908146067415807,
+        "throughputPerMin": 142.4,
+        "clearedTotal": 356
       },
       "postRecovery": {
-        "avgWaitTime": 24.836111111111236,
-        "throughputPerMin": 204,
-        "clearedTotal": 612
+        "avgWaitTime": 23.381743421052715,
+        "throughputPerMin": 202.66666666666666,
+        "clearedTotal": 608
       },
       "preOutageArterial": {
         "avgWaitTime": 8.865597667638498,
@@ -16747,14 +18913,14 @@
         "clearedTotal": 343
       },
       "duringOutageArterial": {
-        "avgWaitTime": 16.141100323624666,
-        "throughputPerMin": 123.6,
-        "clearedTotal": 309
+        "avgWaitTime": 14.630967741935546,
+        "throughputPerMin": 124,
+        "clearedTotal": 310
       },
       "postRecoveryArterial": {
-        "avgWaitTime": 20.21831501831508,
-        "throughputPerMin": 182,
-        "clearedTotal": 546
+        "avgWaitTime": 18.043014705882396,
+        "throughputPerMin": 181.33333333333334,
+        "clearedTotal": 544
       },
       "preOutageSideStreet": {
         "avgWaitTime": 7.523500000000018,
@@ -16762,14 +18928,14 @@
         "clearedTotal": 200
       },
       "duringOutageSideStreet": {
-        "avgWaitTime": 10.26071428571432,
-        "throughputPerMin": 89.6,
-        "clearedTotal": 224
+        "avgWaitTime": 10.99870689655177,
+        "throughputPerMin": 92.8,
+        "clearedTotal": 232
       },
       "postRecoverySideStreet": {
-        "avgWaitTime": 11.887142857142914,
-        "throughputPerMin": 116.66666666666667,
-        "clearedTotal": 350
+        "avgWaitTime": 12.867543859649157,
+        "throughputPerMin": 114,
+        "clearedTotal": 342
       },
       "timeToRecoverySeconds": 0,
       "timeToRecoverySecondsArterial": 0,
@@ -16780,34 +18946,34 @@
       "powerOutageStartSeconds": 150,
       "powerOutageEndSeconds": 300,
       "stage1": {
-        "avgWaitTime": 18.650285714285783,
-        "throughputPerMin": 140,
-        "clearedTotal": 175
+        "avgWaitTime": 18.89425287356332,
+        "throughputPerMin": 139.2,
+        "clearedTotal": 174
       },
       "stage1Arterial": {
-        "avgWaitTime": 12.584868421052683,
-        "throughputPerMin": 121.6,
-        "clearedTotal": 152
+        "avgWaitTime": 12.866887417218594,
+        "throughputPerMin": 120.8,
+        "clearedTotal": 151
       },
       "stage1SideStreet": {
-        "avgWaitTime": 10.894354838709734,
-        "throughputPerMin": 99.2,
-        "clearedTotal": 124
+        "avgWaitTime": 10.932520325203308,
+        "throughputPerMin": 98.4,
+        "clearedTotal": 123
       },
       "stage2": {
-        "avgWaitTime": 22.596629213483315,
-        "throughputPerMin": 142.4,
-        "clearedTotal": 178
+        "avgWaitTime": 20.877472527472577,
+        "throughputPerMin": 145.6,
+        "clearedTotal": 182
       },
       "stage2Arterial": {
-        "avgWaitTime": 19.584076433121112,
-        "throughputPerMin": 125.6,
-        "clearedTotal": 157
+        "avgWaitTime": 16.306289308176172,
+        "throughputPerMin": 127.2,
+        "clearedTotal": 159
       },
       "stage2SideStreet": {
-        "avgWaitTime": 9.475000000000005,
-        "throughputPerMin": 80,
-        "clearedTotal": 100
+        "avgWaitTime": 11.073394495412881,
+        "throughputPerMin": 87.2,
+        "clearedTotal": 109
       },
       "darkWindows": [
         {
@@ -16828,13 +18994,13 @@
       ],
       "zoneStats": {
         "zone1": {
-          "avgWaitTime": 21.54578059071734,
-          "medianWait": 15.099999999999962,
-          "p95Wait": 72.90000000000013,
-          "maxWait": 133.6999999999967,
-          "throughputPerMin": 59.25,
-          "clearedTotal": 474,
-          "pctClearedWithoutStop": 12.447257383966246,
+          "avgWaitTime": 18.85175983436862,
+          "medianWait": 13.300000000000145,
+          "p95Wait": 56.600000000000534,
+          "maxWait": 94.29999999999892,
+          "throughputPerMin": 60.375,
+          "clearedTotal": 483,
+          "pctClearedWithoutStop": 14.699792960662524,
           "segments": {
             "pre": {
               "avgWaitTime": 13.249557522123933,
@@ -16842,24 +19008,24 @@
               "clearedTotal": 113
             },
             "during": {
-              "avgWaitTime": 19.943939393939512,
-              "throughputPerMin": 52.8,
-              "clearedTotal": 132
+              "avgWaitTime": 19.32058823529422,
+              "throughputPerMin": 54.4,
+              "clearedTotal": 136
             },
             "post": {
-              "avgWaitTime": 26.562882096069863,
-              "throughputPerMin": 76.33333333333333,
-              "clearedTotal": 229
+              "avgWaitTime": 21.2846153846155,
+              "throughputPerMin": 78,
+              "clearedTotal": 234
             },
             "stage1": {
-              "avgWaitTime": 20.150000000000134,
-              "throughputPerMin": 49.6,
-              "clearedTotal": 62
+              "avgWaitTime": 20.557142857142978,
+              "throughputPerMin": 50.4,
+              "clearedTotal": 63
             },
             "stage2": {
-              "avgWaitTime": 19.761428571428677,
-              "throughputPerMin": 56,
-              "clearedTotal": 70
+              "avgWaitTime": 18.253424657534335,
+              "throughputPerMin": 58.4,
+              "clearedTotal": 73
             }
           },
           "restoreSeconds": 225,
@@ -16868,13 +19034,13 @@
           "timeToRecoveryWaitSeconds": null
         },
         "zone2": {
-          "avgWaitTime": 8.468007312614295,
+          "avgWaitTime": 8.902003642987289,
           "medianWait": 5.4999999999999964,
-          "p95Wait": 28.700000000000138,
-          "maxWait": 56.200000000000365,
-          "throughputPerMin": 68.375,
-          "clearedTotal": 547,
-          "pctClearedWithoutStop": 20.6581352833638,
+          "p95Wait": 29.900000000000418,
+          "maxWait": 51.59999999999944,
+          "throughputPerMin": 68.625,
+          "clearedTotal": 549,
+          "pctClearedWithoutStop": 20.21857923497268,
           "segments": {
             "pre": {
               "avgWaitTime": 5.646153846153855,
@@ -16882,24 +19048,24 @@
               "clearedTotal": 130
             },
             "during": {
-              "avgWaitTime": 7.002923976608203,
-              "throughputPerMin": 68.4,
-              "clearedTotal": 171
+              "avgWaitTime": 7.193641618497126,
+              "throughputPerMin": 69.2,
+              "clearedTotal": 173
             },
             "post": {
-              "avgWaitTime": 10.977642276422829,
+              "avgWaitTime": 11.823983739837471,
               "throughputPerMin": 82,
               "clearedTotal": 246
             },
             "stage1": {
-              "avgWaitTime": 7.142000000000022,
-              "throughputPerMin": 80,
-              "clearedTotal": 100
+              "avgWaitTime": 7.196969696969717,
+              "throughputPerMin": 79.2,
+              "clearedTotal": 99
             },
             "stage2": {
-              "avgWaitTime": 6.807042253521136,
-              "throughputPerMin": 56.8,
-              "clearedTotal": 71
+              "avgWaitTime": 7.189189189189198,
+              "throughputPerMin": 59.2,
+              "clearedTotal": 74
             }
           },
           "restoreSeconds": 300,
@@ -16908,13 +19074,13 @@
           "timeToRecoveryWaitSeconds": null
         },
         "zone3": {
-          "avgWaitTime": 14.909424724602266,
+          "avgWaitTime": 14.731094527363238,
           "medianWait": 11.199999999999976,
-          "p95Wait": 45.20000000000037,
-          "maxWait": 77.79999999999986,
-          "throughputPerMin": 102.125,
-          "clearedTotal": 817,
-          "pctClearedWithoutStop": 11.75030599755202,
+          "p95Wait": 45.60000000000038,
+          "maxWait": 91.79999999999906,
+          "throughputPerMin": 100.5,
+          "clearedTotal": 804,
+          "pctClearedWithoutStop": 14.17910447761194,
           "segments": {
             "pre": {
               "avgWaitTime": 9.723109243697497,
@@ -16922,24 +19088,24 @@
               "clearedTotal": 238
             },
             "during": {
-              "avgWaitTime": 16.846341463414724,
-              "throughputPerMin": 82,
-              "clearedTotal": 205
+              "avgWaitTime": 15.749019607843216,
+              "throughputPerMin": 81.6,
+              "clearedTotal": 204
             },
             "post": {
-              "avgWaitTime": 17.148128342246064,
-              "throughputPerMin": 124.66666666666667,
-              "clearedTotal": 374
+              "avgWaitTime": 17.450000000000063,
+              "throughputPerMin": 120.66666666666667,
+              "clearedTotal": 362
             },
             "stage1": {
-              "avgWaitTime": 13.245918367347013,
-              "throughputPerMin": 78.4,
-              "clearedTotal": 98
+              "avgWaitTime": 13.31041666666674,
+              "throughputPerMin": 76.8,
+              "clearedTotal": 96
             },
             "stage2": {
-              "avgWaitTime": 20.143925233644968,
-              "throughputPerMin": 85.6,
-              "clearedTotal": 107
+              "avgWaitTime": 17.91666666666675,
+              "throughputPerMin": 86.4,
+              "clearedTotal": 108
             }
           },
           "restoreSeconds": 225,
@@ -16951,30 +19117,30 @@
       "perArterial": [
         {
           "id": "stanza",
-          "avgWaitTime": 5.543223443223449,
-          "throughputPerMin": 34.125,
-          "clearedTotal": 273,
-          "waitSumTotal": 1513.3000000000018,
-          "clearedWithoutStopTotal": 119,
-          "pctClearedWithoutStop": 43.58974358974359
+          "avgWaitTime": 5.5229007633587885,
+          "throughputPerMin": 32.75,
+          "clearedTotal": 262,
+          "waitSumTotal": 1447.0000000000025,
+          "clearedWithoutStopTotal": 116,
+          "pctClearedWithoutStop": 44.274809160305345
         },
         {
           "id": "pretorius",
-          "avgWaitTime": 11.814741035856619,
-          "throughputPerMin": 31.375,
-          "clearedTotal": 251,
-          "waitSumTotal": 2965.5000000000114,
-          "clearedWithoutStopTotal": 60,
-          "pctClearedWithoutStop": 23.904382470119522
+          "avgWaitTime": 11.559689922480663,
+          "throughputPerMin": 32.25,
+          "clearedTotal": 258,
+          "waitSumTotal": 2982.400000000011,
+          "clearedWithoutStopTotal": 73,
+          "pctClearedWithoutStop": 28.294573643410853
         },
         {
           "id": "francisbaard",
-          "avgWaitTime": 6.905135951661664,
-          "throughputPerMin": 41.375,
-          "clearedTotal": 331,
-          "waitSumTotal": 2285.600000000011,
-          "clearedWithoutStopTotal": 142,
-          "pctClearedWithoutStop": 42.90030211480362
+          "avgWaitTime": 6.292789968652056,
+          "throughputPerMin": 39.875,
+          "clearedTotal": 319,
+          "waitSumTotal": 2007.400000000006,
+          "clearedWithoutStopTotal": 151,
+          "pctClearedWithoutStop": 47.33542319749217
         },
         {
           "id": "arcadia_west",
@@ -17059,12 +19225,12 @@
         },
         {
           "id": "lynnwood",
-          "avgWaitTime": 16.33344594594593,
-          "throughputPerMin": 37,
-          "clearedTotal": 296,
-          "waitSumTotal": 4834.699999999995,
-          "clearedWithoutStopTotal": 99,
-          "pctClearedWithoutStop": 33.44594594594595
+          "avgWaitTime": 12.506953642384158,
+          "throughputPerMin": 37.75,
+          "clearedTotal": 302,
+          "waitSumTotal": 3777.1000000000154,
+          "clearedWithoutStopTotal": 101,
+          "pctClearedWithoutStop": 33.443708609271525
         },
         {
           "id": "dyer_mall",
@@ -17095,18 +19261,18 @@
         },
         {
           "id": "arterial_connectors",
-          "avgWaitTime": 11.5792248062016,
-          "throughputPerMin": 80.625,
-          "clearedTotal": 645,
-          "waitSumTotal": 7468.600000000032,
-          "clearedWithoutStopTotal": 232,
-          "pctClearedWithoutStop": 35.968992248062015
+          "avgWaitTime": 11.145962732919312,
+          "throughputPerMin": 80.5,
+          "clearedTotal": 644,
+          "waitSumTotal": 7178.000000000036,
+          "clearedWithoutStopTotal": 230,
+          "pctClearedWithoutStop": 35.714285714285715
         }
       ],
       "carAccounting": {
-        "totalSpawned": 1868,
-        "totalClearedNetwork": 1431,
-        "onRoadNetwork": 437,
+        "totalSpawned": 1866,
+        "totalClearedNetwork": 1430,
+        "onRoadNetwork": 436,
         "balanced": true
       },
       "durationTicks": 4800,
@@ -17160,6 +19326,11 @@
             "freezeAfterWarmup": false,
             "recoveryHold": true,
             "recoveryHoldS": 300,
+            "recoveryHoldThroughOutageZones": [],
+            "freeCycleZones": [],
+            "noPlatoonMessageZones": [],
+            "connectorRouteMarriage": true,
+            "restartOnArterialGreen": true,
             "forceRoutes": false,
             "connectorRoutes": true,
             "selective": true,
@@ -17183,6 +19354,6 @@
         "endToEndShare": null
       }
     },
-    "rowsHash": "64cb78394b5d5d21"
+    "rowsHash": "169966cf7e171350"
   }
 }

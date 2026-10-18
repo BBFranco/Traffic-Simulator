@@ -19,7 +19,7 @@
  *     [--power-outage-start-tick=9000] [--power-outage-end-tick=18000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
- *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|A5]
+ *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart]
  *
  * --ablation runs coordinated adaptive with one of ablationArms.mjs's coordination overrides (baseline: none). The
  * overrides land in every coordinated run's raw config, which the batch line reads. Stored as a 'sensitivity' batch,
@@ -128,7 +128,8 @@ function parseArgs(argv) {
 
 function toCsv(rows) {
     if (!rows.length) return '';
-    const columns = Object.keys(rows[0]);
+    // Every row's keys, first-seen order - each arterial's rows carry their own junctions' queue columns.
+    const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
     const lines = [columns.join(',')];
     for (const row of rows) lines.push(columns.map((c) => row[c] ?? '').join(','));
     return lines.join('\n') + '\n';

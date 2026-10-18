@@ -171,8 +171,8 @@ export class CoordinatedAdaptiveController {
         this.pendingMarried = married && !this.married;
     }
 
-    /** Ablation A5 (`coord.holdStartsLikeAdaptive`): start as adaptive.js does - the arterial's through green, nothing elapsed. */
-    startLikeAdaptive() {
+    /** Power back (`coord.restartOnArterialGreen`): start as adaptive.js does - the arterial's through green, nothing elapsed. */
+    startOnArterialGreen() {
         this._enter(this.layout.stages.findIndex((s) => s.phase === 0 && !s.turn), 'green', 0);
     }
 

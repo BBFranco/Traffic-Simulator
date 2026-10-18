@@ -1560,7 +1560,7 @@ function thresholdNotes(data) {
     return [
         `Adaptive actuation (every sensor, plain and coordinated): a green gaps out after ${a.gapOutS} s without a detection, never shorter than ${a.minGreen} s, capped at ${a.maxGreen} s; the other phase is served once its call has persisted ${a.callDebounceS} s - one call rule for every sensor (2026-10-16); counts and queue extent are observed but never decide the switch.`,
         `Coordinated adaptive gates: a link marries when the busiest-lane arterial flow at its two ends averages at least ${c.marryFlowPerLaneMin} veh/min per lane and a platoon crosses it within ${c.marryMaxTravelS} s, and divorces below ${Math.round(c.divorceRatio * 100)}% of that; selective marriage ${on(c.selective)}, connector routes (Jan Shoba) ${on(c.connectorRoutes)}, forced route marriage ${on(c.forceRoutes)}. Platoon messages ${on(c.platoonMessages)}: a platoon of ${c.platoonMinCars}+ vehicles holds the arterial green up to ${c.platoonExtendMaxS} s past its yield point when due within ${c.platoonLookaheadS} s, and a thinned-out cross green (${c.earlyStartGapS} s without detection) ends early for a platoon due within amber + all-red + ${c.earlyStartLeadS} s. Self-tuning ${on(c.selfTuning)}: re-plan every ${c.retuneEveryCycles} common cycles, flow smoothing ${c.retuneSmoothing}, common cycle moves at most ${c.retuneMaxStepS} s per update, saturated stages boosted ${Math.round(c.saturatedBoost * 100)}%${c.freezeAfterWarmup ? '; FROZEN after warm-up (ablation)' : ''}.`,
-        `Coordinated adaptive levers: re-service of a cross call within its own window ${on(c.reservice)}; side-street max-wait cap ${on(c.sideWaitCap)} (${c.sideMaxWaitS} s); resync hold after power returns ${on(c.recoveryHold)} (${c.recoveryHoldS} s on plain adaptive before marrying back).`,
+        `Coordinated adaptive levers: re-service of a cross call within its own window ${on(c.reservice)}; side-street max-wait cap ${on(c.sideWaitCap)} (${c.sideMaxWaitS} s); resync hold after power returns ${on(c.recoveryHold)} (${c.recoveryHoldS} s on plain adaptive before marrying back), restored junctions restart ${restartsOnArterialGreen(coordination) ? 'on the arterial green' : 'mid-plan (legacy)'}.`,
     ];
 }
 
@@ -1570,6 +1570,27 @@ function sensorNotes() {
     const lag = (mode) => `${f[mode].latency.ms} ms -> ${latencyTicks(f[mode], 0.1)} tick(s)`;
     return [
         `Sensor models (field specs, 2026-10-15): variants differ only in what they observe; the call rule and gap-out rule are shared. Every sensor's gap-out zone is the 0-${f.inductive_loop.gapOut.lengthM} m behind the stop line. Loop: an ${f.inductive_loop.call.lengthM} m long presence loop, no count (${lag('inductive_loop')}). Magnetometer: stop-bar pucks over the same ${f.magnetometer.call.lengthM} m plus an advance puck ${f.magnetometer.advance[0].centreM} m back (no published placement - the distance was chosen by test runs; the sensor is modelled on Sensys Networks FlexMag: 3-axis magnetometer, 128 Hz sampling, advance-detection mode, per its product page and datasheet) that extends the green and reports a queue reaching it (${lag('magnetometer')}, radio slot wait). Radar (UMRR-11 Type 132, medium range): stopped-vehicle count and speed over ${f.radar.queue.lengthM} m, count smoothed over ${f.radar.outputs.count.filter.windowS} s (${lag('radar')}, 3 x 55 ms cycles). Camera: stopped-vehicle count and speed over ${f.camera.queue.lengthM} m (${lag('camera')}). Latency rounds up to whole ticks. This is an errors-disabled baseline: miss, false-call, crosstalk and count-noise rates are zero, so the comparison isolates observation geometry and information content rather than representing physical sensors in full; assumed error rates are for sensitivity runs only. Batches before 2026-10-15 used the earlier sensor model (their sensor spec reads "not recorded" in the batch line), so their per-sensor results are not comparable with these.`,
+    ];
+}
+
+/**
+ * Did the batch's coordinated junctions restart on the arterial green when power came back. Read off the batch's own
+ * stamp, never COORDINATED_DEFAULTS: a batch from before the flag existed ran the legacy mid-plan restart.
+ */
+function restartsOnArterialGreen(coordination) {
+    return 'restartOnArterialGreen' in coordination ? Boolean(coordination.restartOnArterialGreen) : Boolean(coordination.holdStartsLikeAdaptive);
+}
+
+/** How coordinated adaptive came back from each restore, and the restart artefact the legacy behaviour produced. */
+function restartNote(data) {
+    const coordination = data.batchStamp?.coordination;
+    if (!coordination) return [];
+    const artefact =
+        'Under load shedding, with the earlier restart (part-way into the coordination plan), coordinated adaptive trailed plain adaptive in stage 2 on Pretorius (+5.9 s) and Lynnwood (+3.1 s) and led it on Jan Shoba (-3.4 s) - 30 seeds on the 1e58298 dynamics (the 2026-10-18 reference batches). The gap opened at the 30:00 restore, during the resync hold, and Lynnwood\'s signals were never married; that is consistent with the restart deciding which approach clears its stage-1 all-way-stop backlog first, rather than with coordination itself. In a 10-seed ablation (A5, 2026-10-18), restarting on the arterial green removed all three differences.';
+    return [
+        restartsOnArterialGreen(coordination)
+            ? `Restart after power returns: coordinated adaptive restarts every restored junction on its arterial through green with nothing elapsed, as plain adaptive does, then runs the resync hold. ${artefact}`
+            : `Restart after power returns: this batch ran the earlier restart ("coordinated restart mid-plan (legacy)" in the batch line). ${artefact} Its coordinated load-shedding results on those roads may carry that effect; compare them only with other legacy-restart batches.`,
     ];
 }
 
@@ -1630,6 +1651,7 @@ function drawMethodNotes(report, data, number) {
         `Wait accounting: ${stamp?.waitAccounting ?? 'not recorded'}. The total scope counts every vehicle once with its whole trip's wait; Main arterial and Side streets each count every vehicle that used them, with only the wait it built up on their roads - so a trip over both is in both, and the two don't add up to the total.`,
         `Total blackout (section ${SECTION.load_shedding}): every junction loses power ${stamp?.outageStartMinutes ?? '-'} min into the measured window and gets it back at ${stamp?.outageEndMinutes ?? '-'} min. While the lights are dark every controller falls back to all-way-stop behaviour. Stored internally as load_shedding - not the load shedding of section ${SECTION.rolling_blackout}, which is stored as rolling_blackout.`,
         `Load shedding (section ${SECTION.rolling_blackout}): ${rollingScheduleText(data)}, then everything lit. A dark junction falls back to all-way-stop control; the lit junctions keep their own controller. Cars and queues are untouched at every switch, so a queue built up in stage 1 carries into stage 2, and stage 2's into the restore. The segmented tables split the dark time into stage 1 and stage 2; "Post" starts at the final restore.`,
+        ...restartNote(data),
         `Zones (the load-shedding scopes, ${zoneRefs}): zone 1 south, zone 2 middle, zone 3 north - groups of horizontal roads, read from the layout's own zone fields. A junction takes its horizontal road's zone, so a roundabout or all-way stop follows its road too; Mall Road (zone 1) has no signals to go dark. Vertical roads (${VERTICAL_ROADS}) carry no zone.`,
         `Zone wait is charged by junction (${stamp?.zoneAccounting ?? 'by-junction-v1'}): a car's wait goes to the zone of the junction it is queuing for - the junction at the end of its lane, or the one it is in. So Jan Shoba's queue at a zone 2 junction is zone 2 wait. This is unlike the total, main-arterial and side-street scopes, which are charged by road. A trip through several zones is in each, with only the wait it built up there, so the zone scopes overlap and don't sum to the total. Normal-power rows carry the zone figures too, as their baselines.`,
         `Recovery: the total, main-arterial and side-street scopes are timed from the FINAL restore (minute ${minute(restoreSeconds(data, 'rolling_blackout', SCOPES[0]) ?? 2700)} under load shedding); each zone from its own restore. Zones 1 and 3 come back while zone 2 is still dark next to them, so their recovery includes spillback from zone 2 and is not comparable to total-blackout recovery.`,

@@ -39,8 +39,9 @@ for (const c of SUMMARY_MATRIX) {
         summaries[key] = previousSummaries[key];
         continue;
     }
-    const { summary, ...rowGroups } = runHeadless(summaryArgs(c, config));
-    summaries[key] = { summary, rowsHash: rowsHash(rowGroups) };
+    // The four original row groups, as summaryIdentity.test.mjs hashes them - a newer group (zoneRows) stays out.
+    const { summary, rows, sideStreetRows, totalRows, arterialScopeRows } = runHeadless(summaryArgs(c, config));
+    summaries[key] = { summary, rowsHash: rowsHash({ rows, sideStreetRows, totalRows, arterialScopeRows }) };
     console.log('summary', key);
 }
 fs.writeFileSync(path.join(here, 'summary.baseline.json'), `${JSON.stringify(summaries, null, 2)}\n`);
