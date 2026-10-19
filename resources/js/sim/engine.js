@@ -129,6 +129,20 @@ const TURN_SPEED_KPH = { left: 18, right: 22 };
  * opposed turn at a signalised junction.
  */
 const ONCOMING_CRITICAL_GAP_S = 4.5;
+
+/**
+ * Seconds an oncoming car needs to cover `toM`, pulling away at its own IDM `a` up to its desired speed. Distance over
+ * current speed read a queue stood at a fresh green as never arriving, so a turner without an arrow went across it.
+ */
+function oncomingArrivalS(car, toM) {
+    const v = car.speedMps;
+    const a = car.idmParams.a;
+    const vMax = Math.max(car.desiredSpeedMps, v, 0.5);
+    const rampS = (vMax - v) / a;
+    const rampM = v * rampS + 0.5 * a * rampS * rampS;
+    if (toM <= rampM) return (Math.sqrt(v * v + 2 * a * toM) - v) / a;
+    return rampS + (toM - rampM) / vMax;
+}
 /**
  * Right-turners who pull into the junction on a green ball to wait for their gap, then clear as the oncoming side
  * stops - legal in SA, and a large part of a real right turn's capacity. At most this many per approach at once.
@@ -3410,7 +3424,7 @@ export class SimulationEngine {
                 if (toM < -depthM) continue; // already through
                 if (toM <= 0) return true; // in it now
                 if (isHeld?.(car)) continue; // held at its own red/stop line
-                if (toM / Math.max(car.speedMps, 0.5) < ONCOMING_CRITICAL_GAP_S) return true;
+                if (oncomingArrivalS(car, toM) < ONCOMING_CRITICAL_GAP_S) return true;
             }
         }
         return false;
