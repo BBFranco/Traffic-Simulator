@@ -23,6 +23,7 @@ class UserCorridorLayouts
         private readonly CorridorRepository $templates,
         private readonly CorridorLaneUseEditor $laneUseEditor,
         private readonly CorridorRoutingTierEditor $routingTierEditor,
+        private readonly CorridorSlipLaneEditor $slipLaneEditor,
     ) {}
 
     /**
@@ -84,6 +85,21 @@ class UserCorridorLayouts
     {
         $config = $this->copy($layout->config);
         $this->laneUseEditor->apply($config, $approaches);
+
+        $layout->update(['config' => $config]);
+    }
+
+    /**
+     * Replaces the layout's slip lanes with the set the Road Editor drew (CorridorSlipLaneEditor) - checked in full before anything is stored.
+     *
+     * @param  array<int, array{nodeId: string, direction: string, backM: int|float}>  $slipLanes
+     * @param  array<int, array<string, mixed>>  $connectors
+     * @param  array<int, array{from: string, to: string, fromAtM?: int|float, toAtM?: int|float, slip?: bool}>  $joins
+     */
+    public function updateSlipLanes(CorridorLayout $layout, array $slipLanes, array $connectors, array $joins): void
+    {
+        $config = $this->copy($layout->config);
+        $this->slipLaneEditor->apply($config, $slipLanes, $connectors, $joins);
 
         $layout->update(['config' => $config]);
     }

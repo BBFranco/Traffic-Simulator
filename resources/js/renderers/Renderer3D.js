@@ -60,7 +60,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { ARTERIAL_ACCENTS, LayoutRenderer, litLensIndexFor } from '../sim/renderer.js';
 import { SnapshotBuffer } from './SnapshotBuffer.js';
 import { laneArrowShapes } from './laneArrows.js';
-import { turnLaneShapes, alignedDashes, medianTurnLaneReachM } from './turnLaneShapes.js';
+import { turnLaneShapes, alignedDashes, medianTurnLaneReachM, junctionBoxPolygon } from './turnLaneShapes.js';
 import { SHAPE_KEYS, buildVehicleGeometries, shapeFor } from './vehicleModels.js';
 import { DRIVEWAY_DEPTH_M, DRIVEWAY_WIDTH_M } from '../sim/routing/driveways.js';
 import { roundaboutFlares, roundaboutSplitterIslands } from '../sim/corridor.js';
@@ -802,16 +802,20 @@ export class Renderer3D {
         for (const segment of turnLanes.solidEdges) edgeLine.line(segment, 0, 0.14);
         // The road's solid edge line runs along a pocket's inner side: paint it out, then dash the boundary like any lane divider.
         const edgeMask = new FlatLayer();
+        // Turn-lane dashes over the road's own (a road dash a lane shift moves is painted out between the two).
+        const dividerDash = new FlatLayer();
+        const dashMask = new FlatLayer();
         for (const segment of turnLanes.dividers) {
             edgeMask.line(segment, 0, 0.3);
-            for (const piece of alignedDashes(segment, roads, 3, 6, 3)) laneDash.line(piece, 0, 0.13);
+            for (const piece of alignedDashes(segment, roads, 3, 6, 3)) dividerDash.line(piece, 0, 0.13);
         }
+        for (const segment of turnLanes.masks) edgeMask.line(segment, 0, 0.3);
+        for (const segment of turnLanes.dashMasks) dashMask.line(segment, 0, 0.3);
 
-        // Same two-rectangle union drawJunctions() uses, so skewed connectors are covered.
+        // Same box drawJunctions() uses: the two roads' overlap, so a skewed crossing is covered.
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
-                junction.rect(node.point, node.arterialHeading, node.crossRoadWidthM, node.arterialRoadWidthM);
-                junction.rect(node.point, node.crossAxis, node.arterialRoadWidthM, node.crossRoadWidthM);
+                junction.quad(...junctionBoxPolygon(node));
                 if (!node.roundabout) continue;
                 ring.disc(node.point, node.roundabout.radiusM);
                 for (const { kerb, strip } of roundaboutFlares(node)) {
@@ -831,6 +835,8 @@ export class Renderer3D {
         this.addStatic(edgeLine.build(), m.edgeLine, LAYER_ORDER.markings);
         this.addStatic(edgeMask.build(), m.asphalt, LAYER_ORDER.markings + 0.3);
         this.addStatic(laneDash.build(), m.laneDash, LAYER_ORDER.markings + 0.6);
+        this.addStatic(dashMask.build(), m.asphalt, LAYER_ORDER.markings + 0.65);
+        this.addStatic(dividerDash.build(), m.laneDash, LAYER_ORDER.markings + 0.7);
         this.addStatic(centreLine.build(), m.centreLine, LAYER_ORDER.markings);
         this.addStatic(junction.build(), m.junction, LAYER_ORDER.junction);
         this.addStatic(ring.build(), m.asphalt, LAYER_ORDER.junction + 0.1);
@@ -1510,18 +1516,6 @@ class FlatLayer {
             const piece = slicePolyline(offsetPts, cumulative, s, Math.min(s + dashM, total));
             if (piece.length >= 2) this.line(piece, 0, widthM);
         }
-    }
-
-    /** Rotated rectangle centred on `centre`, `alongM` along `axis` and `acrossM` across it. */
-    rect(centre, axis, alongM, acrossM) {
-        const normal = { x: -axis.y, y: axis.x };
-        const ha = alongM / 2;
-        const hb = acrossM / 2;
-        const corner = (sa, sb) => ({
-            x: centre.x + axis.x * ha * sa + normal.x * hb * sb,
-            y: centre.y + axis.y * ha * sa + normal.y * hb * sb,
-        });
-        this.quad(corner(1, 1), corner(1, -1), corner(-1, -1), corner(-1, 1));
     }
 
     triangle(a, b, c) {

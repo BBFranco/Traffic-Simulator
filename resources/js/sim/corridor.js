@@ -60,6 +60,24 @@ export const TURN_LANE_SIDES = ['left', 'right'];
 export const DEFAULT_TURN_LANE_LENGTH_M = 10;
 /** Drawn widening ahead of a turn lane - visual only, the lane itself is `lengthM` long. */
 export const TURN_LANE_TAPER_M = 6;
+/** How far ahead of a double right turn lane's taper the through lanes ease over towards the kerb to make room for it (see makeApproach()). */
+export const LANE_SHIFT_RAMP_M = 30;
+
+/**
+ * How far (m, along the left normal - towards the kerb) an approach's lanes are shifted `backM` upstream of its stop
+ * line (negative: past it, across the junction). A double right turn lane needs a lane more than the median gives it,
+ * so the approach's other lanes move over towards the kerb by a lane: eased in ahead of the turn lane, held to the
+ * junction box, and eased back out across it - so straight-on traffic leaves in line with the lanes past the junction.
+ */
+export function laneShiftAt(laneShift, backM) {
+    if (!laneShift) return 0;
+    const { shiftM, rampFromBackM, fullFromBackM, holdPastStopM, endPastStopM } = laneShift;
+    const ease = (t) => t * t * (3 - 2 * t);
+    if (backM >= rampFromBackM || backM <= -endPastStopM) return 0;
+    if (backM > fullFromBackM) return shiftM * ease((rampFromBackM - backM) / (rampFromBackM - fullFromBackM));
+    if (backM >= -holdPastStopM) return shiftM;
+    return shiftM * ease((endPastStopM + backM) / (endPastStopM - holdPastStopM));
+}
 
 /** The movements one lane of `approach` may make - `lane` is a lane index, or 'left'/'right' for a turn lane. */
 export function laneMovesOf(approach, lane) {
@@ -70,7 +88,12 @@ export function laneMovesOf(approach, lane) {
 export function turnLanesToConfig(turnLanes) {
     const entries = TURN_LANE_SIDES.filter((side) => turnLanes?.[side]).map((side) => [
         side,
-        { lengthM: turnLanes[side].lengthM, laneUse: laneUseToken(turnLanes[side].laneUse) },
+        {
+            lengthM: turnLanes[side].lengthM,
+            laneUse: laneUseToken(turnLanes[side].laneUse),
+            ...(turnLanes[side].lanes > 1 ? { lanes: turnLanes[side].lanes } : {}),
+            ...(turnLanes[side].exitM > 0 ? { exitM: turnLanes[side].exitM } : {}),
+        },
     ]);
     return entries.length ? Object.fromEntries(entries) : null;
 }
@@ -140,6 +163,12 @@ function parseMoves(entry, label) {
  * only exists for its last `lengthM` before the stop line (engine.js lets cars
  * into it there). On a two-way street the right one sits in the median, so the
  * median has to be at least a lane wide.
+ *
+ * Optional: `lanes: 2` on a right one makes it a double turn lane (the second
+ * lane's room comes from shifting the approach's other lanes over towards the
+ * kerb - see laneShiftAt()). `exitM` on a left one that also goes straight
+ * carries it on that far past the junction box as a short lane, which merges
+ * back into the road - and left turns into the road there land in it.
  */
 function parseTurnLanes(raw, label, { oneWay, medianWidthM, laneWidthM }) {
     const turnLanes = { left: null, right: null };
@@ -157,7 +186,15 @@ function parseTurnLanes(raw, label, { oneWay, medianWidthM, laneWidthM }) {
         const laneUse = parseMoves(entry.laneUse ?? side, `${label}: ${side} turn lane`);
         // It may also go straight (a flared lane, like Burnett's median lane at Jan Shoba), but it's a turn lane - it has to turn too.
         if (!laneUse.some((m) => m !== 'straight')) throw new Error(`${label}: the ${side} turn lane has to allow a turn - its laneUse can't be straight on alone.`);
-        turnLanes[side] = { lengthM, laneUse };
+        const lanes = entry.lanes ?? 1;
+        if (![1, 2].includes(lanes)) throw new Error(`${label}: the ${side} turn lane can have 1 or 2 lanes, got ${entry.lanes}.`);
+        if (lanes === 2 && (side !== 'right' || oneWay)) throw new Error(`${label}: only a median-side (right) turn lane on a two-way street can be a double one.`);
+        const exitM = entry.exitM ?? 0;
+        if (!(exitM >= 0)) throw new Error(`${label}: the ${side} turn lane's exitM must be 0 or more, got ${entry.exitM}.`);
+        if (exitM > 0 && (side !== 'left' || !laneUse.includes('straight'))) {
+            throw new Error(`${label}: only a kerb-side (left) turn lane that also goes straight can carry on past the junction (exitM).`);
+        }
+        turnLanes[side] = { lengthM, laneUse, lanes, exitM };
     }
     return turnLanes;
 }
@@ -1593,17 +1630,34 @@ function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, media
     // Stop-line centre: `setbackM` upstream of the junction centre.
     const stopCentre = add(node.point, heading, -setbackM);
 
+    // A double right turn lane: everything else moves over a lane towards the kerb near the junction (laneShiftAt()).
+    const rightLanes = turnLanes.right ? (turnLanes.right.lanes ?? 1) : 0;
+    const shiftM = rightLanes > 1 ? (rightLanes - 1) * laneWidthM : 0;
+    // From the centre to the junction box edge, along this approach (square to the other road).
+    const boxEdgeM = kind === 'cross' ? node.arterialRoadWidthM / 2 : node.crossRoadWidthM / 2;
+    const laneShift = shiftM
+        ? {
+              shiftM,
+              fullFromBackM: turnLanes.right.lengthM + TURN_LANE_TAPER_M,
+              rampFromBackM: turnLanes.right.lengthM + TURN_LANE_TAPER_M + LANE_SHIFT_RAMP_M,
+              holdPastStopM: Math.max(0, setbackM - boxEdgeM),
+              endPastStopM: setbackM + boxEdgeM,
+          }
+        : null;
+
     // A one-way road's approach spans the whole carriageway. On a two-way road
     // only the left half approaches (left-hand traffic). Offsets along the left
     // normal: the kerb edge, and the edge on the median/right side - each
-    // pushed out a lane where a turn lane is added on that side.
-    const kerbEdgeM = roadWidthM / 2 + (turnLanes.left ? laneWidthM : 0);
-    const medianEdgeM = (oneWay ? -roadWidthM / 2 : medianWidthM / 2) - (turnLanes.right ? laneWidthM : 0);
+    // pushed out a lane where a turn lane is added on that side. At the stop
+    // line, so with any lane shift (all of these are where the lanes are there).
+    const kerbEdgeM = roadWidthM / 2 + (turnLanes.left ? laneWidthM : 0) + shiftM;
+    const medianEdgeM = (oneWay ? -roadWidthM / 2 : medianWidthM / 2) - rightLanes * laneWidthM + shiftM;
     const stopLine = oneWay
         ? { a: add(stopCentre, left, kerbEdgeM), b: add(stopCentre, left, medianEdgeM) }
         : { a: add(stopCentre, left, medianEdgeM), b: add(stopCentre, left, kerbEdgeM) };
 
-    // Each turn lane's centre, same left-normal convention as laneCentreOffsets - just outside the kerb lane, or just past the median-side lane.
+    // Each turn lane's centre, same left-normal convention as laneCentreOffsets - just outside the kerb lane, or just past the median-side lane
+    // (a double one's median-most lane; its other lane is a lane further towards the kerb).
     if (turnLanes.left) turnLanes.left.centreOffsetM = kerbEdgeM - laneWidthM / 2;
     if (turnLanes.right) turnLanes.right.centreOffsetM = medianEdgeM + laneWidthM / 2;
 
@@ -1613,7 +1667,7 @@ function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, media
     // one formula covers both.
     const laneCentreOffsets = [];
     for (let i = 0; i < lanes; i += 1) {
-        laneCentreOffsets.push(roadWidthM / 2 - (i + 0.5) * laneWidthM);
+        laneCentreOffsets.push(roadWidthM / 2 - (i + 0.5) * laneWidthM + shiftM);
     }
 
     return {
@@ -1633,8 +1687,12 @@ function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, media
         /** Offsets along the LEFT normal from the road centreline, per lane. */
         laneCentreOffsets,
         laneWidthM,
-        /** `{ left, right }`, each null or `{ lengthM, laneUse, centreOffsetM }` - see parseTurnLanes(). */
+        /** `{ left, right }`, each null or `{ lengthM, laneUse, lanes, exitM, centreOffsetM }` - see parseTurnLanes(). */
         turnLanes,
+        /** Null, or how this approach's lanes move over towards the kerb for a double right turn lane - see laneShiftAt(). */
+        laneShift,
+        /** From the junction centre to the box edge along this approach (square to the other road) - `setbackM` less how far the stop line sits back from the box. */
+        boxEdgeM,
         /** Signal head stands on the left kerb, level with the stop line. */
         signalHead: add(add(stopCentre, left, kerbEdgeM + 3), heading, -1.5),
     };

@@ -12,7 +12,7 @@
         "geometryUnits": "metres",
         "distanceSource": "Festival-Hilda-Grosvenor-Jan Shoba 245 m (the northbound Jan Shoba carriageway 245 m past Grosvenor at Francis Baard and 243 m at Pretorius and Stanza, where it is a lane wider on its kerb side, the southbound one another 245 m east; they merge 70 m south of Arcadia). North-south: Stanza-Pretorius 275 and Pretorius-Francis Baard 164 from the report; Francis Baard-Arcadia, Arcadia-Park, Park-Burnett, Burnett-Prospect and Prospect-South 250 (estimates); South to the bend 100, bend to Duxbury 300, Duxbury-Lunnon 280, Lunnon-Lynnwood 320 (estimates, reusing the report's block lengths); Duxbury east turns 140 m past Jan Shoba (estimate)."
     },
-    "name": "Hatfield Grid Â· realistic network",
+    "name": "Hatfield Grid · realistic network",
     "joins": [
         {
             "to": "conn_jan_shoba_sb_merge:fwd",
@@ -77,13 +77,13 @@
         {
             "to": "conn_jan_shoba:rev",
             "from": "conn_lunnon_w_on:fwd",
-            "toAtM": 556.8
+            "toAtM": 381.8
         },
         {
             "to": "conn_lunnon_w_off:fwd",
             "from": "conn_jan_shoba:rev",
             "share": 0.1,
-            "fromAtM": 483.1
+            "fromAtM": 308.1
         },
         {
             "to": "lunnon_west:rev",
@@ -93,7 +93,7 @@
             "to": "conn_lunnon_e_off:fwd",
             "from": "conn_jan_shoba:fwd",
             "share": 0.1,
-            "fromAtM": 1570.5
+            "fromAtM": 1075.5
         },
         {
             "to": "lunnon:fwd",
@@ -106,7 +106,7 @@
         {
             "to": "conn_jan_shoba:fwd",
             "from": "conn_lunnon_e_on:fwd",
-            "toAtM": 1644
+            "toAtM": 1149
         },
         {
             "to": "conn_prospect_w_on:fwd",
@@ -115,13 +115,13 @@
         {
             "to": "conn_jan_shoba:rev",
             "from": "conn_prospect_w_on:fwd",
-            "toAtM": 1485
+            "toAtM": 1085
         },
         {
             "to": "conn_prospect_w_off:fwd",
             "from": "conn_jan_shoba:rev",
             "share": 0.1,
-            "fromAtM": 1411.3
+            "fromAtM": 1011.3
         },
         {
             "to": "prospect:rev",
@@ -131,7 +131,7 @@
             "to": "conn_prospect_e_off:fwd",
             "from": "conn_jan_shoba:fwd",
             "share": 0.1,
-            "fromAtM": 642.3
+            "fromAtM": 372.3
         },
         {
             "to": "conn_prospect_east:fwd",
@@ -144,7 +144,7 @@
         {
             "to": "conn_jan_shoba:fwd",
             "from": "conn_prospect_e_on:fwd",
-            "toAtM": 715.8
+            "toAtM": 445.8
         },
         {
             "to": "conn_arcadia_oneway:fwd",
@@ -195,10 +195,32 @@
             "from": "duxbury:rev"
         },
         {
+            "to": "slip_stanza_janshoba_sb_southbound:fwd",
+            "from": "conn_jan_shoba_sb:fwd",
+            "slip": true,
+            "fromAtM": 177.5
+        },
+        {
+            "to": "stanza",
+            "from": "slip_stanza_janshoba_sb_southbound:fwd",
+            "toAtM": 1273.8
+        },
+        {
+            "to": "slip_burnett_janshoba_northbound:fwd",
+            "from": "conn_jan_shoba:rev",
+            "slip": true,
+            "fromAtM": 1189.2
+        },
+        {
+            "to": "burnett",
+            "from": "slip_burnett_janshoba_northbound:fwd",
+            "toAtM": 45.5
+        },
+        {
             "to": "slip_duxbury_janshoba_southbound:fwd",
             "from": "conn_jan_shoba:fwd",
             "slip": true,
-            "fromAtM": 1304.7
+            "fromAtM": 944.6
         },
         {
             "to": "conn_duxbury_east:fwd",
@@ -209,23 +231,23 @@
             "to": "slip_lynnwood_duxbury_eastbound:fwd",
             "from": "lynnwood",
             "slip": true,
-            "fromAtM": 888.7
+            "fromAtM": 840.7
         },
         {
             "to": "conn_duxbury_east:rev",
             "from": "slip_lynnwood_duxbury_eastbound:fwd",
-            "toAtM": 45.5
+            "toAtM": 77.5
         },
         {
-            "to": "slip_burnett_janshoba_northbound:fwd",
-            "from": "conn_jan_shoba:rev",
+            "to": "slip_lynnwood_duxbury_westbound:fwd",
+            "from": "lynnwood:rev",
             "slip": true,
-            "fromAtM": 1679.1
+            "fromAtM": 199.6
         },
         {
-            "to": "burnett",
-            "from": "slip_burnett_janshoba_northbound:fwd",
-            "toAtM": 45.5
+            "to": "conn_duxbury_south:fwd",
+            "from": "slip_lynnwood_duxbury_westbound:fwd",
+            "toAtM": 77
         }
     ],
     "tapers": [
@@ -233,15 +255,15 @@
             "points": [
                 {
                     "xM": 743.8,
-                    "yM": 760
+                    "yM": 490
                 },
                 {
                     "xM": 743.8,
-                    "yM": 800
+                    "yM": 530
                 },
                 {
                     "xM": 747.3,
-                    "yM": 760
+                    "yM": 490
                 }
             ]
         },
@@ -249,15 +271,15 @@
             "points": [
                 {
                     "xM": 726.3,
-                    "yM": 760
+                    "yM": 490
                 },
                 {
                     "xM": 726.3,
-                    "yM": 800
+                    "yM": 530
                 },
                 {
                     "xM": 722.8,
-                    "yM": 760
+                    "yM": 490
                 }
             ]
         },
@@ -265,15 +287,15 @@
             "points": [
                 {
                     "xM": 635,
-                    "yM": 1685.5
+                    "yM": 1055.5
                 },
                 {
                     "xM": 605,
-                    "yM": 1685.5
+                    "yM": 1055.5
                 },
                 {
                     "xM": 635,
-                    "yM": 1683.75
+                    "yM": 1053.75
                 }
             ]
         },
@@ -281,15 +303,15 @@
             "points": [
                 {
                     "xM": 635,
-                    "yM": 1692.5
+                    "yM": 1062.5
                 },
                 {
                     "xM": 605,
-                    "yM": 1692.5
+                    "yM": 1062.5
                 },
                 {
                     "xM": 635,
-                    "yM": 1694.25
+                    "yM": 1064.25
                 }
             ]
         },
@@ -297,15 +319,15 @@
             "points": [
                 {
                     "xM": 835,
-                    "yM": 1685.5
+                    "yM": 1055.5
                 },
                 {
                     "xM": 865,
-                    "yM": 1685.5
+                    "yM": 1055.5
                 },
                 {
                     "xM": 835,
-                    "yM": 1683.75
+                    "yM": 1053.75
                 }
             ]
         },
@@ -313,15 +335,15 @@
             "points": [
                 {
                     "xM": 835,
-                    "yM": 1692.5
+                    "yM": 1062.5
                 },
                 {
                     "xM": 865,
-                    "yM": 1692.5
+                    "yM": 1062.5
                 },
                 {
                     "xM": 835,
-                    "yM": 1694.25
+                    "yM": 1064.25
                 }
             ]
         },
@@ -329,15 +351,15 @@
             "points": [
                 {
                     "xM": 500.15,
-                    "yM": 1995.77
+                    "yM": 1365.77
                 },
                 {
                     "xM": 474.17,
-                    "yM": 1980.77
+                    "yM": 1350.77
                 },
                 {
                     "xM": 501.02,
-                    "yM": 1994.25
+                    "yM": 1364.25
                 }
             ]
         },
@@ -345,15 +367,15 @@
             "points": [
                 {
                     "xM": 496.65,
-                    "yM": 2001.83
+                    "yM": 1371.83
                 },
                 {
                     "xM": 470.67,
-                    "yM": 1986.83
+                    "yM": 1356.83
                 },
                 {
                     "xM": 495.77,
-                    "yM": 2003.35
+                    "yM": 1373.35
                 }
             ]
         }
@@ -487,7 +509,7 @@
                             "straight_right"
                         ],
                         "westbound": [
-                            "straight",
+                            "left_straight",
                             "straight"
                         ]
                     },
@@ -497,18 +519,18 @@
                                 "laneUse": "right",
                                 "lengthM": 40
                             }
-                        },
-                        "westbound": {
-                            "left": {
-                                "laneUse": "left",
-                                "lengthM": 20
-                            }
                         }
                     },
                     "turnPhases": [
                         {
                             "movement": "right",
                             "direction": "eastbound"
+                        }
+                    ],
+                    "slipLanes": [
+                        {
+                            "backM": 13.8,
+                            "direction": "southbound"
                         }
                     ]
                 }
@@ -531,7 +553,7 @@
             "oneWay": true,
             "origin": {
                 "xM": 980,
-                "yM": 189
+                "yM": 99
             },
             "direction": "westbound",
             "shortName": "Pretorius",
@@ -610,7 +632,7 @@
             "oneWay": true,
             "origin": {
                 "xM": 0,
-                "yM": 439
+                "yM": 259
             },
             "direction": "eastbound",
             "shortName": "Francis Baard",
@@ -647,7 +669,13 @@
                         "straight",
                         "straight_right"
                     ],
-                    "distanceToNextM": 245
+                    "distanceToNextM": 245,
+                    "turnPhases": [
+                        {
+                            "movement": "right",
+                            "direction": "northbound"
+                        }
+                    ]
                 },
                 {
                     "id": "fb_janshoba_nb",
@@ -699,7 +727,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 0,
-                "yM": 689
+                "yM": 419
             },
             "direction": "eastbound",
             "shortName": "Arcadia",
@@ -734,11 +762,11 @@
             "oneWay": false,
             "origin": {
                 "xM": 245,
-                "yM": 689
+                "yM": 419
             },
             "direction": "eastbound",
             "shortName": "Arcadia",
-            "exitLengthM": 9.75,
+            "exitLengthM": 0,
             "medianWidthM": 3.5,
             "intersections": [
                 {
@@ -757,10 +785,6 @@
                     "name": "Arcadia & Grosvenor",
                     "laneUse": {
                         "eastbound": [
-                            "left_straight",
-                            "straight_right"
-                        ],
-                        "westbound": [
                             "left_straight",
                             "straight_right"
                         ]
@@ -799,7 +823,7 @@
             "oneWay": true,
             "origin": {
                 "xM": 245,
-                "yM": 939
+                "yM": 579
             },
             "direction": "eastbound",
             "shortName": "Park",
@@ -861,7 +885,7 @@
             "oneWay": true,
             "origin": {
                 "xM": 735,
-                "yM": 1189
+                "yM": 739
             },
             "direction": "westbound",
             "shortName": "Burnett",
@@ -879,7 +903,7 @@
                     ],
                     "slipLanes": [
                         {
-                            "backM": 13.8,
+                            "backM": 13.7,
                             "direction": "northbound"
                         }
                     ]
@@ -902,6 +926,12 @@
                         "straight",
                         "straight"
                     ],
+                    "turnPhases": [
+                        {
+                            "movement": "right",
+                            "direction": "southbound"
+                        }
+                    ],
                     "distanceToNextM": 245
                 },
                 {
@@ -910,7 +940,7 @@
                     "laneUse": [
                         "left_straight",
                         "straight",
-                        "straight_right"
+                        "right"
                     ],
                     "turnLanes": {
                         "right": {
@@ -939,7 +969,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 0,
-                "yM": 1439
+                "yM": 899
             },
             "direction": "eastbound",
             "shortName": "Prospect",
@@ -1008,7 +1038,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 245,
-                "yM": 1689
+                "yM": 1059
             },
             "direction": "eastbound",
             "shortName": "South",
@@ -1064,7 +1094,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 735,
-                "yM": 1689
+                "yM": 1059
             },
             "direction": "eastbound",
             "shortName": "South",
@@ -1079,7 +1109,7 @@
                             "left_straight"
                         ],
                         "westbound": [
-                            "all"
+                            "left_straight"
                         ]
                     },
                     "turnLanes": {
@@ -1092,7 +1122,7 @@
                         "westbound": {
                             "right": {
                                 "laneUse": "right",
-                                "lengthM": 10
+                                "lengthM": 15
                             }
                         }
                     },
@@ -1123,7 +1153,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 585,
-                "yM": 2048.8
+                "yM": 1418.8
             },
             "direction": "eastbound",
             "shortName": "Duxbury",
@@ -1161,7 +1191,7 @@
                     ],
                     "slipLanes": [
                         {
-                            "backM": 13.7,
+                            "backM": 13.8,
                             "direction": "southbound"
                         }
                     ]
@@ -1185,8 +1215,8 @@
             },
             "oneWay": false,
             "origin": {
-                "xM": 687.9,
-                "yM": 2431.6
+                "xM": 733.3,
+                "yM": 1671.9
             },
             "direction": "eastbound",
             "shortName": "Lunnon",
@@ -1205,7 +1235,7 @@
                             "all"
                         ]
                     },
-                    "distanceToNextM": 139.5
+                    "distanceToNextM": 145
                 },
                 {
                     "id": "lunnon_duxbury",
@@ -1225,7 +1255,7 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 255.5,
+            "approachLengthM": 230,
             "scope": "side",
             "zone": 1
         },
@@ -1242,8 +1272,8 @@
             },
             "oneWay": false,
             "origin": {
-                "xM": 68.5,
-                "yM": 2443.4
+                "xM": 223.5,
+                "yM": 1544.9
             },
             "direction": "eastbound",
             "shortName": "Lynnwood",
@@ -1315,7 +1345,7 @@
                             }
                         }
                     },
-                    "distanceToNextM": 280.5,
+                    "distanceToNextM": 255,
                     "turnPhases": [
                         {
                             "movement": "left",
@@ -1364,7 +1394,7 @@
                             "direction": "westbound"
                         }
                     ],
-                    "distanceToNextM": 280.5
+                    "distanceToNextM": 290
                 },
                 {
                     "id": "lynnwood_duxbury",
@@ -1376,14 +1406,14 @@
                         ],
                         "westbound": [
                             "straight",
-                            "straight_right"
+                            "straight"
                         ]
                     },
                     "turnLanes": {
                         "eastbound": {
                             "left": {
                                 "laneUse": "left",
-                                "lengthM": 20
+                                "lengthM": 40
                             },
                             "right": {
                                 "laneUse": "right",
@@ -1392,12 +1422,14 @@
                         },
                         "westbound": {
                             "left": {
-                                "laneUse": "left",
-                                "lengthM": 20
+                                "laneUse": "left_straight",
+                                "lengthM": 30,
+                                "exitM": 15
                             },
                             "right": {
                                 "laneUse": "right",
-                                "lengthM": 20
+                                "lengthM": 80,
+                                "lanes": 2
                             }
                         }
                     },
@@ -1421,10 +1453,18 @@
                             "direction": "northbound"
                         }
                     ],
+                    "stopLineBackM": {
+                        "arterial": 12.5,
+                        "cross": 12.5
+                    },
                     "slipLanes": [
                         {
-                            "backM": 13.6,
+                            "backM": 33.1,
                             "direction": "eastbound"
+                        },
+                        {
+                            "backM": 29.2,
+                            "direction": "westbound"
                         }
                     ]
                 }
@@ -1447,8 +1487,8 @@
             },
             "oneWay": false,
             "origin": {
-                "xM": 607.9,
-                "yM": 2570.1
+                "xM": 697.1,
+                "yM": 1734.7
             },
             "direction": "eastbound",
             "shortName": "Mall",
@@ -1489,7 +1529,7 @@
             "oneWay": false,
             "origin": {
                 "xM": 368.5,
-                "yM": 1923.8
+                "yM": 1293.8
             },
             "direction": "eastbound",
             "shortName": "Duxbury",
@@ -1529,8 +1569,8 @@
             },
             "oneWay": false,
             "origin": {
-                "xM": 228.5,
-                "yM": 2166.3
+                "xM": 296,
+                "yM": 1419.4
             },
             "direction": "eastbound",
             "shortName": "Lunnon",
@@ -1585,8 +1625,8 @@
                     "southbound": [
                         "straight",
                         "straight",
-                        "straight_right",
-                        "right"
+                        "straight",
+                        "straight_right"
                     ]
                 },
                 "stanza_janshoba_sb": {
@@ -1612,7 +1652,15 @@
                     "southbound": {
                         "left": {
                             "laneUse": "left",
-                            "lengthM": 10
+                            "lengthM": 14
+                        }
+                    }
+                },
+                "pt_janshoba_sb": {
+                    "southbound": {
+                        "right": {
+                            "laneUse": "right",
+                            "lengthM": 120
                         }
                     }
                 }
@@ -1634,39 +1682,39 @@
             "curve": [
                 {
                     "xM": 978.3,
-                    "yM": 447
+                    "yM": 267
                 },
                 {
                     "xM": 978.3,
-                    "yM": 462
+                    "yM": 282
                 },
                 {
                     "xM": 978.3,
-                    "yM": 477
+                    "yM": 297
                 },
                 {
                     "xM": 978.3,
-                    "yM": 527.6
+                    "yM": 323.08
                 },
                 {
                     "xM": 860.1,
-                    "yM": 603.5
+                    "yM": 356.28
                 },
                 {
                     "xM": 742,
-                    "yM": 679.4
+                    "yM": 409.4
                 },
                 {
                     "xM": 742,
-                    "yM": 730
+                    "yM": 460
                 },
                 {
                     "xM": 742,
-                    "yM": 745
+                    "yM": 475
                 },
                 {
                     "xM": 742,
-                    "yM": 760
+                    "yM": 490
                 }
             ],
             "lanes": 3,
@@ -1708,7 +1756,7 @@
                 }
             },
             "stubEndM": 200,
-            "stubStartM": 243,
+            "stubStartM": 153,
             "turnChance": 0.18,
             "crossChance": 0.2,
             "targetSpeedKph": 60,
@@ -1724,39 +1772,39 @@
             "curve": [
                 {
                     "xM": 728,
-                    "yM": 760
+                    "yM": 490
                 },
                 {
                     "xM": 728,
-                    "yM": 709.5
+                    "yM": 439.5
                 },
                 {
                     "xM": 728,
-                    "yM": 659
+                    "yM": 389
                 },
                 {
                     "xM": 728,
-                    "yM": 619
+                    "yM": 363.06
                 },
                 {
                     "xM": 731.5,
-                    "yM": 573
+                    "yM": 342.94
                 },
                 {
                     "xM": 735,
-                    "yM": 527
+                    "yM": 322.81
                 },
                 {
                     "xM": 735,
-                    "yM": 487
+                    "yM": 305.31
                 },
                 {
                     "xM": 735,
-                    "yM": 459
+                    "yM": 279
                 },
                 {
                     "xM": 735,
-                    "yM": 432
+                    "yM": 252
                 }
             ],
             "lanes": 3,
@@ -1801,31 +1849,31 @@
             "curve": [
                 {
                     "xM": 735,
-                    "yM": 760
+                    "yM": 490
                 },
                 {
                     "xM": 735,
-                    "yM": 1254.5
+                    "yM": 792.97
                 },
                 {
                     "xM": 735,
-                    "yM": 1749
+                    "yM": 1119
                 },
                 {
                     "xM": 735,
-                    "yM": 1789
+                    "yM": 1159
                 },
                 {
                     "xM": 715,
-                    "yM": 1823.6
+                    "yM": 1193.6
                 },
                 {
-                    "xM": 450,
-                    "yM": 2282.6
+                    "xM": 515.1,
+                    "yM": 1539.9
                 },
                 {
-                    "xM": 185,
-                    "yM": 2741.6
+                    "xM": 340,
+                    "yM": 1843.1
                 }
             ],
             "lanes": 4,
@@ -2224,23 +2272,23 @@
             "curve": [
                 {
                     "xM": 245,
-                    "yM": 1189
+                    "yM": 739
                 },
                 {
                     "xM": 245,
-                    "yM": 1503.9
+                    "yM": 952.71
                 },
                 {
                     "xM": 245,
-                    "yM": 1812.5
+                    "yM": 1182.5
                 },
                 {
                     "xM": 245,
-                    "yM": 1852.5
+                    "yM": 1222.5
                 },
                 {
                     "xM": 279.6,
-                    "yM": 1872.5
+                    "yM": 1242.5
                 }
             ],
             "lanes": 2,
@@ -2353,7 +2401,7 @@
             "laneUse": {
                 "burnett_festival": {
                     "northbound": [
-                        "left_straight"
+                        "straight"
                     ]
                 },
                 "prospect_festival": {
@@ -2368,7 +2416,7 @@
                     "northbound": {
                         "left": {
                             "laneUse": "left",
-                            "lengthM": 20
+                            "lengthM": 30
                         }
                     }
                 }
@@ -2389,47 +2437,39 @@
             "curve": [
                 {
                     "xM": 585,
-                    "yM": 2048.8
+                    "yM": 1418.8
                 },
                 {
-                    "xM": 628.3,
-                    "yM": 2073.8
+                    "xM": 680.3,
+                    "yM": 1473.8
                 },
                 {
-                    "xM": 671.6,
-                    "yM": 2098.8
+                    "xM": 775.5,
+                    "yM": 1528.8
                 },
                 {
-                    "xM": 706.2,
-                    "yM": 2118.8
+                    "xM": 805.8,
+                    "yM": 1546.3
                 },
                 {
-                    "xM": 716.6,
-                    "yM": 2157.4
+                    "xM": 814.9,
+                    "yM": 1580.1
                 },
                 {
-                    "xM": 783.4,
-                    "yM": 2406.6
+                    "xM": 836.9,
+                    "yM": 1662.2
                 },
                 {
-                    "xM": 850.1,
-                    "yM": 2655.8
+                    "xM": 858.9,
+                    "yM": 1744.4
                 },
                 {
-                    "xM": 860.5,
-                    "yM": 2694.5
+                    "xM": 885.4,
+                    "yM": 1843.4
                 },
                 {
-                    "xM": 840.5,
-                    "yM": 2729.1
-                },
-                {
-                    "xM": 803.8,
-                    "yM": 2792.6
-                },
-                {
-                    "xM": 770.84,
-                    "yM": 2848.9
+                    "xM": 912,
+                    "yM": 1942.4
                 }
             ],
             "lanes": 4,
@@ -2487,7 +2527,7 @@
                         },
                         "right": {
                             "laneUse": "right",
-                            "lengthM": 40
+                            "lengthM": 120
                         }
                     }
                 },
@@ -2517,16 +2557,16 @@
             "name": "Duxbury",
             "curve": [
                 {
-                    "xM": 770.84,
-                    "yM": 2848.9
+                    "xM": 912,
+                    "yM": 1942.4
                 },
                 {
-                    "xM": 704.7,
-                    "yM": 2964.3
+                    "xM": 945.4,
+                    "yM": 2067.1
                 },
                 {
-                    "xM": 642.2,
-                    "yM": 3072.6
+                    "xM": 978.8,
+                    "yM": 2191.7
                 }
             ],
             "lanes": 2,
@@ -2568,24 +2608,24 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 424.2,
-                    "yM": 2277.3
+                    "xM": 491.7,
+                    "yM": 1530.4
                 },
                 {
-                    "xM": 436.7,
-                    "yM": 2284.6
+                    "xM": 504.3,
+                    "yM": 1537.6
                 },
                 {
-                    "xM": 442.7,
-                    "yM": 2274.2
+                    "xM": 510.3,
+                    "yM": 1527.2
                 },
                 {
-                    "xM": 447.7,
-                    "yM": 2265.5
+                    "xM": 515.3,
+                    "yM": 1518.6
                 },
                 {
-                    "xM": 457.3,
-                    "yM": 2255.9
+                    "xM": 524.8,
+                    "yM": 1509
                 }
             ],
             "lanes": 1,
@@ -2601,24 +2641,24 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 420.5,
-                    "yM": 2319.7
+                    "xM": 488,
+                    "yM": 1572.8
                 },
                 {
-                    "xM": 424,
-                    "yM": 2306.6
+                    "xM": 491.5,
+                    "yM": 1559.7
                 },
                 {
-                    "xM": 429,
-                    "yM": 2298
+                    "xM": 496.5,
+                    "yM": 1551
                 },
                 {
-                    "xM": 435,
-                    "yM": 2287.6
+                    "xM": 502.5,
+                    "yM": 1540.7
                 },
                 {
-                    "xM": 422.4,
-                    "yM": 2280.3
+                    "xM": 490,
+                    "yM": 1533.4
                 }
             ],
             "lanes": 1,
@@ -2634,24 +2674,24 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 469.4,
-                    "yM": 2262.9
+                    "xM": 536.9,
+                    "yM": 1516
                 },
                 {
-                    "xM": 465.9,
-                    "yM": 2276
+                    "xM": 533.4,
+                    "yM": 1529.1
                 },
                 {
-                    "xM": 460.9,
-                    "yM": 2284.6
+                    "xM": 528.4,
+                    "yM": 1537.7
                 },
                 {
-                    "xM": 454.9,
-                    "yM": 2295
+                    "xM": 522.4,
+                    "yM": 1548.1
                 },
                 {
-                    "xM": 467.5,
-                    "yM": 2302.3
+                    "xM": 535,
+                    "yM": 1555.4
                 }
             ],
             "lanes": 1,
@@ -2667,24 +2707,24 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 465.7,
-                    "yM": 2305.3
+                    "xM": 533.2,
+                    "yM": 1558.4
                 },
                 {
-                    "xM": 453.2,
-                    "yM": 2298.1
+                    "xM": 520.7,
+                    "yM": 1551.2
                 },
                 {
-                    "xM": 447.2,
-                    "yM": 2308.5
+                    "xM": 514.7,
+                    "yM": 1561.6
                 },
                 {
-                    "xM": 442.2,
-                    "yM": 2317.1
+                    "xM": 509.7,
+                    "yM": 1570.2
                 },
                 {
-                    "xM": 432.6,
-                    "yM": 2326.7
+                    "xM": 500.1,
+                    "yM": 1579.8
                 }
             ],
             "lanes": 1,
@@ -2701,15 +2741,15 @@
             "curve": [
                 {
                     "xM": 760,
-                    "yM": 1439
+                    "yM": 899
                 },
                 {
                     "xM": 885,
-                    "yM": 1439
+                    "yM": 899
                 },
                 {
                     "xM": 1010,
-                    "yM": 1439
+                    "yM": 899
                 }
             ],
             "lanes": 2,
@@ -2732,23 +2772,23 @@
             "curve": [
                 {
                     "xM": 710,
-                    "yM": 1437.3
+                    "yM": 897.3
                 },
                 {
                     "xM": 724.5,
-                    "yM": 1437.3
+                    "yM": 897.3
                 },
                 {
                     "xM": 724.5,
-                    "yM": 1425.3
+                    "yM": 885.3
                 },
                 {
                     "xM": 724.5,
-                    "yM": 1415.3
+                    "yM": 875.3
                 },
                 {
                     "xM": 728,
-                    "yM": 1402.2
+                    "yM": 862.2
                 }
             ],
             "lanes": 1,
@@ -2765,23 +2805,23 @@
             "curve": [
                 {
                     "xM": 728,
-                    "yM": 1475.8
+                    "yM": 935.8
                 },
                 {
                     "xM": 724.5,
-                    "yM": 1462.8
+                    "yM": 922.8
                 },
                 {
                     "xM": 724.5,
-                    "yM": 1452.8
+                    "yM": 912.8
                 },
                 {
                     "xM": 724.5,
-                    "yM": 1440.8
+                    "yM": 900.8
                 },
                 {
                     "xM": 710,
-                    "yM": 1440.8
+                    "yM": 900.8
                 }
             ],
             "lanes": 1,
@@ -2798,23 +2838,23 @@
             "curve": [
                 {
                     "xM": 742,
-                    "yM": 1402.2
+                    "yM": 862.2
                 },
                 {
                     "xM": 745.5,
-                    "yM": 1415.3
+                    "yM": 875.3
                 },
                 {
                     "xM": 745.5,
-                    "yM": 1425.3
+                    "yM": 885.3
                 },
                 {
                     "xM": 745.5,
-                    "yM": 1437.3
+                    "yM": 897.3
                 },
                 {
                     "xM": 760,
-                    "yM": 1437.3
+                    "yM": 897.3
                 }
             ],
             "lanes": 1,
@@ -2831,23 +2871,23 @@
             "curve": [
                 {
                     "xM": 760,
-                    "yM": 1440.8
+                    "yM": 900.8
                 },
                 {
                     "xM": 745.5,
-                    "yM": 1440.8
+                    "yM": 900.8
                 },
                 {
                     "xM": 745.5,
-                    "yM": 1452.8
+                    "yM": 912.8
                 },
                 {
                     "xM": 745.5,
-                    "yM": 1462.8
+                    "yM": 922.8
                 },
                 {
                     "xM": 742,
-                    "yM": 1475.8
+                    "yM": 935.8
                 }
             ],
             "lanes": 1,
@@ -2899,16 +2939,16 @@
             "name": "Arcadia",
             "curve": [
                 {
-                    "xM": 499.75,
-                    "yM": 689
+                    "xM": 490,
+                    "yM": 419
                 },
                 {
-                    "xM": 601.4,
-                    "yM": 689
+                    "xM": 596.5,
+                    "yM": 419
                 },
                 {
                     "xM": 703,
-                    "yM": 689
+                    "yM": 419
                 }
             ],
             "lanes": 4,
@@ -2922,7 +2962,28 @@
             "turnChance": 0,
             "crossChance": 0,
             "targetSpeedKph": 60,
-            "zone": 2
+            "zone": 2,
+            "linksArterialNodes": [
+                "arcadia_grosvenor"
+            ],
+            "laneUse": {
+                "arcadia_grosvenor": {
+                    "westbound": [
+                        "straight_right",
+                        "right"
+                    ]
+                }
+            },
+            "turnLanes": {
+                "arcadia_grosvenor": {
+                    "westbound": {
+                        "left": {
+                            "laneUse": "left",
+                            "lengthM": 30
+                        }
+                    }
+                }
+            }
         },
         {
             "id": "conn_park_east",
@@ -3002,15 +3063,15 @@
             "curve": [
                 {
                     "xM": 835,
-                    "yM": 1689
+                    "yM": 1059
                 },
                 {
                     "xM": 910,
-                    "yM": 1689
+                    "yM": 1059
                 },
                 {
                     "xM": 985,
-                    "yM": 1689
+                    "yM": 1059
                 }
             ],
             "lanes": 2,
@@ -3024,105 +3085,6 @@
             "turnChance": 0,
             "crossChance": 0,
             "targetSpeedKph": 60,
-            "zone": 2
-        },
-        {
-            "id": "slip_duxbury_janshoba_southbound",
-            "mode": "fixed",
-            "name": "",
-            "curve": [
-                {
-                    "xM": 605.3,
-                    "yM": 2034.6
-                },
-                {
-                    "xM": 599.3,
-                    "yM": 2044.9
-                },
-                {
-                    "xM": 609.7,
-                    "yM": 2050.9
-                },
-                {
-                    "xM": 618.4,
-                    "yM": 2055.9
-                },
-                {
-                    "xM": 627.9,
-                    "yM": 2065.5
-                }
-            ],
-            "lanes": 1,
-            "twoWay": false,
-            "turnChance": 0,
-            "crossChance": 0,
-            "targetSpeedKph": 30,
-            "zone": 1
-        },
-        {
-            "id": "slip_lynnwood_duxbury_eastbound",
-            "mode": "fixed",
-            "name": "",
-            "curve": [
-                {
-                    "xM": 756.7,
-                    "yM": 2828.6
-                },
-                {
-                    "xM": 767,
-                    "yM": 2834.6
-                },
-                {
-                    "xM": 773.1,
-                    "yM": 2824.3
-                },
-                {
-                    "xM": 778.1,
-                    "yM": 2815.7
-                },
-                {
-                    "xM": 787.7,
-                    "yM": 2806.2
-                }
-            ],
-            "lanes": 1,
-            "twoWay": false,
-            "turnChance": 0,
-            "crossChance": 0,
-            "targetSpeedKph": 30,
-            "zone": 1
-        },
-        {
-            "id": "slip_burnett_janshoba_northbound",
-            "mode": "fixed",
-            "name": "",
-            "curve": [
-                {
-                    "xM": 724.5,
-                    "yM": 1208
-                },
-                {
-                    "xM": 724.5,
-                    "yM": 1196
-                },
-                {
-                    "xM": 712.5,
-                    "yM": 1196
-                },
-                {
-                    "xM": 702.5,
-                    "yM": 1196
-                },
-                {
-                    "xM": 689.4,
-                    "yM": 1192.5
-                }
-            ],
-            "lanes": 1,
-            "twoWay": false,
-            "turnChance": 0,
-            "crossChance": 0,
-            "targetSpeedKph": 30,
             "zone": 2
         },
         {
@@ -3204,6 +3166,166 @@
                     }
                 }
             }
+        },
+        {
+            "id": "slip_stanza_janshoba_sb_southbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 988.8,
+                    "yM": -83.5
+                },
+                {
+                    "xM": 988.8,
+                    "yM": -71.5
+                },
+                {
+                    "xM": 1000.8,
+                    "yM": -71.5
+                },
+                {
+                    "xM": 1010.8,
+                    "yM": -71.5
+                },
+                {
+                    "xM": 1023.8,
+                    "yM": -68
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "slip_burnett_janshoba_northbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 724.5,
+                    "yM": 758
+                },
+                {
+                    "xM": 724.5,
+                    "yM": 746
+                },
+                {
+                    "xM": 712.5,
+                    "yM": 746
+                },
+                {
+                    "xM": 702.5,
+                    "yM": 746
+                },
+                {
+                    "xM": 689.4,
+                    "yM": 742.5
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "slip_duxbury_janshoba_southbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 605.3,
+                    "yM": 1404.6
+                },
+                {
+                    "xM": 599.3,
+                    "yM": 1415
+                },
+                {
+                    "xM": 609.7,
+                    "yM": 1421
+                },
+                {
+                    "xM": 618.4,
+                    "yM": 1426
+                },
+                {
+                    "xM": 628,
+                    "yM": 1435.5
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "slip_lynnwood_duxbury_eastbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 870.2,
+                    "yM": 1906.1
+                },
+                {
+                    "xM": 895.3,
+                    "yM": 1920.6
+                },
+                {
+                    "xM": 887.8,
+                    "yM": 1892.6
+                },
+                {
+                    "xM": 885.2,
+                    "yM": 1883
+                },
+                {
+                    "xM": 885.2,
+                    "yM": 1869.4
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
+        },
+        {
+            "id": "slip_lynnwood_duxbury_westbound",
+            "mode": "fixed",
+            "name": "",
+            "curve": [
+                {
+                    "xM": 948.6,
+                    "yM": 1979.7
+                },
+                {
+                    "xM": 923.6,
+                    "yM": 1965.2
+                },
+                {
+                    "xM": 931,
+                    "yM": 1993.2
+                },
+                {
+                    "xM": 933.6,
+                    "yM": 2002.9
+                },
+                {
+                    "xM": 933.6,
+                    "yM": 2016.4
+                }
+            ],
+            "lanes": 1,
+            "twoWay": false,
+            "turnChance": 0,
+            "crossChance": 0,
+            "targetSpeedKph": 30
         }
     ],
     "description": "The Hatfield core grid from the ARTIS reference report, north to south: Stanza Bopape (two-way), Pretorius (4 lanes westbound), Francis Baard (4 lanes eastbound), Arcadia (a side street: 1 + 1 two-way west of Festival, 3 lanes one-way eastbound to Hilda, 2 + 2 divided to Grosvenor, then 2 + 2 to just short of Jan Shoba), the Park (eastbound) / Burnett (westbound) one-way pair, Prospect and South (1 + 1 two-way, Prospect meeting Jan Shoba only through left-turn roads), then Duxbury (1 + 1 west of Jan Shoba, 2 + 2 east of it), Lunnon (1 + 1, meeting Jan Shoba only through left-turn roads) and Lynnwood square to Jan Shoba where it bends 30 degrees west; east of Jan Shoba Duxbury turns south-east across Lunnon and meets Lynnwood square on, carrying on south of it as 1 + 1. West to east: Festival (one-way northbound, Prospect to Stanza), Hilda (one-way southbound from Stanza, bending into Duxbury), Grosvenor (two-way, Stanza to South) - Festival and Hilda narrow to 1 + 1 two-way south of Burnett, Grosvenor south of Arcadia - and Jan Shoba - a one-way pair (southbound east, northbound west, 4 lanes, 3 south of Francis Baard) that merges into one divided road at Arcadia. Lane counts, lane use and distances are simulation estimates, not survey data.",
@@ -3239,13 +3361,13 @@
                 "id": "STZ-1",
                 "from": "stanza_festival",
                 "to": "stanza_hilda",
-                "tier": 3
+                "tier": 2
             },
             {
                 "id": "STZ-2",
                 "from": "stanza_hilda",
                 "to": "stanza_grosvenor",
-                "tier": 3
+                "tier": 2
             },
             {
                 "id": "STZ-3",
@@ -3275,13 +3397,13 @@
                 "id": "PRE-3",
                 "from": "pt_grosvenor",
                 "to": "pt_hilda",
-                "tier": 3
+                "tier": 1.5
             },
             {
                 "id": "PRE-4",
                 "from": "pt_hilda",
                 "to": "pt_festival",
-                "tier": 3
+                "tier": 2
             },
             {
                 "id": "FRB-1",
@@ -3305,8 +3427,7 @@
                 "id": "FRB-4",
                 "from": "fb_janshoba_nb",
                 "to": "fb_janshoba_sb",
-                "tier": 2,
-                "provisional": true
+                "tier": 3
             },
             {
                 "id": "ARC-1",
@@ -3318,7 +3439,7 @@
                 "id": "ARC-2",
                 "from": "arcadia_hilda",
                 "to": "arcadia_grosvenor",
-                "tier": 4
+                "tier": 2
             },
             {
                 "id": "ARC-3",
@@ -3336,7 +3457,7 @@
                 "id": "PRK-2",
                 "from": "park_grosvenor",
                 "to": "park_janshoba",
-                "tier": 2
+                "tier": 3
             },
             {
                 "id": "BRN-1",
@@ -3403,7 +3524,7 @@
                 "id": "DUX-3",
                 "from": "lunnon_duxbury",
                 "to": "lynnwood_duxbury",
-                "tier": 2
+                "tier": 3
             },
             {
                 "id": "LUN-1",
@@ -3421,7 +3542,7 @@
                 "id": "LUN-3",
                 "from": "lunnon_duxbury",
                 "to": "lunnon:end",
-                "tier": 2
+                "tier": 1.5
             },
             {
                 "id": "LYN-1",
@@ -3585,28 +3706,28 @@
                 "id": "JSH-1N",
                 "from": "pt_janshoba_nb",
                 "to": "stanza_janshoba_nb",
-                "tier": 2,
+                "tier": 3,
                 "weightShare": 0.5
             },
             {
                 "id": "JSH-1S",
                 "from": "stanza_janshoba_sb",
                 "to": "pt_janshoba_sb",
-                "tier": 2,
+                "tier": 3,
                 "weightShare": 0.5
             },
             {
                 "id": "JSH-2N",
                 "from": "fb_janshoba_nb",
                 "to": "pt_janshoba_nb",
-                "tier": 2,
+                "tier": 3,
                 "weightShare": 0.5
             },
             {
                 "id": "JSH-2S",
                 "from": "pt_janshoba_sb",
                 "to": "fb_janshoba_sb",
-                "tier": 2,
+                "tier": 3,
                 "weightShare": 0.5
             },
             {
@@ -3717,7 +3838,7 @@
                 "id": "JSH-1",
                 "from": "lynnwood_janshoba",
                 "to": "conn_jan_shoba:end",
-                "tier": 3
+                "tier": 4
             },
             {
                 "id": "LYN-4",
@@ -3771,13 +3892,13 @@
                 "id": "STZ-6",
                 "from": "stanza:start",
                 "to": "stanza_festival",
-                "tier": 3
+                "tier": 2
             },
             {
                 "id": "PRE-6",
                 "from": "pt_festival",
                 "to": "pretorius:end",
-                "tier": 3
+                "tier": 2
             },
             {
                 "id": "ARC-4",
@@ -3795,13 +3916,13 @@
                 "id": "JSH-2",
                 "from": "stanza_janshoba_nb",
                 "to": "conn_jan_shoba_nb:end",
-                "tier": 2
+                "tier": 3
             },
             {
                 "id": "JSH-3",
                 "from": "conn_jan_shoba_sb:start",
                 "to": "stanza_janshoba_sb",
-                "tier": 2
+                "tier": 3
             },
             {
                 "id": "LNW-0",

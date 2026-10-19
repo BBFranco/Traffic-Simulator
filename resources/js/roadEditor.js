@@ -12,7 +12,8 @@
  * The layouts are the user's own (Import adds one from a corridor JSON file,
  * checked with the same loader the simulator uses before it's uploaded).
  */
-import { DEFAULT_TURN_LANE_LENGTH_M, TURN_LANE_SIDES, buildLayout, laneUseToken, turnLanesToConfig } from './sim/corridor.js';
+import { DEFAULT_TURN_LANE_LENGTH_M, TURN_LANE_SIDES, buildLayout, compassDirection, laneUseToken, turnLanesToConfig } from './sim/corridor.js';
+import { isSlipConnectorId, slipLaneSpecs, withSlipLanes } from './sim/slipLanes.js';
 import { LayoutRenderer } from './sim/renderer.js';
 import { SimulationEngine } from './sim/engine.js';
 import { buildIntersectionConfig } from './sim/intersectionLayout.js';
@@ -209,6 +210,8 @@ function buildTestLayout(approachEdits = []) {
 function selectNode(nodeId, { force = false } = {}) {
     if (!force && (nodeId === state.nodeId || !confirmDiscardUnsaved())) return;
     state.nodeId = nodeId;
+    turnLaneError = null;
+    slipLaneMessage = null;
 
     buildTestLayout();
     renderer.setLayout(layout);
@@ -243,9 +246,12 @@ function rebuildLayout() {
     try {
         buildTestLayout(currentApproachEdits());
         el.error.classList.add('hidden');
+        turnLaneError = null;
     } catch (error) {
         el.error.textContent = error.message;
         el.error.classList.remove('hidden');
+        // The error box is folded away with the Intersection section while one is open - say it in the turn-lane panel too.
+        turnLaneError = error.message;
         return false;
     }
     renderer.setLayout(layout, { refit: false });
@@ -256,6 +262,9 @@ function rebuildLayout() {
 }
 
 /* --------------------------------------------------------- turn lanes */
+
+/** Why the last turn-lane edit was undone - it didn't build - shown at the top of the turn-lane panel. */
+let turnLaneError = null;
 
 /** Why `side` can't have a turn lane on `approach`, or null if it can. */
 function turnLaneUnavailableReason(approach, side) {
@@ -275,7 +284,8 @@ function turnLaneUnavailableReason(approach, side) {
 
 function setTurnLane(approach, side, lengthM) {
     const current = approach.turnLanes[side];
-    approach.turnLanes[side] = lengthM === null ? null : { lengthM, laneUse: current?.laneUse ?? [TURN_LANE_SIDE_INFO[side].movement] };
+    // A new length keeps the rest of the turn lane (its lane use, a double lane, a run-out past the junction).
+    approach.turnLanes[side] = lengthM === null ? null : { ...current, lengthM, laneUse: current?.laneUse ?? [TURN_LANE_SIDE_INFO[side].movement] };
     if (rebuildLayout()) return;
     approach.turnLanes[side] = current;
     renderTurnLanePanel();
@@ -334,6 +344,95 @@ function turnLaneRow(approach, side) {
     return row;
 }
 
+/* --------------------------------------------------------- slip lanes */
+
+/** Why the last slip-lane toggle didn't go through, shown under that approach's toggle (the error box is folded away while an intersection is open). */
+let slipLaneMessage = null;
+
+function failSlipLane(approach, text) {
+    slipLaneMessage = { approachId: approach.id, text };
+    renderTurnLanePanel();
+}
+
+/** The saved layout's node `nodeId` (corridor JSON form) - where its `slipLanes` live. */
+function savedNode(nodeId) {
+    return state.corridorConfig.arterials.flatMap((arterial) => arterial.intersections ?? []).find((node) => node.id === nodeId);
+}
+
+function hasSlipLane(approach) {
+    const direction = compassDirection(approach.heading);
+    return (savedNode(approach.nodeId)?.slipLanes ?? []).some((slip) => slip.direction === direction);
+}
+
+/**
+ * Turns `approach`'s left turn lane into a slip lane (or back), saved straight into the user's layout: every slip
+ * lane is drawn afresh from the saved layout (sim/slipLanes.js) and the whole set replaces the old one.
+ */
+async function setSlipLane(approach, isOn) {
+    slipLaneMessage = null;
+    if (laneEditor.dirtyCount) {
+        failSlipLane(approach, 'Save or discard your lane changes first - a slip lane is drawn from the saved layout.');
+        return;
+    }
+    const direction = compassDirection(approach.heading);
+    const specs = slipLaneSpecs(state.corridorConfig).filter((slip) => !(slip.node === approach.nodeId && slip.direction === direction));
+    if (isOn) specs.push({ node: approach.nodeId, direction });
+
+    try {
+        const { config } = withSlipLanes(state.corridorConfig, specs);
+        const response = await fetch(boot.slipLanesUrlTemplate.replace('__ID__', encodeURIComponent(state.corridorId)), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '' },
+            body: JSON.stringify({
+                slipLanes: config.arterials.flatMap((arterial) => arterial.intersections.flatMap((node) => (node.slipLanes ?? []).map((slip) => ({ nodeId: node.id, ...slip })))),
+                connectors: config.connectors.filter((connector) => isSlipConnectorId(connector.id)),
+                joins: config.joins.filter((join) => [join.from, join.to].some((ref) => isSlipConnectorId(ref.split(':')[0]))),
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message ?? `HTTP ${response.status}`);
+        const descriptor = boot.corridors.find((corridor) => corridor.id === state.corridorId);
+        if (descriptor) descriptor.hasEdits = payload.hasEdits;
+    } catch (error) {
+        failSlipLane(approach, `Couldn't ${isOn ? 'add' : 'remove'} the slip lane: ${error.message}`);
+        return;
+    }
+    await loadCorridor(state.corridorId, { keepNode: true });
+}
+
+/** Under a left turn lane: whether it peels off as a slip lane round the corner (and why the last toggle failed, if it did). */
+function slipLaneRows(approach) {
+    const rows = [slipLaneToggle(approach)];
+    if (slipLaneMessage?.approachId === approach.id) {
+        const message = document.createElement('p');
+        message.className = 'rounded-md border border-rose-300 bg-rose-50 p-1.5 pl-5 text-[11px] text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300';
+        message.textContent = slipLaneMessage.text;
+        rows.push(message);
+    }
+    return rows;
+}
+
+function slipLaneToggle(approach) {
+    const row = document.createElement('label');
+    row.className = 'flex items-center gap-1.5 pl-5 text-xs text-slate-700 dark:text-slate-300';
+    row.title = 'The left turn lane leaves the road before the stop line and runs round the corner on its own lane, giving way where it joins the street it turns onto. Saved straight away.';
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.className = 'rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800';
+    toggle.checked = hasSlipLane(approach);
+    toggle.addEventListener('change', () => {
+        toggle.disabled = true;
+        setSlipLane(approach, toggle.checked);
+    });
+    const text = document.createElement('span');
+    text.textContent = 'Slip lane';
+    const hint = document.createElement('span');
+    hint.className = 'shrink-0 text-[10px] text-slate-400';
+    hint.textContent = 'round the corner · saves now';
+    row.append(toggle, text, hint);
+    return row;
+}
+
 function renderTurnLanePanel() {
     if (!layout || !engine) return;
     if (isOverview()) {
@@ -343,14 +442,24 @@ function renderTurnLanePanel() {
         el.turnLanes.replaceChildren(note);
         return;
     }
+    const errorNote = document.createElement('p');
+    errorNote.className = 'rounded-md border border-rose-300 bg-rose-50 p-1.5 text-[11px] text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300';
+    errorNote.textContent = `Not applied: ${turnLaneError}`;
     el.turnLanes.replaceChildren(
+        ...(turnLaneError ? [errorNote] : []),
         ...editableApproaches().map((approach) => {
             const group = document.createElement('div');
             group.className = 'space-y-1.5 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800/60';
             const heading = document.createElement('div');
             heading.className = 'text-[10px] font-semibold uppercase tracking-wider text-slate-500';
             heading.textContent = approach.laneUseKey === 'arterial' ? approach.label : `${approach.label} · ${DIRECTION_LABELS[approach.laneUseKey] ?? approach.laneUseKey}`;
-            group.append(heading, ...TURN_LANE_SIDES.map((side) => turnLaneRow(approach, side)));
+            group.append(heading, ...TURN_LANE_SIDES.flatMap((side) => {
+                const row = turnLaneRow(approach, side);
+                // A slip lane is the left turn lane leaving early - offered once the saved layout has one, or already a slip.
+                if (side !== 'left') return [row];
+                const isLeftTurnSaved = approach.turnLanes.left && !laneEditor.isTurnLaneDirty(approach, 'left');
+                return isLeftTurnSaved || hasSlipLane(approach) ? [row, ...slipLaneRows(approach)] : [row];
+            }));
             return group;
         })
     );

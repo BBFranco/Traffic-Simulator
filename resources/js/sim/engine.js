@@ -478,8 +478,11 @@ const CLOSED_SLOT = Object.freeze([]);
 /** Slot layout of one road (an arterial, or one direction of a connector) from the approaches along it. */
 function buildLaneLayout(approaches, mainLanes) {
     const kerbSlots = approaches.some((a) => a.turnLanes?.left) ? 1 : 0;
-    const medianSlots = approaches.some((a) => a.turnLanes?.right) ? 1 : 0;
-    return { kerbSlots, mainLanes, slots: kerbSlots + mainLanes + medianSlots, turnLanes: [] };
+    // A double right turn lane (corridor.js's `lanes: 2`) takes two slots past the median-side lane, the median-most last.
+    const medianSlots = Math.max(0, ...approaches.map((a) => (a.turnLanes?.right ? (a.turnLanes.right.lanes ?? 1) : 0)));
+    // `shifts`: where an approach's lanes move over for a double right turn lane (`{ stopLineDistanceM, laneShift }`, see
+    // corridor.js's laneShiftAt()). `runOuts`: where a kerb turn lane carries on past a junction (`{ fromM, endM }`), merging back.
+    return { kerbSlots, mainLanes, slots: kerbSlots + mainLanes + medianSlots, turnLanes: [], shifts: [], runOuts: [] };
 }
 
 /**
@@ -495,13 +498,28 @@ function attachApproachToLayout(laneLayout, approach, stopLineDistanceM) {
     // Open from the start of its taper, so a car can move over as the road widens.
     // One that also goes straight stays open across the junction box, so its straight-on cars drive through in it.
     const endFor = (turnLane) => stopLineDistanceM + (turnLane.laneUse.includes('straight') ? 2 * approach.setbackM : 0);
-    if (kerb) laneLayout.turnLanes.push({ slot: 0, startM: stopLineDistanceM - kerb.lengthM - TURN_LANE_TAPER_M, endM: endFor(kerb) });
-    if (median) laneLayout.turnLanes.push({ slot: medianSlot, startM: stopLineDistanceM - median.lengthM - TURN_LANE_TAPER_M, endM: endFor(median) });
+    if (kerb) {
+        // One that carries on past the junction (`exitM`) stays open that far past the far edge of the box - a short lane that merges back.
+        const exitM = kerb.exitM ?? 0;
+        const farEdgeM = stopLineDistanceM + approach.setbackM + approach.boxEdgeM;
+        laneLayout.turnLanes.push({ slot: 0, startM: stopLineDistanceM - kerb.lengthM - TURN_LANE_TAPER_M, endM: exitM > 0 ? farEdgeM + exitM : endFor(kerb) });
+        if (exitM > 0) laneLayout.runOuts.push({ fromM: farEdgeM, endM: farEdgeM + exitM });
+    }
+    const medianLanes = median ? (median.lanes ?? 1) : 0;
+    for (let i = 0; i < medianLanes; i += 1) {
+        laneLayout.turnLanes.push({ slot: medianSlot + i, startM: stopLineDistanceM - median.lengthM - TURN_LANE_TAPER_M, endM: endFor(median) });
+    }
+    if (approach.laneShift) laneLayout.shifts.push({ stopLineDistanceM, laneShift: approach.laneShift });
     return [
         ...(laneLayout.kerbSlots ? [kerb?.laneUse ?? CLOSED_SLOT] : []),
         ...approach.laneUse,
-        ...(medianSlot < laneLayout.slots ? [median?.laneUse ?? CLOSED_SLOT] : []),
+        ...Array.from({ length: laneLayout.slots - medianSlot }, (_, i) => (i < medianLanes ? median.laneUse : CLOSED_SLOT)),
     ];
+}
+
+/** Whether `distanceM` along a road is on one of its run-out lanes past a junction (laneLayout.runOuts) - where a kerb-side car merges back. */
+function runOutAt(laneLayout, distanceM) {
+    return laneLayout.runOuts.find((r) => distanceM >= r.fromM && distanceM < r.endM) ?? null;
 }
 
 function isThroughSlot(laneLayout, slot) {
@@ -515,9 +533,11 @@ function slotOpenAt(laneLayout, slot, distanceM) {
     return laneLayout.turnLanes.some((t) => t.slot === slot && distanceM >= t.startM && distanceM <= t.endM);
 }
 
-/** The through lane beside a turn-lane slot - where a car waits to get into it, and where it goes back to. */
+/** The through lane beside a turn-lane slot - where a car waits to get into it, and where it goes back to (a double turn lane's outer slot: its inner one). */
 function throughSlotBeside(laneLayout, slot) {
-    return slot < laneLayout.kerbSlots ? laneLayout.kerbSlots : laneLayout.kerbSlots + laneLayout.mainLanes - 1;
+    const lastMain = laneLayout.kerbSlots + laneLayout.mainLanes - 1;
+    if (slot < laneLayout.kerbSlots) return laneLayout.kerbSlots;
+    return slot > lastMain + 1 ? slot - 1 : lastMain;
 }
 
 /**
@@ -580,8 +600,6 @@ const ROUNDABOUT_ENTRY_LOOK_S = 2.5;
 function ringAlongsideM(entrant, ringCar) {
     return Math.max(ROUNDABOUT_ALONGSIDE_M, (entrant.lengthM + ringCar.lengthM) / 2 + 0.5);
 }
-/** Extra gap (m of ring) a car needs per metre of entry leg between its yield line and the ring - it covers the leg from a standstill at about half ring speed. */
-const ROUNDABOUT_LEG_GAP_FACTOR = 2;
 /** Within this behind a car joining the ring (m), a circulating one is alongside it - still in the way. */
 const ROUNDABOUT_ALONGSIDE_M = 5;
 /** How far round the ring a car looks for one ahead to follow (m). */
@@ -869,6 +887,7 @@ export class SimulationEngine {
                     gate.slotLaneUse = gate.approach ? attachApproachToLayout(dir.laneLayout, gate.approach, gate.stopLineDistanceM) : null;
                 }
                 dir.road.kerbSlots = dir.laneLayout.kerbSlots;
+                if (dir.laneLayout.shifts.length) dir.road.laneShifts = dir.laneLayout.shifts;
                 // A street that starts at a T has no road before its first junction to spawn on - its traffic only turns in.
                 dir.noSpawn = Boolean(dir.gates.length && !dir.gates[0].approach);
             }
@@ -1093,6 +1112,7 @@ export class SimulationEngine {
             gate.slotLaneUse = gate.approach ? attachApproachToLayout(carriageway.laneLayout, gate.approach, gate.stopLineDistanceM) : null;
         }
         road.kerbSlots = carriageway.laneLayout.kerbSlots;
+        if (carriageway.laneLayout.shifts.length) road.laneShifts = carriageway.laneLayout.shifts;
         /** Starts at a junction it only leaves (no road before it): its traffic only turns in there. */
         carriageway.noSpawn = Boolean(carriageway.gates.length && !carriageway.gates[0].approach);
         return carriageway;
@@ -2713,7 +2733,7 @@ export class SimulationEngine {
                 const pickupAhead = this._taxiPickupObstacle(carriageway, car, dt);
                 const joinAhead = i === 0 ? this._joinObstacle(carriageway.id, car) : null;
                 const entryTail = this._roundaboutEntryTail(this._nearestNodeAhead(gates, car), car);
-                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), entryTail), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(carriageway.id, state, lane, car));
+                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), entryTail), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(carriageway.id, state, lane, car)), this._runOutHold(state, car));
                 const speedLimitMps = Math.min(this._turnApproachSpeedLimit(gates, car), this._drivewaySpeedLimit(car));
                 if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                 car.steppedTick = this.tickNo;
@@ -2764,6 +2784,7 @@ export class SimulationEngine {
      */
     _tryChangeLane(state, gates, car) {
         if (car.distanceM < LANE_CHANGE_MIN_DISTANCE_M) return;
+        if (this._mergeOffRunOut(state, car)) return;
         if (car.pickup) return; // a taxi pulling over, or stopped for passengers, stays put
         const driveway = this._drivewayAhead(car);
         if (driveway) {
@@ -2969,6 +2990,23 @@ export class SimulationEngine {
     }
 
     /**
+     * A car on a run-out lane past a junction (laneLayout.runOuts) merges into the kerb lane, courteously - true if
+     * it's on one (and so makes no other lane change). Until it's in, the lane's end holds it (_runOutHold()).
+     */
+    _mergeOffRunOut(state, car) {
+        if (car.lane >= state.laneLayout.kerbSlots || !runOutAt(state.laneLayout, car.distanceM)) return false;
+        this._tryMandatoryLaneChange(state, car, [state.laneLayout.kerbSlots], true);
+        return true;
+    }
+
+    /** The end of the run-out lane `car` is on, as a standing obstacle - so a car that can't merge yet waits there instead of running out of lane. */
+    _runOutHold(state, car) {
+        if (car.lane >= state.laneLayout.kerbSlots) return null;
+        const runOut = runOutAt(state.laneLayout, car.distanceM + car.lengthM / 2);
+        return runOut ? { distanceM: runOut.endM, speedMps: 0 } : null;
+    }
+
+    /**
      * Safety net: a car still in a turn-lane slot where no turn lane exists any
      * more (it carried on past the stop line instead of turning) moves back
      * into the through lane beside it.
@@ -3067,7 +3105,7 @@ export class SimulationEngine {
                     const realAhead = i > 0 ? lane.cars[i - 1] : null;
                     const joinAhead = i === 0 ? this._joinObstacle(roadKey, car) : null;
                     const entryTail = this._roundaboutEntryTail(this._nextGate(dir, car), car);
-                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), entryTail), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(roadKey, dirState, lane, car));
+                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), entryTail), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(roadKey, dirState, lane, car)), this._runOutHold(dirState, car));
                     const speedLimitMps = Math.min(this._connectorTurnApproachSpeedLimit(dir, car), this._drivewaySpeedLimit(car));
                     if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                     car.steppedTick = this.tickNo;
@@ -3106,6 +3144,7 @@ export class SimulationEngine {
                     continue;
                 }
                 if (car.distanceM < LANE_CHANGE_MIN_DISTANCE_M) continue;
+                if (this._mergeOffRunOut(dirState, car)) continue;
                 // A lane that ends where this road joins a narrower one: merge out of it before the end,
                 // courteously (whoever's alongside drops back to let it in, or it drops back itself).
                 const keep = this._lanesContinuing(dir, dirState, car);
@@ -3256,12 +3295,17 @@ export class SimulationEngine {
         const carriageway = this.carriagewaysById.get(turnOption.carriagewayId);
         const from = carWorldPoint(car);
         const fromHeading = roadPointAt(car.road, car.distanceM).heading;
-        const direct = turnTargetLane(gate.slotLaneUse, car.lane, turnOption.movement, carriageway.laneLayout);
+        const edgeM = turnOption.entryDistanceM + node.crossRoadWidthM / 2;
+        // A left turn onto a road whose kerb lane carries on past this junction for a short way (a run-out) turns into that lane.
+        const runOut = turnOption.movement === 'left' && carriageway.laneLayout.kerbSlots ? runOutAt(carriageway.laneLayout, edgeM) : null;
+        const direct = runOut ? 0 : turnTargetLane(gate.slotLaneUse, car.lane, turnOption.movement, carriageway.laneLayout);
+        const exitM = this._turnExitDistance(from, fromHeading, carriageway.road, direct, edgeM);
         const landing = this._turnLanding(carriageway.id, turnOption.movement, {
             road: carriageway.road,
             lanes: this.carriagewayState.get(carriageway.id).lanes,
             laneIndex: direct,
-            exitDistanceM: this._turnExitDistance(from, fromHeading, carriageway.road, direct, turnOption.entryDistanceM + node.crossRoadWidthM / 2),
+            // ...coming out with room to merge before it ends.
+            exitDistanceM: runOut ? Math.max(edgeM, Math.min(exitM, runOut.endM - car.lengthM)) : exitM,
             fields: { carriagewayId: carriageway.id },
             speedKph: arterial.targetSpeedKph,
         });
@@ -3659,12 +3703,13 @@ export class SimulationEngine {
         );
         const joinAngle = info.roundaboutJoinAngles.get(approachId);
         const alongsideRad = ROUNDABOUT_ALONGSIDE_M / circulatingRadiusM;
-        const gapM = ROUNDABOUT_GAP_M + (node.roundabout.mouthM - node.roundabout.radiusM) * ROUNDABOUT_LEG_GAP_FACTOR;
+        // Same gap as at the ring's edge, not more for the splitter leg: the real give-way is at the circle, where
+        // _entrantYieldsTo() holds an entrant that a car coming round would still reach first.
         for (const occupant of info.roundaboutOccupants.values()) {
             if (!occupant.passes.has(approachId)) continue;
             const p = carRenderPoint(occupant.car);
             const toJoinRad = (((joinAngle - Math.atan2(p.y - node.point.y, p.x - node.point.x)) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-            if (toJoinRad * circulatingRadiusM <= gapM || toJoinRad >= 2 * Math.PI - alongsideRad) return true;
+            if (toJoinRad * circulatingRadiusM <= ROUNDABOUT_GAP_M || toJoinRad >= 2 * Math.PI - alongsideRad) return true;
         }
         return false;
     }
@@ -4135,6 +4180,7 @@ export class SimulationEngine {
             for (const car of [...lane.cars]) {
                 if (car.distanceM < join.fromAtM || car.distanceM > join.fromAtM + 15) continue;
                 if (!join.slip && !car.peelDecisions?.get(join)) continue;
+                if (join.slip && !this._isSlipCar(join.gate, car)) continue; // straight on in a lane the slip road also leaves from
                 const target = join.to.lanes()[join.to.laneLayout.kerbSlots];
                 const tail = lastCarIn(target);
                 const entryM = car.distanceM - join.fromAtM;
@@ -4159,7 +4205,7 @@ export class SimulationEngine {
     /** Whether `lane` is the one a peel-off takes cars from: the kerb lane, or a slip road's left-turn lane. */
     _peelsFrom(join, dirState, lane) {
         if (!join.slip) return lane === dirState.lanes[dirState.laneLayout.kerbSlots];
-        return Boolean(join.gate) && isTurnOnlyLane(join.gate.slotLaneUse?.[dirState.lanes.indexOf(lane)] ?? [], 'left');
+        return Boolean(join.gate) && this._isSlipLane(join.gate, dirState.lanes.indexOf(lane));
     }
 
     /**
@@ -4191,6 +4237,7 @@ export class SimulationEngine {
             if (toGoM > DIVERGE_DECISION_M || toGoM < -15) continue;
             if (!join.slip && !car.peelDecisions?.get(join)) continue;
             if (!this._peelsFrom(join, dirState, lane)) continue;
+            if (join.slip && !this._isSlipCar(join.gate, car)) continue;
             const tail = lastCarIn(join.to.lanes()[join.to.laneLayout.kerbSlots]);
             if (tail) hold = nearestAhead(hold, { distanceM: join.fromAtM + tail.distanceM, speedMps: tail.speedMps, lengthM: tail.lengthM });
         }
@@ -4302,11 +4349,23 @@ export class SimulationEngine {
         return this._turnArrowFor(gate, car);
     }
 
-    /** Is `car` in the left-turn lane of `gate` that leaves as a slip road - it never meets the stop line, so no signal holds it. */
+    /**
+     * Is `car` in the left-turn lane of `gate` that leaves as a slip road - it never meets the stop line, so no signal holds it.
+     * A kerb turn lane that also goes straight on only sends its left turners down the slip road.
+     */
     _isSlipCar(gate, car) {
         if (!gate.slipJoin) return false;
         const moves = gate.slotLaneUse?.[car.lane];
-        return Boolean(moves) && isTurnOnlyLane(moves, 'left');
+        if (!moves) return false;
+        if (isTurnOnlyLane(moves, 'left')) return true;
+        return this._isSlipLane(gate, car.lane) && car.turnPlan?.nodeId === gate.node.id && car.turnPlan.movement === 'left';
+    }
+
+    /** Whether lane slot `slot` is `gate`'s left-turn lane a slip road leaves from: a left-only lane, or a kerb turn lane that allows left. */
+    _isSlipLane(gate, slot) {
+        const moves = gate.slotLaneUse?.[slot] ?? [];
+        const layout = (gate.carriageway ?? gate.dir).laneLayout;
+        return isTurnOnlyLane(moves, 'left') || (slot < layout.kerbSlots && moves.includes('left'));
     }
 
     /**

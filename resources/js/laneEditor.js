@@ -251,7 +251,7 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
             for (const side of TURN_LANE_SIDES) {
                 if (!isTurnLaneDirty(approach, side)) continue;
                 const turnLane = snapshot.turnLanes?.[side];
-                approach.turnLanes[side] = turnLane ? { lengthM: turnLane.lengthM, laneUse: movesFromToken(turnLane.laneUse) } : null;
+                approach.turnLanes[side] = turnLane ? { lanes: 1, exitM: 0, ...turnLane, laneUse: movesFromToken(turnLane.laneUse) } : null;
                 isTurnLaneChanged = true;
             }
         }

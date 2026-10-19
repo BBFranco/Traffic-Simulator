@@ -3,6 +3,7 @@
 use App\Http\Controllers\CorridorLaneUseController;
 use App\Http\Controllers\CorridorLayoutController;
 use App\Http\Controllers\CorridorRoutingTierController;
+use App\Http\Controllers\CorridorSlipLaneController;
 use App\Http\Controllers\CorridorTemplateController;
 use App\Http\Controllers\CorridorTemplatePublishController;
 use App\Http\Controllers\LatestBatchProgressController;
@@ -56,6 +57,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/corridors/{corridor}/lane-use', [CorridorLaneUseController::class, 'destroy'])
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.lane-use.destroy');
+
+    // Slip lanes: a left-turn lane peeling off as its own road round the corner (drawn in the browser).
+    Route::put('/corridors/{corridor}/slip-lanes', [CorridorSlipLaneController::class, 'update'])
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.slip-lanes.update');
 
     // Overwrites the shared template (what batches run on) with the user's saved layout.
     Route::post('/corridors/{corridor}/publish-template', CorridorTemplatePublishController::class)

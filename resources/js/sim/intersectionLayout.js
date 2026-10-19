@@ -11,6 +11,7 @@
  * (CorridorRepository::updateLaneUse()).
  */
 import { buildLayout, compassDirection, crossArms } from './corridor.js';
+import { withSlipLanes } from './slipLanes.js';
 
 const RUN_IN_M = 170;
 const RUN_OUT_M = 120;
@@ -98,7 +99,9 @@ export function buildIntersectionConfig(config, layout, nodeId, demand, approach
 
     for (const edit of approachEdits) applyApproachEdit(testConfig, nodeId, edit);
 
-    return testConfig;
+    // The junction's slip lanes, drawn afresh on the test geometry - throws (like any edit that doesn't build) if an edited left turn lane no longer fits one.
+    const slips = (rawNode.slipLanes ?? []).map((slip) => ({ node: nodeId, direction: slip.direction }));
+    return slips.length ? withSlipLanes(testConfig, slips).config : testConfig;
 }
 
 /**
