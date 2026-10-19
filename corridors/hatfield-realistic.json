@@ -12,7 +12,7 @@
         "geometryUnits": "metres",
         "distanceSource": "Festival-Hilda-Grosvenor-Jan Shoba 245 m (the northbound Jan Shoba carriageway 245 m past Grosvenor at Francis Baard and 243 m at Pretorius and Stanza, where it is a lane wider on its kerb side, the southbound one another 245 m east; they merge 70 m south of Arcadia). North-south: Stanza-Pretorius 275 and Pretorius-Francis Baard 164 from the report; Francis Baard-Arcadia, Arcadia-Park, Park-Burnett, Burnett-Prospect and Prospect-South 250 (estimates); South to the bend 100, bend to Duxbury 300, Duxbury-Lunnon 280, Lunnon-Lynnwood 320 (estimates, reusing the report's block lengths); Duxbury east turns 140 m past Jan Shoba (estimate)."
     },
-    "name": "Hatfield Grid · realistic network",
+    "name": "Hatfield Grid Â· realistic network",
     "joins": [
         {
             "to": "conn_jan_shoba_sb_merge:fwd",
@@ -195,36 +195,36 @@
             "from": "duxbury:rev"
         },
         {
-            "from": "conn_jan_shoba:fwd",
             "to": "slip_duxbury_janshoba_southbound:fwd",
-            "fromAtM": 1304.7,
-            "slip": true
+            "from": "conn_jan_shoba:fwd",
+            "slip": true,
+            "fromAtM": 1304.7
         },
         {
-            "from": "slip_duxbury_janshoba_southbound:fwd",
             "to": "conn_duxbury_east:fwd",
+            "from": "slip_duxbury_janshoba_southbound:fwd",
             "toAtM": 45.5
         },
         {
-            "from": "lynnwood",
             "to": "slip_lynnwood_duxbury_eastbound:fwd",
-            "fromAtM": 888.7,
-            "slip": true
+            "from": "lynnwood",
+            "slip": true,
+            "fromAtM": 888.7
         },
         {
-            "from": "slip_lynnwood_duxbury_eastbound:fwd",
             "to": "conn_duxbury_east:rev",
+            "from": "slip_lynnwood_duxbury_eastbound:fwd",
             "toAtM": 45.5
         },
         {
-            "from": "conn_jan_shoba:rev",
             "to": "slip_burnett_janshoba_northbound:fwd",
-            "fromAtM": 1679.1,
-            "slip": true
+            "from": "conn_jan_shoba:rev",
+            "slip": true,
+            "fromAtM": 1679.1
         },
         {
-            "from": "slip_burnett_janshoba_northbound:fwd",
             "to": "burnett",
+            "from": "slip_burnett_janshoba_northbound:fwd",
             "toAtM": 45.5
         }
     ],
@@ -507,8 +507,8 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "eastbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "eastbound"
                         }
                     ]
                 }
@@ -775,8 +775,8 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "eastbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "eastbound"
                         }
                     ]
                 }
@@ -821,8 +821,8 @@
                     "distanceToNextM": 245,
                     "turnPhases": [
                         {
-                            "direction": "northbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "northbound"
                         }
                     ]
                 },
@@ -836,8 +836,8 @@
                     ],
                     "turnPhases": [
                         {
-                            "direction": "eastbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "eastbound"
                         }
                     ]
                 }
@@ -873,14 +873,14 @@
                     "distanceToNextM": 245,
                     "turnPhases": [
                         {
-                            "direction": "southbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "southbound"
                         }
                     ],
                     "slipLanes": [
                         {
-                            "direction": "northbound",
-                            "backM": 13.8
+                            "backM": 13.8,
+                            "direction": "northbound"
                         }
                     ]
                 },
@@ -972,7 +972,7 @@
                         ]
                     },
                     "distanceToNextM": 245,
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 },
                 {
                     "id": "prospect_grosvenor",
@@ -986,7 +986,7 @@
                             "all"
                         ]
                     },
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 }
             ],
             "targetSpeedKph": 60,
@@ -1027,7 +1027,7 @@
                         ]
                     },
                     "distanceToNextM": 245,
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 },
                 {
                     "id": "south_grosvenor",
@@ -1042,7 +1042,7 @@
                         ]
                     },
                     "distanceToNextM": null,
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 }
             ],
             "targetSpeedKph": 60,
@@ -1076,7 +1076,7 @@
                     "name": "South & Jan Shoba",
                     "laneUse": {
                         "eastbound": [
-                            "all"
+                            "left_straight"
                         ],
                         "westbound": [
                             "all"
@@ -1098,8 +1098,8 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "northbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "northbound"
                         }
                     ]
                 }
@@ -1149,20 +1149,20 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "westbound",
+                            "weight": 2,
                             "movement": "right",
-                            "weight": 2
+                            "direction": "westbound"
                         },
                         {
-                            "direction": "eastbound",
+                            "weight": 2,
                             "movement": "right",
-                            "weight": 2
+                            "direction": "eastbound"
                         }
                     ],
                     "slipLanes": [
                         {
-                            "direction": "southbound",
-                            "backM": 13.7
+                            "backM": 13.7,
+                            "direction": "southbound"
                         }
                     ]
                 }
@@ -1274,8 +1274,8 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "westbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "westbound"
                         }
                     ],
                     "distanceToNextM": 250
@@ -1318,16 +1318,16 @@
                     "distanceToNextM": 280.5,
                     "turnPhases": [
                         {
-                            "direction": "southbound",
-                            "movement": "left"
+                            "movement": "left",
+                            "direction": "southbound"
                         },
                         {
-                            "direction": "westbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "westbound"
                         },
                         {
-                            "direction": "northbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "northbound"
                         }
                     ]
                 },
@@ -1360,8 +1360,8 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "westbound",
-                            "movement": "right"
+                            "movement": "right",
+                            "direction": "westbound"
                         }
                     ],
                     "distanceToNextM": 280.5
@@ -1403,28 +1403,28 @@
                     },
                     "turnPhases": [
                         {
-                            "direction": "southbound",
-                            "movement": "left"
+                            "movement": "left",
+                            "direction": "southbound"
                         },
                         {
-                            "direction": "eastbound",
+                            "weight": 2,
                             "movement": "right",
-                            "weight": 2
+                            "direction": "eastbound"
                         },
                         {
-                            "direction": "westbound",
+                            "weight": 2,
                             "movement": "right",
-                            "weight": 2
+                            "direction": "westbound"
                         },
                         {
-                            "direction": "northbound",
-                            "movement": "left"
+                            "movement": "left",
+                            "direction": "northbound"
                         }
                     ],
                     "slipLanes": [
                         {
-                            "direction": "eastbound",
-                            "backM": 13.6
+                            "backM": 13.6,
+                            "direction": "eastbound"
                         }
                     ]
                 }
@@ -1467,7 +1467,7 @@
                             "all"
                         ]
                     },
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 }
             ],
             "targetSpeedKph": 60,
@@ -1510,7 +1510,7 @@
                             "all"
                         ]
                     },
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 }
             ],
             "zone": 1
@@ -1551,7 +1551,7 @@
                             "all"
                         ]
                     },
-                    "roundaboutDiameterM": 36
+                    "roundaboutDiameterM": 30.4
                 }
             ],
             "zone": 1
@@ -1708,7 +1708,7 @@
                 }
             },
             "stubEndM": 200,
-            "stubStartM": 156,
+            "stubStartM": 243,
             "turnChance": 0.18,
             "crossChance": 0.2,
             "targetSpeedKph": 60,
@@ -1756,7 +1756,7 @@
                 },
                 {
                     "xM": 735,
-                    "yM": 431
+                    "yM": 432
                 }
             ],
             "lanes": 3,
@@ -1851,11 +1851,11 @@
                 "south_janshoba": {
                     "northbound": [
                         "left_straight",
-                        "straight_right"
+                        "straight"
                     ],
                     "southbound": [
                         "left_straight",
-                        "straight_right"
+                        "straight"
                     ]
                 },
                 "burnett_janshoba": {
@@ -1950,7 +1950,7 @@
                     "southbound": {
                         "left": {
                             "laneUse": "left",
-                            "lengthM": 20
+                            "lengthM": 42
                         },
                         "right": {
                             "laneUse": "right",

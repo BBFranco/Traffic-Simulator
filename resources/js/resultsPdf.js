@@ -706,7 +706,6 @@ function drawCover(report, data, variants, corridorLayout) {
         ['Batch runs', totalRuns.toLocaleString(), 1],
         ['Conditions', String(conditions), 1],
         ['Reps / condition', conditions ? String(Math.round(totalRuns / conditions)) : 'n/a', 1],
-        ['Outage window', outageWindowCard(data), 1.9],
         ['Warm-up', data.batchWarmupLabel ?? 'n/a', 1],
     ];
 
@@ -723,18 +722,19 @@ function drawCover(report, data, variants, corridorLayout) {
         doc.roundedRect(x, 74, boxWidth, 20, 2, 2, 'FD');
         doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...COLOURS.muted);
         doc.text(label.toUpperCase(), x + 3, 80);
-        // A two-line value (the outage card's two schedules) drops to a size that fits the card.
-        const lines = value.split('\n');
-        doc.setFont('helvetica', 'bold').setFontSize(lines.length > 1 ? 8.5 : 14).setTextColor(...COLOURS.ink);
-        doc.text(lines, x + 3, lines.length > 1 ? 85 : 89);
+        doc.setFont('helvetica', 'bold').setFontSize(14).setTextColor(...COLOURS.ink);
+        doc.text(value, x + 3, 89);
         x += boxWidth + 4;
     });
-    if (runsByPower.length) {
-        doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.secondary);
-        doc.text(`Runs by power state: ${runsByPower.map(([power, runs]) => `${powerLabel(power)} ${runs.toLocaleString()}`).join(' · ')}`, PAGE.margin, 99);
-    }
+    // Under the cards, full width: the schedule outgrows a card (and grows longer with multi-hour outages).
+    const coverLines = [
+        runsByPower.length ? `Runs by power state: ${runsByPower.map(([power, runs]) => `${powerLabel(power)} ${runs.toLocaleString()}`).join(' · ')}` : null,
+        outageScheduleLine(data),
+    ].filter(Boolean);
+    doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.secondary);
+    coverLines.forEach((line, i) => doc.text(doc.splitTextToSize(line, CONTENT_WIDTH)[0], PAGE.margin, 99 + i * 4));
 
-    report.y = 104;
+    report.y = 100 + coverLines.length * 4;
     if (data.lockupLabel) {
         doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
         const warning = doc.splitTextToSize(
@@ -807,21 +807,21 @@ function drawCover(report, data, variants, corridorLayout) {
 }
 
 /**
- * The outage card: "Total 15–30 min" and "Rolling Z1+3 15–30, Z2 30–45" on two lines, built from the batch's own schedules
- * (outage minutes and rollingSchedule) - only the states the batch ran.
+ * The cover's outage line, built from the batch's own schedules (outage minutes and rollingSchedule) - only the states
+ * the batch ran: "Outage schedule (minutes into the measured window): total blackout 15–30 · load shedding zones 1+3 15–30, zone 2 30–45".
  */
-function outageWindowCard(data) {
+function outageScheduleLine(data) {
     const stamp = data.batchStamp;
-    const lines = [];
-    if (stamp?.outageStartMinutes != null && stamp?.outageEndMinutes != null) lines.push(`Total ${stamp.outageStartMinutes}–${stamp.outageEndMinutes} min`);
+    const parts = [];
+    if (stamp?.outageStartMinutes != null && stamp?.outageEndMinutes != null) parts.push(`total blackout ${stamp.outageStartMinutes}–${stamp.outageEndMinutes}`);
     if (stamp?.rollingSchedule?.length) {
-        lines.push(`Load shedding ${stamp.rollingSchedule.map((w) => `Z${(w.zones ?? []).join('+')} ${minute(w.fromS)}–${minute(w.toS)}`).join(', ')}`);
+        parts.push(`load shedding ${stamp.rollingSchedule.map((w) => `zone${(w.zones ?? []).length > 1 ? 's' : ''} ${(w.zones ?? []).join('+')} ${minute(w.fromS)}–${minute(w.toS)}`).join(', ')}`);
     }
-    if (lines.length) return lines.join('\n');
+    if (parts.length) return `Outage schedule (minutes into the measured window): ${parts.join(' · ')}`;
 
     // An unstamped batch: the recovery timeline's band, as before.
     const timeline = data.recoveryTimeline;
-    return timeline?.sheddingStart != null ? `${Math.round(timeline.sheddingStart)}-${Math.round(timeline.sheddingEnd)} s` : 'n/a';
+    return timeline?.sheddingStart != null ? `Outage window: ${Math.round(timeline.sheddingStart)}–${Math.round(timeline.sheddingEnd)} s` : null;
 }
 
 /** The zone figure's key: one swatch per zone in its tint, and how the untinted vertical roads are counted. */
@@ -1656,7 +1656,7 @@ function drawMethodNotes(report, data, number) {
         `Zone wait is charged by junction (${stamp?.zoneAccounting ?? 'by-junction-v1'}): a car's wait goes to the zone of the junction it is queuing for - the junction at the end of its lane, or the one it is in. So Jan Shoba's queue at a zone 2 junction is zone 2 wait. This is unlike the total, main-arterial and side-street scopes, which are charged by road. A trip through several zones is in each, with only the wait it built up there, so the zone scopes overlap and don't sum to the total. Normal-power rows carry the zone figures too, as their baselines.`,
         `Recovery: the total, main-arterial and side-street scopes are timed from the FINAL restore (minute ${minute(restoreSeconds(data, 'rolling_blackout', SCOPES[0]) ?? 2700)} under load shedding); each zone from its own restore. Zones 1 and 3 come back while zone 2 is still dark next to them, so their recovery includes spillback from zone 2 and is not comparable to total-blackout recovery.`,
         `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout and for load-shedding zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for load-shedding zone 2 and the load-shedding total, main-arterial and side-street scopes. The caps differ because each is the whole time left after its own restore - one shared cap would cut the total blackout short or run past the end of the load-shedding window. So recovery figures compare controllers within a section only, never across sections: a capped mean under a 60-minute cap and one under 45 minutes are not on the same scale.`,
-        'Outage window card on the cover: "Total" is the total blackout\'s dark minutes; "Load shedding Z1+3 15–30, Z2 30–45" reads zones 1 and 3 dark minutes 15-30, then zone 2 dark minutes 30-45 - minutes into the measured window.',
+        'Outage schedule on the cover: the total blackout\'s dark minutes, and for load shedding which zones are dark when - e.g. "zones 1+3 15–30, zone 2 30–45" reads zones 1 and 3 dark minutes 15-30, then zone 2 dark minutes 30-45 - minutes into the measured window.',
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state, so each outage section carries its own normal-power baseline rows. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where both sides recover throughput within 30 s, its delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',

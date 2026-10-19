@@ -36,6 +36,12 @@ import { carRenderPoint } from './car.js';
 export const LOCKUP_STILL_S = 300;
 /** Cars in a waits-on cycle that have all stood this long are a lockup - the cycle names it before the standstill limit. */
 export const CYCLE_HELD_S = 60;
+/**
+ * A chain must read stuck this many seconds running before it counts as locked. The car at a queue's head that is being
+ * released - a turner that has just found its gap, still under STILL_SPEED_MPS for a second or two with nothing to wait
+ * on - would otherwise flag the whole queue behind it as locked for the moment it takes to pull away.
+ */
+export const LOCK_CONFIRM_S = 10;
 /** Below this a car counts as standing still. */
 const STILL_SPEED_MPS = 0.1;
 const CHECK_EVERY_S = 1;
@@ -54,6 +60,8 @@ export class LockupWatch {
     constructor(engine) {
         this.engine = engine;
         this.stillSinceS = new Map();
+        /** Car id -> when its waits-on chain first read stuck, for the cars whose chain still does. */
+        this.stuckSinceS = new Map();
         this.nextCheckS = 0;
         this.resetRecord();
     }
@@ -82,13 +90,19 @@ export class LockupWatch {
 
         const stillS = (car) => nowS - (stillSinceS.get(car.id) ?? nowS);
         const waitsOn = new Map(cars.map((entry) => [entry.car, entry.waitsOn]));
+        const stuckSinceS = new Map();
         for (const { car } of cars) {
             const seconds = stillS(car);
             if (seconds > 0 && seconds > (this.longest?.seconds ?? 0)) this.longest = { seconds, ...this._describe(car), atS: nowS };
             if (seconds < LOCKUP_STILL_S) continue;
-            const key = this._chainStuck(car, waitsOn, stillS) ? 'longestLocked' : 'longestStarved';
+            const stuck = this._chainStuck(car, waitsOn, stillS);
+            if (stuck) stuckSinceS.set(car.id, this.stuckSinceS.get(car.id) ?? nowS);
+            // A chain that has only just read stuck is a release in progress, not yet a lockup.
+            if (stuck && nowS - stuckSinceS.get(car.id) < LOCK_CONFIRM_S) continue;
+            const key = stuck ? 'longestLocked' : 'longestStarved';
             if (seconds > (this[key]?.seconds ?? 0)) this[key] = { seconds, ...this._describe(car), atS: nowS };
         }
+        this.stuckSinceS = stuckSinceS;
         this._findCycles(cars, nowS);
     }
 
@@ -191,7 +205,7 @@ export class LockupWatch {
                 if (!entry || !info.roundaboutExitHeld.has(arrival.car) || !arrival.gate) continue;
                 const target = engine._roundaboutTarget(arrival.car, arrival.gate);
                 if (!target) continue;
-                const exitDistanceM = target.centreM + info.node.roundabout.radiusM + ROUNDABOUT_EXIT_RUN_M;
+                const exitDistanceM = target.centreM + info.node.roundabout.mouthM + ROUNDABOUT_EXIT_RUN_M;
                 entry.waitsOn = blockerAt(target.lanes[target.laneIndex], exitDistanceM, arrival.car.lengthM) ?? entry.waitsOn;
             }
         }

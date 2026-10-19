@@ -2,7 +2,7 @@
 // behind a queue that still moves is starved (saturation) - Franco's call, 2026-10-09.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LockupWatch, LOCKUP_STILL_S } from '../../resources/js/sim/lockupWatch.js';
+import { LockupWatch, LOCKUP_STILL_S, LOCK_CONFIRM_S } from '../../resources/js/sim/lockupWatch.js';
 import { buildPolylinePath } from '../../resources/js/sim/car.js';
 
 /** A car going round junction n1 - a turn path is all the watch needs to place it. */
@@ -48,10 +48,21 @@ test('a car stood behind a queue that is stuck as long is a lockup', () => {
     const behind = ringCar(2);
     behind.waitsOn = head;
 
-    const report = watchFor(fakeEngine([head, behind]), LOCKUP_STILL_S);
+    const report = watchFor(fakeEngine([head, behind]), LOCKUP_STILL_S + LOCK_CONFIRM_S);
     assert.equal(report.isLockup, true);
-    assert.equal(report.locked.seconds, LOCKUP_STILL_S);
+    assert.equal(report.locked.seconds, LOCKUP_STILL_S + LOCK_CONFIRM_S);
     assert.equal(report.starved, null);
+});
+
+test('a queue whose head is released the moment it reads stuck is not a lockup', () => {
+    const head = ringCar(1);
+    const behind = ringCar(2);
+    behind.waitsOn = head;
+
+    // The head has stood LOCKUP_STILL_S and pulls away: the chain read stuck for only a couple of seconds.
+    const report = watchFor(fakeEngine([head, behind]), LOCKUP_STILL_S + LOCK_CONFIRM_S - 2);
+    assert.equal(report.isLockup, false);
+    assert.equal(report.locked, null);
 });
 
 test('a car stood behind a queue that still moves is starved, not a lockup', () => {

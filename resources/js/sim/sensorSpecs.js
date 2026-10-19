@@ -118,7 +118,7 @@ const FIELD = {
             source: 'assumed - stop-bar pucks laid to cover the same 0-8 m presence footprint as the loop',
         },
         queue: null,
-        advance: [{ centreM: 30, lengthM: 2, source: 'tuned - one advance puck 30 m upstream (about 2 s at 50-60 km/h), sensing about 2 m; no published placement exists, so the distance was chosen by test runs. Sensor modelled on Sensys Networks FlexMag (product page, FlexMag Flush and Deep Sensors datasheet): 3-axis magnetometer, 32/128 Hz sampling, advance-detection mode' }],
+        advance: [{ centreM: 30, lengthM: 2, source: 'assumed, tuned - one advance puck 30 m upstream (about 2 s at 50-60 km/h), sensing about 2 m; no published placement exists, so the distance was chosen by test runs. Sensor modelled on Sensys Networks FlexMag (product page, FlexMag Flush and Deep Sensors datasheet): 3-axis magnetometer, 32/128 Hz sampling, advance-detection mode' }],
         footprint: 'body',
         outputs: { presence: true, count: null, queueExtent: true, speed: false },
         samplePeriodS: 1 / 128, // 7.8 ms

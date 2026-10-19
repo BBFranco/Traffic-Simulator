@@ -103,6 +103,12 @@ class UserCorridorLayouts
         $layout->update(['config' => $config]);
     }
 
+    /** Overwrites the template file of the same id with the layout, so batches run on it. False if there is no such template. */
+    public function publishToTemplate(CorridorLayout $layout): bool
+    {
+        return $this->templates->replace($layout->slug, $this->copy($layout->config));
+    }
+
     /** Puts back the layout as it was imported. False if it has no edits. */
     public function revert(CorridorLayout $layout): bool
     {

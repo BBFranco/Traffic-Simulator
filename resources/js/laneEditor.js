@@ -27,6 +27,7 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
         save: document.getElementById('lane-edit-save'),
         discard: document.getElementById('lane-edit-discard'),
         revert: document.getElementById('lane-edit-revert'),
+        publish: document.getElementById('lane-edit-publish'),
     };
 
     let isOpen = false;
@@ -74,6 +75,7 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
         el.save.disabled = isBusy || !dirtyCount;
         el.discard.disabled = isBusy || !dirtyCount;
         el.revert.disabled = isBusy || !corridorDescriptor()?.hasEdits;
+        el.publish.disabled = isBusy || dirtyCount > 0;
         el.status.textContent =
             message ??
             (dirtyCount
@@ -219,6 +221,27 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
         }
     }
 
+    async function publish() {
+        // eslint-disable-next-line no-alert
+        if (!window.confirm('Overwrite the template file this layout is run from (corridors/*.json) with your whole saved layout - lane arrows, turn lanes, geometry and destination tiers? Every batch, the Results page and the Traffic Counter then use this layout, and the previous file contents are replaced - recoverable only through git.')) return;
+        isBusy = true;
+        render('Overwriting the template…');
+        try {
+            const response = await fetch(boot.publishTemplateUrlTemplate.replace('__ID__', encodeURIComponent(getCorridorId())), {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '' },
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.message ?? `HTTP ${response.status}`);
+            isBusy = false;
+            render('Template overwritten - batches now run on this layout');
+            logChange('lane-use', 'overwrote the template with the saved layout');
+        } catch (error) {
+            isBusy = false;
+            render(`Overwrite failed: ${error.message}`);
+        }
+    }
+
     function discard() {
         let isTurnLaneChanged = false;
         for (const approach of approaches()) {
@@ -259,6 +282,7 @@ export function createLaneEditor({ canvas, tooltip, renderer, boot, getLayout, g
     el.save.addEventListener('click', save);
     el.discard.addEventListener('click', discard);
     el.revert.addEventListener('click', revert);
+    el.publish.addEventListener('click', publish);
 
     canvas.addEventListener('contextmenu', (event) => {
         if (!isOpen) return;

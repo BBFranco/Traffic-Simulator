@@ -36,6 +36,10 @@ function turnLaneArrowDistances(lengthM) {
     return fitting.length ? fitting : [Math.max(ARROW_HEAD_M + 0.5, lengthM - ARROW_TAIL_M - 0.5)];
 }
 
+function hasTurnLane(approach) {
+    return TURN_LANE_SIDES.some((side) => approach.turnLanes?.[side]);
+}
+
 /** Every lane of `approach` with the distances its arrows sit at: lane indices, then 'left'/'right' for its turn lanes. */
 function arrowLanes(approach) {
     // An approach fed by a narrower road only has the lanes that road lines up with (corridor.js's coveredLanes).
@@ -96,14 +100,14 @@ export function laneArrowShapes(layout, filter = null) {
 /**
  * Click targets for the lane-arrow editor: every painted arrow's centre, with
  * the approach and lane (index, or 'left'/'right' for a turn lane) it belongs
- * to. A single-lane approach's own lane always allows everything, so only its
- * turn lanes are targets there.
+ * to. A single-lane approach's own lane allows everything unless it has a turn
+ * lane beside it, so it is a target only then (the turn lane can take a movement off it).
  */
 export function laneArrowTargets(layout) {
     const targets = [];
     for (const approach of markedApproaches(layout)) {
         for (const { lane, distances } of arrowLanes(approach)) {
-            if (typeof lane === 'number' && approach.lanes < 2) continue;
+            if (typeof lane === 'number' && approach.lanes < 2 && !hasTurnLane(approach)) continue;
             for (const backM of distances) targets.push({ approach, lane, point: arrowFrame(approach, lane, backM).at(-1, 0) });
         }
     }

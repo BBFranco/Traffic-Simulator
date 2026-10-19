@@ -179,26 +179,141 @@ function parseControl(raw, label) {
     return control;
 }
 
-/** A roundabout's outside diameter when the intersection doesn't give `roundaboutDiameterM` (m). */
-export const DEFAULT_ROUNDABOUT_DIAMETER_M = 36;
-/** Width of a roundabout's circulating carriageway, kerb to island (m) - the island fills the rest. */
-export const ROUNDABOUT_RING_WIDTH_M = 7;
+/** A roundabout's outside diameter when the intersection doesn't give `roundaboutDiameterM` (m): an 11 m island plus the ring. */
+export const DEFAULT_ROUNDABOUT_DIAMETER_M = 30.4;
+/** Width of a roundabout's circulating carriageway, kerb to island (m) - 1.2 lanes of 3.5 m, as on Hatfield's roundabouts. The island fills the rest. */
+export const ROUNDABOUT_RING_WIDTH_M = 4.2;
+/** How far a splitter island reaches back up a two-way approach from the roundabout's outside circle (m) - the yield line sits at its tip. */
+export const SPLITTER_ISLAND_LENGTH_M = 6;
+/** A splitter island's width where it meets the outside circle (m) - at least the road's median. Its in and out lanes flare round it. */
+export const SPLITTER_ISLAND_BASE_M = 3;
 
 /**
  * A roundabout's footprint, `node.roundabout`: the outside circle (`radiusM`),
- * the island in the middle (`islandRadiusM`) and the line cars drive round on
- * (`circulatingRadiusM`, mid-ring). Never smaller than the junction box would
- * be. Every approach's yield line is pulled back to the outside circle.
+ * the island in the middle (`islandRadiusM`), the line cars drive round on
+ * (`circulatingRadiusM`, mid-ring) and the yield line's distance from the
+ * centre (`mouthM`, the splitter islands' tips). Never smaller than the
+ * junction box would be. Every approach's yield line is pulled back to the
+ * mouth; between it and the circle each lane flares out round its splitter.
  */
 function shapeRoundabout(node) {
     const boxRadiusM = Math.hypot(node.crossRoadWidthM, node.arterialRoadWidthM) / 2;
     const radiusM = Math.max((node.rawRoundaboutDiameterM ?? DEFAULT_ROUNDABOUT_DIAMETER_M) / 2, boxRadiusM + 2);
     const islandRadiusM = Math.max(1, radiusM - ROUNDABOUT_RING_WIDTH_M);
-    node.roundabout = { radiusM, islandRadiusM, circulatingRadiusM: (radiusM + islandRadiusM) / 2 };
+    const mouthM = radiusM + SPLITTER_ISLAND_LENGTH_M;
+    node.roundabout = { radiusM, islandRadiusM, circulatingRadiusM: (radiusM + islandRadiusM) / 2, mouthM };
     node.stopLineBackM = {
-        arterial: Math.max(node.stopLineBackM.arterial, radiusM - node.crossRoadWidthM / 2),
-        cross: Math.max(node.stopLineBackM.cross, radiusM - node.arterialRoadWidthM / 2),
+        arterial: Math.max(node.stopLineBackM.arterial, mouthM - node.crossRoadWidthM / 2),
+        cross: Math.max(node.stopLineBackM.cross, mouthM - node.arterialRoadWidthM / 2),
     };
+}
+
+/** The approach on the roundabout arm `p` lies out along (the one whose road points that way from the centre). */
+function roundaboutArmAt(node, p) {
+    const dx = p.x - node.point.x;
+    const dy = p.y - node.point.y;
+    let best = null;
+    let bestDot = -Infinity;
+    for (const approach of node.approaches) {
+        const dot = -(approach.heading.x * dx + approach.heading.y * dy);
+        if (dot > bestDot) {
+            bestDot = dot;
+            best = approach;
+        }
+    }
+    return best;
+}
+
+/** How far a two-way arm's lanes flare out, each side, round its splitter island at the circle (m) - none on a one-way arm. */
+function splitterFlareM(approach) {
+    if (!approach || approach.oneWay) return 0;
+    return Math.max(0, SPLITTER_ISLAND_BASE_M - approach.medianWidthM) / 2;
+}
+
+/**
+ * Where a lane of a roundabout arm meets the outside circle: `p` is any point
+ * on that lane, the result the same lane just inside the circle, pushed out
+ * round the arm's splitter island - so a car's way in or out
+ * (engine.js#_roundaboutPath()) runs between the island and the flared kerb.
+ */
+export function roundaboutRimPoint(node, p) {
+    const approach = roundaboutArmAt(node, p);
+    const out = negate(approach.heading);
+    const dx = p.x - node.point.x;
+    const dy = p.y - node.point.y;
+    const along = dx * out.x + dy * out.y;
+    const perp = { x: dx - out.x * along, y: dy - out.y * along };
+    const perpM = Math.hypot(perp.x, perp.y);
+    const offsetM = perpM + splitterFlareM(approach);
+    const unit = perpM > 1e-6 ? { x: perp.x / perpM, y: perp.y / perpM } : { x: 0, y: 0 };
+    const rimM = Math.sqrt(Math.max(0, node.roundabout.radiusM ** 2 - offsetM ** 2)) - 0.5;
+    return add(add(node.point, out, rimM), unit, offsetM);
+}
+
+/**
+ * The triangular splitter islands of a roundabout, drawn only (cars drive round
+ * them on their ways in and out): one on every two-way approach, between its in
+ * and out halves, its base on the outside circle and its tip at the yield line.
+ * Each is `[baseA, baseB, tip]`.
+ */
+export function roundaboutSplitterIslands(node) {
+    if (!node.roundabout) return [];
+    const { radiusM, mouthM } = node.roundabout;
+    return node.approaches
+        .filter((approach) => !approach.oneWay)
+        .map((approach) => {
+            const out = negate(approach.heading);
+            const side = leftNormal(out);
+            const halfBaseM = Math.max(SPLITTER_ISLAND_BASE_M, approach.medianWidthM) / 2;
+            const base = add(node.point, out, Math.sqrt(radiusM ** 2 - halfBaseM ** 2));
+            return [add(base, side, halfBaseM), add(base, side, -halfBaseM), add(node.point, out, mouthM)];
+        });
+}
+
+/** How far a flare reaches back inside the road's own kerb (m), so it paints out the straight kerb and edge line it replaces. */
+const FLARE_KERB_COVER_M = 0.4;
+
+/** How far before the yield line a flare's kerb starts to curve out (m). */
+const FLARE_LEAD_M = 4;
+/** Points along a flare's curved kerb. */
+const FLARE_SAMPLES = 12;
+
+/**
+ * The extra road either side of a roundabout's two-way arms where the lanes flare
+ * round the splitter island: the kerb leaves the road's straight edge
+ * FLARE_LEAD_M before the yield line and curves out (easing in, tangent to the
+ * old kerb) to the island's half-base at the circle, tucked a metre under it.
+ * Always outside a car's way in or out (roundaboutRimPoint()), which only starts
+ * flaring at the yield line. Each is `{ kerb, strip }`: the new kerb, yield-line
+ * end first, and per kerb point the matching point back inside the old kerb, so
+ * the tarmac between them also paints out the straight kerb line it replaces.
+ */
+export function roundaboutFlares(node) {
+    if (!node.roundabout) return [];
+    const { radiusM, mouthM } = node.roundabout;
+    const startM = mouthM + FLARE_LEAD_M;
+    const endM = radiusM - 1;
+    const flares = [];
+    for (const approach of node.approaches) {
+        const flareM = splitterFlareM(approach);
+        if (!flareM) continue;
+        const out = negate(approach.heading);
+        const side = leftNormal(out);
+        const edgeM = approach.roadWidthM / 2;
+        for (const sign of [1, -1]) {
+            const at = (distanceM, offsetM) => add(add(node.point, out, distanceM), side, sign * offsetM);
+            const kerb = [];
+            const strip = [];
+            for (let i = 0; i <= FLARE_SAMPLES; i += 1) {
+                const t = i / FLARE_SAMPLES;
+                const distanceM = startM + (endM - startM) * t;
+                kerb.push(at(distanceM, edgeM + flareM * t * t));
+                strip.push(at(distanceM, edgeM - FLARE_KERB_COVER_M));
+            }
+            flares.push({ kerb, strip });
+        }
+    }
+    return flares;
 }
 
 /** Nearest compass direction of a heading - how a connector's `laneUse` names each direction of travel. */
@@ -1509,6 +1624,9 @@ function makeApproach({ id, kind, label, node, heading, lanes, roadWidthM, media
         heading,
         lanes,
         roadWidthM,
+        /** A one-way road's approach spans the carriageway; a two-way road's only its left half. */
+        oneWay,
+        medianWidthM,
         setbackM,
         stopLine,
         stopCentre,

@@ -25,6 +25,7 @@ class RoadEditorComposer
                 // The shared template batches run on - Destinations warns when the user's layout differs from it.
                 'templateUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
                 'laneUseUrlTemplate' => route('corridors.lane-use.update', ['corridor' => '__ID__']),
+                'publishTemplateUrlTemplate' => route('corridors.publish-template', ['corridor' => '__ID__']),
                 'routingTiersUrlTemplate' => route('corridors.routing-tiers.update', ['corridor' => '__ID__']),
                 'importUrl' => route('corridors.store'),
                 'deleteUrlTemplate' => route('corridors.destroy', ['corridor' => '__ID__']),

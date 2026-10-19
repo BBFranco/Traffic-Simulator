@@ -54,7 +54,7 @@ import { carShapeFor } from './carShapes.js';
 import { observeDetector, emptyFrame, applyErrors, countWithNoise, sensorAvailable } from './sensors.js';
 import { sensorSpecFor, latencyTicks, DEFAULT_SENSOR_SPEC_SET } from './sensorSpecs.js';
 import { isOtherCallSufficient, legacyCallSufficient } from './demandEstimator.js';
-import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection } from './corridor.js';
+import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection, roundaboutRimPoint } from './corridor.js';
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
 import { LockupWatch } from './lockupWatch.js';
@@ -568,13 +568,37 @@ function turnApproachSpeedLimit(car, movement, toStopM) {
 const ROUNDABOUT_MERGE_RAD = 0.45;
 /** A car coming round the ring this close to where another would join it, round the ring, takes priority (m) - about 3 s at roundabout speed. */
 const ROUNDABOUT_GAP_M = 20;
+/** Arc length (m) round a ring of `radiusM` for an angle, taken clockwise into [0, 2pi). */
+function ringArcM(rad, radiusM) {
+    return (((rad % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) * radiusM;
+}
+/** How far before leaving the ring a car starts watching the cars ahead of it on the way out into its lane (m) - _exitLegLeader(). */
+const ROUNDABOUT_EXIT_LOOK_M = 8;
+/** A car coming in that hasn't reached the circle yet waits for one going round that would reach its join within this (s). */
+const ROUNDABOUT_ENTRY_LOOK_S = 2.5;
+/** How far behind where `entrant` joins the ring a circulating `ringCar` is still in its way (m) - more for a long truck or bus, whose body sweeps the join. */
+function ringAlongsideM(entrant, ringCar) {
+    return Math.max(ROUNDABOUT_ALONGSIDE_M, (entrant.lengthM + ringCar.lengthM) / 2 + 0.5);
+}
+/** Extra gap (m of ring) a car needs per metre of entry leg between its yield line and the ring - it covers the leg from a standstill at about half ring speed. */
+const ROUNDABOUT_LEG_GAP_FACTOR = 2;
 /** Within this behind a car joining the ring (m), a circulating one is alongside it - still in the way. */
 const ROUNDABOUT_ALONGSIDE_M = 5;
 /** How far round the ring a car looks for one ahead to follow (m). */
 const RING_FOLLOW_M = 25;
 /** Spacing of the points along a car's way round a roundabout (m). */
 const ROUNDABOUT_PATH_STEP_M = 1.5;
-/** How far past a roundabout's circle a car rejoins its exit road's lane (m). */
+/**
+ * How close to its yield line a car let into a roundabout gets before it leaves its lane for its way round (m). Any
+ * further back and its way in starts short of the line, so one stopped just over it sits where the next car in the
+ * lane - which only stops at the line - pulls up into it.
+ */
+const ROUNDABOUT_HOP_M = 0.5;
+/** How far back from a roundabout's yield line a lane car looks for the last car let in from its lane (m) - _roundaboutEntryTail(). */
+const ROUNDABOUT_ENTRY_TAIL_REACH_M = 60;
+/** Plus the ground it covers in this long (s) - more than a tick - so one arriving at speed can't step over the line between ticks and miss its turn. */
+const ROUNDABOUT_HOP_LOOKAHEAD_S = 0.3;
+/** How far past a roundabout's yield line (its splitter islands' tips) a car rejoins its exit road's lane (m). */
 const ROUNDABOUT_EXIT_RUN_M = 3;
 
 /** Slack (radians) when sorting a roundabout's arms by angle, so a slightly skewed arm still counts as the one it is. */
@@ -1257,6 +1281,8 @@ export class SimulationEngine {
         this.letIn = new Map();
         /** Turn path key -> the turn plan held longest at its stop line for it (_turnHeldForOther()). */
         this.turnClaims = new Map();
+        /** Landing lane -> the turn plans held for room in it, each with where it lands (_turnHeldForOther()). */
+        this.landingClaims = new Map();
         // Combined side-street (all connectors) wait/throughput stats - one bucket, not
         // one per connector, since nothing downstream needs per-connector granularity.
         this.sideStreetStats = { clearedTotal: 0, clearedWithoutStopTotal: 0, waitSumTotal: 0, recentClears: [] };
@@ -2686,7 +2712,8 @@ export class SimulationEngine {
                 const signalAhead = this._signalAheadFor(gates, car);
                 const pickupAhead = this._taxiPickupObstacle(carriageway, car, dt);
                 const joinAhead = i === 0 ? this._joinObstacle(carriageway.id, car) : null;
-                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(carriageway.id, state, lane, car));
+                const entryTail = this._roundaboutEntryTail(this._nearestNodeAhead(gates, car), car);
+                const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, signalAhead), pickupAhead), joinAhead), entryTail), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(carriageway.id, state, lane, car));
                 const speedLimitMps = Math.min(this._turnApproachSpeedLimit(gates, car), this._drivewaySpeedLimit(car));
                 if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                 car.steppedTick = this.tickNo;
@@ -3039,7 +3066,8 @@ export class SimulationEngine {
                     const car = lane.cars[i];
                     const realAhead = i > 0 ? lane.cars[i - 1] : null;
                     const joinAhead = i === 0 ? this._joinObstacle(roadKey, car) : null;
-                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(roadKey, dirState, lane, car));
+                    const entryTail = this._roundaboutEntryTail(this._nextGate(dir, car), car);
+                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), entryTail), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(roadKey, dirState, lane, car));
                     const speedLimitMps = Math.min(this._connectorTurnApproachSpeedLimit(dir, car), this._drivewaySpeedLimit(car));
                     if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                     car.steppedTick = this.tickNo;
@@ -3183,6 +3211,7 @@ export class SimulationEngine {
         car.turnPlan = this._resolvePlanAtStopLine(car, nodeId, gate.slotLaneUse, gate.turnOptions, car.turnPlan);
         const ringTarget = gate.info.controllerType === 'roundabout' ? this._roundaboutTarget(car, gate) : null;
         if (ringTarget) {
+            if (!this._atRoundaboutHop(car, gate.stopLineDistanceM - car.distanceM)) return false; // let in: drive on up to the yield line first
             if (this._driveIntoRoundabout(car, gate, ringTarget)) return true;
             this._holdForTurn(car, nodeId, false); // its way out is backed up - wait at the yield line
             return false;
@@ -3239,7 +3268,7 @@ export class SimulationEngine {
         const { laneIndex, exitDistanceM } = landing;
         const pathKey = `${node.id}:${connector.id}:${dirKey}->${carriageway.id}:${laneIndex}`;
 
-        if (this._turnHeldForOther(car, pathKey)) return false;
+        if (this._turnHeldForOther(car, pathKey, landing.lanes[laneIndex], exitDistanceM)) return false;
         const turnAhead = this.turningCars.some((c) => c.turnPath.key === pathKey && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (turnAhead) return false;
         if (this._turnExitBlocked(landing.lanes, laneIndex, exitDistanceM, car.lengthM)) {
@@ -3613,7 +3642,7 @@ export class SimulationEngine {
         if (!gate || car.turnPlan?.nodeId !== info.node.id) return false;
         const target = this._roundaboutTarget(car, gate);
         if (!target) return false;
-        return this._turnExitBlocked(target.lanes, target.laneIndex, target.centreM + info.node.roundabout.radiusM + ROUNDABOUT_EXIT_RUN_M, car.lengthM);
+        return this._turnExitBlocked(target.lanes, target.laneIndex, target.centreM + info.node.roundabout.mouthM + ROUNDABOUT_EXIT_RUN_M, car.lengthM);
     }
 
     /**
@@ -3630,11 +3659,12 @@ export class SimulationEngine {
         );
         const joinAngle = info.roundaboutJoinAngles.get(approachId);
         const alongsideRad = ROUNDABOUT_ALONGSIDE_M / circulatingRadiusM;
+        const gapM = ROUNDABOUT_GAP_M + (node.roundabout.mouthM - node.roundabout.radiusM) * ROUNDABOUT_LEG_GAP_FACTOR;
         for (const occupant of info.roundaboutOccupants.values()) {
             if (!occupant.passes.has(approachId)) continue;
             const p = carRenderPoint(occupant.car);
             const toJoinRad = (((joinAngle - Math.atan2(p.y - node.point.y, p.x - node.point.x)) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-            if (toJoinRad * circulatingRadiusM <= ROUNDABOUT_GAP_M || toJoinRad >= 2 * Math.PI - alongsideRad) return true;
+            if (toJoinRad * circulatingRadiusM <= gapM || toJoinRad >= 2 * Math.PI - alongsideRad) return true;
         }
         return false;
     }
@@ -3771,6 +3801,34 @@ export class SimulationEngine {
     }
 
     /**
+     * The last car let into the roundabout at `gate` from `car`'s lane while it is still on its way in, as a car ahead
+     * in the lane's own frame. A car that has left its lane for its way round is otherwise invisible to the one behind,
+     * which would pull up to the yield line into its tail while it waits at the circle for a gap.
+     */
+    _roundaboutEntryTail(gate, car) {
+        if (gate?.info.controllerType !== 'roundabout' || !gate.approach || gate.stopLineDistanceM - car.distanceM > ROUNDABOUT_ENTRY_TAIL_REACH_M) return null;
+        const key = `${gate.node.id}:ring:${gate.approach.id}`;
+        let tail = null;
+        for (const other of this.turningCars) {
+            const path = other.turnPath;
+            if (path.key !== key || path.entryLane !== car.lane || other.distanceM >= path.ringEntryAtM) continue;
+            if (!tail || other.distanceM < tail.distanceM) tail = other;
+        }
+        if (!tail) return null;
+        const distanceM = tail.turnPath.entryFromM + tail.distanceM;
+        return distanceM > car.distanceM ? { distanceM, speedMps: tail.speedMps, lengthM: tail.lengthM } : null;
+    }
+
+    /**
+     * True once a car let into a roundabout is close enough to its yield line to leave its lane for its way round
+     * (ROUNDABOUT_HOP_M, plus what it covers before the next tick) - or is already held there waiting for room, wherever
+     * it stopped: _holdForTurn() pulls it up a little short of the line, and it must keep trying from there.
+     */
+    _atRoundaboutHop(car, toStopM) {
+        return car.turnPlan?.blockedSinceS != null || toStopM <= ROUNDABOUT_HOP_M + car.speedMps * ROUNDABOUT_HOP_LOOKAHEAD_S;
+    }
+
+    /**
      * Sends a car let into a roundabout round it (_roundaboutPath()) to
      * `target`. A car going straight on is the same car carrying on along its
      * own road (its wait and stop-line counts go with it); one turning off
@@ -3780,7 +3838,7 @@ export class SimulationEngine {
      */
     _driveIntoRoundabout(car, gate, target) {
         const { node } = gate;
-        const exitDistanceM = target.centreM + node.roundabout.radiusM + ROUNDABOUT_EXIT_RUN_M;
+        const exitDistanceM = target.centreM + node.roundabout.mouthM + ROUNDABOUT_EXIT_RUN_M;
         const key = `${node.id}:ring:${gate.approach.id}`;
         const entryAhead = this.turningCars.some((c) => c.turnPath.key === key && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (entryAhead || this._turnExitBlocked(target.lanes, target.laneIndex, exitDistanceM, car.lengthM)) return false;
@@ -3788,6 +3846,9 @@ export class SimulationEngine {
         const turnPath = {
             ...this._roundaboutPath(node, carWorldPoint(car), target.road, target.laneIndex, target.centreM, exitDistanceM),
             key,
+            /** Where it left its lane, in that lane's frame - the car behind still sees it there (_roundaboutEntryTail()). */
+            entryFromM: car.distanceM,
+            entryLane: car.lane,
             ...target.fields,
             movement: target.movement,
             exitDistanceM,
@@ -3823,34 +3884,38 @@ export class SimulationEngine {
     }
 
     /**
-     * A car's way round a roundabout: from where it is at the yield line onto
-     * the circulating line, clockwise round the island (left-hand traffic) to
-     * its exit, out across the ring into its lane at the circle's edge, and on to
+     * A car's way round a roundabout: from where it is at the yield line,
+     * flaring out round the splitter island to the circle's edge
+     * (roundaboutRimPoint()), onto the circulating line, clockwise round the
+     * island (left-hand traffic) to its exit, out across the ring and round
+     * that arm's splitter into its lane at the yield line, and on to
      * `exitDistanceM` along that road. Going straight on takes it half way
      * round, turning left a quarter, right three quarters.
      */
     _roundaboutPath(node, from, road, laneIndex, centreM, exitDistanceM) {
-        const { radiusM, circulatingRadiusM } = node.roundabout;
+        const { mouthM, circulatingRadiusM } = node.roundabout;
         const c = node.point;
-        const out = lanePoint(road, laneIndex, centreM + radiusM).point;
+        const rimIn = roundaboutRimPoint(node, from);
+        const mouthOut = lanePoint(road, laneIndex, centreM + mouthM).point;
+        const rimOut = roundaboutRimPoint(node, mouthOut);
         const end = lanePoint(road, laneIndex, exitDistanceM).point;
         const angleOf = (p) => Math.atan2(p.y - c.y, p.x - c.x);
-        const startAngle = angleOf(from);
+        const startAngle = angleOf(rimIn);
         // y points south, so a growing angle runs clockwise on the map.
-        let sweep = (((angleOf(out) - startAngle) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        let sweep = (((angleOf(rimOut) - startAngle) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
         if (sweep < 0.2) sweep += 2 * Math.PI; // back out the way it came: once round
         const lead = Math.min(ROUNDABOUT_MERGE_RAD, sweep / 3);
         const arc = sweep - 2 * lead;
         const steps = Math.max(4, Math.ceil((arc * circulatingRadiusM) / ROUNDABOUT_PATH_STEP_M));
-        const points = [from];
+        const points = [from, rimIn];
         for (let i = 0; i <= steps; i += 1) {
             const angle = startAngle + lead + (arc * i) / steps;
             points.push({ x: c.x + Math.cos(angle) * circulatingRadiusM, y: c.y + Math.sin(angle) * circulatingRadiusM });
         }
-        points.push(out, end);
+        points.push(rimOut, mouthOut, end);
         const path = buildPolylinePath(points);
         // Where it reaches the circulating line and where it leaves it - before and after, it is on its own entry or exit leg.
-        return { ...path, ringEntryAtM: path.cumulative[1], ringExitAtM: path.cumulative[points.length - 3] };
+        return { ...path, ringEntryAtM: path.cumulative[2], ringEntryAngle: startAngle + lead, ringExitAtM: path.cumulative[points.length - 4] };
     }
 
     /** True if the roundabout at `info` keeps a car on `approachId` at its yield line right now - it has someone to give way to, or (`car`) its way out is backed up. */
@@ -4181,11 +4246,11 @@ export class SimulationEngine {
         const nearest = this._nearestNodeAhead(gates, car);
         if (!nearest) return null;
 
-        // A car waiting for a gap to make its turn holds at the stop line whatever the signal shows.
+        // A car waiting for a gap to make its turn holds at the stop line whatever the signal shows - or where it is, past it.
         if (car.turnPlan?.nodeId === nearest.node.id && car.turnPlan.blockedSinceS != null) {
             car.turnPlan.heldSeenTick = this.tickNo; // still held on its approach - see _letInActive()
             return {
-                distanceM: nearest.stopLineDistanceM,
+                distanceM: Math.max(nearest.stopLineDistanceM, car.distanceM),
                 speedMps: 0,
                 isSignal: true,
                 nodeId: nearest.node.id,
@@ -4220,7 +4285,11 @@ export class SimulationEngine {
     _nearestNodeAhead(gates, car) {
         let nearest = null;
         for (const gate of gates) {
-            if (gate.stopLineDistanceM <= car.distanceM) continue;
+            if (gate.stopLineDistanceM <= car.distanceM) {
+                // Rolled over a roundabout's yield line without going in: that roundabout is still the one ahead of it.
+                if (this._overranRoundabout(gate, car)) return gate;
+                continue;
+            }
             if (!nearest || gate.stopLineDistanceM < nearest.stopLineDistanceM) nearest = gate;
         }
         return nearest;
@@ -4335,6 +4404,7 @@ export class SimulationEngine {
         car.turnPlan = this._resolvePlanAtStopLine(car, nearest.node.id, nearest.slotLaneUse, nearest.turnOptions, plan);
         const ringTarget = nearest.info.controllerType === 'roundabout' ? this._roundaboutTarget(car, nearest) : null;
         if (ringTarget) {
+            if (!this._atRoundaboutHop(car, distanceToStop)) return false; // let in: drive on up to the yield line first
             if (this._driveIntoRoundabout(car, nearest, ringTarget)) return true;
             this._holdForTurn(car, nearest.node.id, false); // its way out is backed up - wait at the yield line
             return false;
@@ -4359,13 +4429,28 @@ export class SimulationEngine {
      * `car` waits while another car, held longer at its stop line for the same turn path, is still held there. Without
      * this the lane the step loop visits first takes every gap, and a pocket whose cars can't go straight instead
      * waits for good. "Still held" is the same stamp as a through-red let-in's (`heldSeenTick`, see _letInActive()).
+     *
+     * The same goes for turns on different paths that land in one spot of one lane (a right pocket off one way and a
+     * left off the other, into the same one-lane street): the lane lets in one waiting car at a time (_askToBeLetIn()),
+     * so whichever path the step loop visits last would otherwise take it every time and starve the other for minutes.
      */
-    _turnHeldForOther(car, pathKey) {
+    _turnHeldForOther(car, pathKey, landingLane, exitDistanceM) {
         const plan = car.turnPlan;
         const sinceS = plan.blockedSinceS ?? this.simTimeS;
+        const stillHeld = (other) => other !== plan && other.blockedSinceS != null && other.heldSeenTick >= this.tickNo - 1;
         const claim = this.turnClaims.get(pathKey);
-        const held = claim && claim !== plan && claim.blockedSinceS != null && claim.heldSeenTick >= this.tickNo - 1;
-        if (held && claim.blockedSinceS <= sinceS) return true;
+        if (claim && stillHeld(claim) && claim.blockedSinceS <= sinceS) return true;
+
+        const claims = (this.landingClaims.get(landingLane) ?? []).filter((c) => c.plan === plan || stillHeld(c.plan));
+        const roomM = car.lengthM + SPAWN_CLEARANCE_M;
+        const mine = claims.find((c) => c.plan === plan);
+        if (claims.some((c) => c.plan !== plan && Math.abs(c.exitDistanceM - exitDistanceM) < roomM * 2 && c.plan.blockedSinceS <= sinceS)) {
+            this.landingClaims.set(landingLane, claims);
+            return true;
+        }
+        if (mine) mine.exitDistanceM = exitDistanceM;
+        else claims.push({ plan, exitDistanceM });
+        this.landingClaims.set(landingLane, claims);
         this.turnClaims.set(pathKey, plan);
         return false;
     }
@@ -4412,7 +4497,7 @@ export class SimulationEngine {
         // Wait at the stop line while the car ahead on the same turn is still pulling away,
         // or the cross-street lane is occupied where this turn comes out - and, turning
         // right off a two-way arterial, for a gap in the oncoming half.
-        if (this._turnHeldForOther(car, pathKey)) return false;
+        if (this._turnHeldForOther(car, pathKey, landing.lanes[laneIndex], exitDistanceM)) return false;
         const turnAhead = this.turningCars.some((c) => c.turnPath.key === pathKey && c.distanceM < (c.lengthM + car.lengthM) / 2 + SPAWN_CLEARANCE_M);
         if (turnAhead) return false;
         if (this._turnExitBlocked(landing.lanes, laneIndex, exitDistanceM, car.lengthM)) {
@@ -4559,7 +4644,7 @@ export class SimulationEngine {
             const pathEnd = exitBlocked ? { distanceM: path.lengthM, speedMps: 0, exitLanes: targetLanes, exitDistanceM: path.exitDistanceM } : null;
             // Off a roundabout ring (its own give-way rules), a car stood for room where it comes out is let in.
             if (!path.ringNodeId) this._waitToJoin(car, path, exitBlocked);
-            const ringLeader = path.ringNodeId ? this._ringLeader(car, onRings.get(path.ringNodeId)) : null;
+            const ringLeader = path.ringNodeId ? nearestAhead(this._ringLeader(car, onRings.get(path.ringNodeId)), this._exitLegLeader(car)) : null;
             // Waiting in the box for a gap: held short of the oncoming lanes until there is one - which the oncoming side
             // stopping for its amber/red gives at the latest. Once it goes, it is committed.
             if (path.boxWait && (!path.boxWait.mustYield() || this.simTimeS - path.boxWait.sinceS > BOX_WAIT_MAX_S)) path.boxWait = null;
@@ -4687,6 +4772,42 @@ export class SimulationEngine {
     }
 
     /**
+     * The car ahead of `car` on its way out of a roundabout into the same lane, from whichever entry - in `car`'s own
+     * path frame, by how much less of its way it has left. Two cars from different entries leaving by one exit otherwise
+     * can't see each other, and stack up on top of each other when that exit is queued.
+     */
+    _exitLegLeader(car) {
+        const path = car.turnPath;
+        if (car.distanceM < path.ringExitAtM - ROUNDABOUT_EXIT_LOOK_M) return null;
+        const leftM = path.lengthM - car.distanceM;
+        let best = null;
+        for (const other of this.turningCars) {
+            const otherPath = other.turnPath;
+            if (other === car || otherPath?.ringNodeId !== path.ringNodeId || other.road !== car.road || other.lane !== car.lane) continue;
+            if (other.distanceM < otherPath.ringExitAtM) continue;
+            const otherLeftM = otherPath.lengthM - other.distanceM;
+            if (otherLeftM >= leftM || (best && otherLeftM <= best.leftM)) continue;
+            best = { leftM: otherLeftM, car: other };
+        }
+        if (!best) return null;
+        return { distanceM: car.distanceM + leftM - best.leftM, speedMps: best.car.speedMps, lengthM: best.car.lengthM, car: best.car };
+    }
+
+    /**
+     * True if `entrant`, on its way into a roundabout, waits for `ringCar` going round (at `ringAngle`) before it
+     * joins: one right at its join or alongside it, or - until the entrant reaches the circle - one coming up to its
+     * join within ROUNDABOUT_ENTRY_LOOK_S. Not one that leaves the ring before getting there.
+     */
+    _entrantYieldsTo(entrant, ringCar, ringAngle, circulatingRadiusM) {
+        const path = entrant.turnPath;
+        const toJoinM = ringArcM(path.ringEntryAngle - ringAngle, circulatingRadiusM);
+        const ringPath = ringCar.turnPath;
+        if (ringPath?.ringExitAtM != null && ringPath.ringExitAtM - ringCar.distanceM < toJoinM) return false;
+        if (toJoinM < ringAlongsideM(entrant, ringCar)) return true;
+        return entrant.distanceM < path.cumulative[1] && toJoinM < ringCar.speedMps * ROUNDABOUT_ENTRY_LOOK_S;
+    }
+
+    /**
      * The nearest car ahead of `car` round its roundabout's ring - clockwise,
      * within RING_FOLLOW_M - as a leader in `car`'s own path frame, so a car
      * that has just come in from another entry is followed, not driven through.
@@ -4695,19 +4816,35 @@ export class SimulationEngine {
         // Off the ring on its way out, nobody going round is ahead of it - only alongside at the same angle.
         if (!ring || car.distanceM >= car.turnPath.ringExitAtM) return null;
         const { node, cars } = ring;
+        // Still on its way in, it measures from where it will join the ring - not from its own angle, which would put a car
+        // passing the join as good as on its bumper and stop it at the yield line, in the way of the car behind.
+        const entering = car.turnPath.ringEntryAngle != null && car.distanceM < car.turnPath.ringEntryAtM;
         const self = cars.find((c) => c.car === car);
         const p = carRenderPoint(car);
-        const angle = self ? self.angle : Math.atan2(p.y - node.point.y, p.x - node.point.x);
+        const angle = entering ? car.turnPath.ringEntryAngle : self ? self.angle : Math.atan2(p.y - node.point.y, p.x - node.point.x);
+        const fromM = entering ? car.turnPath.ringEntryAtM : car.distanceM;
         const { circulatingRadiusM } = node.roundabout;
         let best = null;
         for (const other of cars) {
             if (other.car === car) continue;
-            const aheadM = ((((other.angle - angle) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) * circulatingRadiusM;
+            // Going round, it has priority over one still coming in that waits for it (below) - following that one too would
+            // leave each waiting on the other.
+            const otherPath = other.car.turnPath;
+            if (!entering && otherPath.ringEntryAngle != null && other.car.distanceM < otherPath.ringEntryAtM && this._entrantYieldsTo(other.car, car, angle, circulatingRadiusM)) continue;
+            // One across where it joins, or about to come past there, is in its way - it waits for it at the circle's edge
+            // (its way's rim point), nose short of the ring: stood any further in, a car going round would clip it.
+            if (entering && this._entrantYieldsTo(car, other.car, other.angle, circulatingRadiusM)) {
+                const atM = car.turnPath.cumulative[1] + other.car.lengthM / 2;
+                if (!best?.yieldAtM || atM < best.yieldAtM) best = { aheadM: -Infinity, yieldAtM: atM, other: other.car };
+                continue;
+            }
+            const aheadM = ringArcM(other.angle - angle, circulatingRadiusM);
             if (aheadM > RING_FOLLOW_M || (best && aheadM >= best.aheadM)) continue;
             best = { aheadM, other: other.car };
         }
         if (!best) return null;
-        return { distanceM: car.distanceM + best.aheadM, speedMps: best.other.speedMps, lengthM: best.other.lengthM, car: best.other };
+        const distanceM = best.yieldAtM ?? fromM + best.aheadM;
+        return { distanceM, speedMps: best.yieldAtM ? 0 : best.other.speedMps, lengthM: best.other.lengthM, car: best.other };
     }
 
     /**

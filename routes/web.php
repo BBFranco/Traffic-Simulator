@@ -4,6 +4,7 @@ use App\Http\Controllers\CorridorLaneUseController;
 use App\Http\Controllers\CorridorLayoutController;
 use App\Http\Controllers\CorridorRoutingTierController;
 use App\Http\Controllers\CorridorTemplateController;
+use App\Http\Controllers\CorridorTemplatePublishController;
 use App\Http\Controllers\LatestBatchProgressController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
@@ -55,6 +56,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/corridors/{corridor}/lane-use', [CorridorLaneUseController::class, 'destroy'])
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.lane-use.destroy');
+
+    // Overwrites the shared template (what batches run on) with the user's saved layout.
+    Route::post('/corridors/{corridor}/publish-template', CorridorTemplatePublishController::class)
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.publish-template');
 
     // Destinations section of the Road Editor: block tiers for destination routing ("Revert to original" covers them too).
     Route::put('/corridors/{corridor}/routing-tiers', [CorridorRoutingTierController::class, 'update'])
