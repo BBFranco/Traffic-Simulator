@@ -4,6 +4,7 @@ use App\Http\Controllers\CorridorLaneUseController;
 use App\Http\Controllers\CorridorLayoutController;
 use App\Http\Controllers\CorridorRoutingTierController;
 use App\Http\Controllers\CorridorTemplateController;
+use App\Http\Controllers\LatestBatchProgressController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
 use App\Http\Controllers\ResultsController;
@@ -67,6 +68,8 @@ Route::middleware('auth')->group(function () {
     // JSON refresh for the batch-run button (build step 17) - re-render charts
     // in place after a batch completes, no full page reload.
     Route::get('/results/data', [ResultsController::class, 'data'])->name('results.data');
+    // What the latest batch stored before it stopped - the Resume button carries on from there.
+    Route::get('/results/latest-batch-progress', LatestBatchProgressController::class)->name('results.latest-batch-progress');
 
     // One intersection at a time with test traffic - click the lane arrows, save them into the corridor file.
     Route::get('/road-editor', [RoadEditorController::class, 'index'])->name('road-editor');

@@ -1,79 +1,110 @@
 /**
- * sensors.js - build step 5.
+ * sensors.js - one detector's observation of its approach (sensor overhaul, 2026-10-15).
  *
- * A sensor mode is modelled as what the controller is allowed to see (per the
- * simulator page's own description), not as hardware: this module takes the
- * engine's ground-truth queue length for an approach and degrades it to
- * whatever that sensor type would actually report.
+ * A sensor mode is modelled as what the controller is allowed to see: sensorSpecs.js declares
+ * each type's zones and outputs, observeDetector() turns the engine's ground-truth cars into
+ * that sensor's observation frame, and applyErrors() degrades a frame with the spec's error
+ * model. Nothing here decides anything - the common demand estimator and the shared gap-out
+ * rule (engine.js) read the frames without knowing which sensor produced them.
  */
 
-/** How far upstream of the stop line each sensor type can usefully see. */
-const SENSE_WINDOW_M = {
-    inductive_loop: 8, // occupancy right at the stop line only
-    magnetometer: 15, // presence/count in a short zone
-    radar: 60, // rough volume over a longer approach, but noisy
-    camera: 120, // precise queue length over the whole visible approach
-};
+/** How far upstream of the stop line `car`'s front is. */
+function upstreamOf(car, stopLineDistanceM) {
+    return stopLineDistanceM - car.distanceM;
+}
 
-/**
- * @param groundTruthCars   live Car[] on this approach's lane(s), nearest-first
- * @param stopLineDistanceM distance-along-arterial of the stop line
- * @param mode               sensor mode key
- * @param rng                seeded PRNG (radar's "rough volume" adds noise)
- * @returns number - the queue length this sensor would report
- */
-export function readQueueLength(groundTruthCars, stopLineDistanceM, mode, rng) {
-    const windowM = SENSE_WINDOW_M[mode] ?? 0;
-    const inWindow = groundTruthCars.filter(
-        (c) => c.stoppedNow && stopLineDistanceM - c.distanceM <= windowM && stopLineDistanceM - c.distanceM >= 0
-    );
+/** Is `car` in `zone` ({ startM, lengthM } upstream of the line) under the spec's footprint rule. */
+function inZone(car, stopLineDistanceM, zone, footprint) {
+    const u = upstreamOf(car, stopLineDistanceM);
+    if (footprint === 'body') return u <= zone.startM + zone.lengthM && u + car.lengthM >= zone.startM;
+    return u <= zone.startM + zone.lengthM && u >= zone.startM;
+}
 
-    if (mode === 'inductive_loop') {
-        // Binary occupancy - it can only say "something is there", not how much.
-        return inWindow.length > 0 ? 1 : 0;
-    }
-
-    if (mode === 'radar') {
-        // Rough volume: exact count blurred by +/-1 measurement noise.
-        const noise = Math.round((rng.next() - 0.5) * 2);
-        return Math.max(0, inWindow.length + noise);
-    }
-
-    // magnetometer and camera report an exact count within their window.
-    return inWindow.length;
+/** Is `car` over an advance zone ({ centreM, lengthM }). */
+function overAdvance(car, stopLineDistanceM, zone, footprint) {
+    if (footprint === 'body') return inZone(car, stopLineDistanceM, { startM: zone.centreM - zone.lengthM / 2, lengthM: zone.lengthM }, 'body');
+    return Math.abs(upstreamOf(car, stopLineDistanceM) - zone.centreM) <= zone.lengthM / 2;
 }
 
 /**
- * Is any stopped vehicle inside this sensor's window at all? Presence, unlike
- * `readQueueLength()`'s count, is reliable even for radar - its noise blurs how
- * many, not whether - so this draws no RNG and never flickers on a lone car.
+ * One detector's frame this tick, error-free.
  *
- * @returns boolean
+ * @param spec              sensorSpecs.js spec
+ * @param cars              live Car[] on the approach's lane(s)
+ * @param stopLineDistanceM the approach's stop line, in the cars' frame
+ * @returns {{ actuated: boolean, presence: boolean, count: number|null, queueExtent: boolean|null, speedMps: number|null }}
+ *   actuated    - a vehicle (moving or not) in the gap-out zone or an advance zone: feeds the shared gap-out timer.
+ *   presence    - the call zone is occupied (by a standing vehicle where `call.stoppedOnly`).
+ *   count       - standing vehicles in the queue zone; null when the sensor can't count.
+ *   queueExtent - a standing vehicle over an advance zone; null when the sensor has none.
+ *   speedMps    - mean speed of the vehicles in the queue zone (0 if none); null when the sensor doesn't measure speed.
  */
-export function detectQueuePresence(groundTruthCars, stopLineDistanceM, mode) {
-    const windowM = SENSE_WINDOW_M[mode] ?? 0;
-    return groundTruthCars.some(
-        (c) => c.stoppedNow && stopLineDistanceM - c.distanceM <= windowM && stopLineDistanceM - c.distanceM >= 0
-    );
+export function observeDetector(spec, cars, stopLineDistanceM) {
+    const { footprint } = spec;
+    let actuated = false;
+    let presence = false;
+    let queueExtent = false;
+    let count = 0;
+    let speedSum = 0;
+    let speedN = 0;
+    for (const car of cars) {
+        if (!actuated && (inZone(car, stopLineDistanceM, spec.gapOut, footprint) || spec.advance.some((z) => overAdvance(car, stopLineDistanceM, z, footprint)))) actuated = true;
+        if (!presence && (car.stoppedNow || !spec.call.stoppedOnly) && inZone(car, stopLineDistanceM, spec.call, footprint)) presence = true;
+        if (!queueExtent && car.stoppedNow && spec.advance.some((z) => overAdvance(car, stopLineDistanceM, z, footprint))) queueExtent = true;
+        if (spec.queue && inZone(car, stopLineDistanceM, spec.queue, footprint)) {
+            if (car.stoppedNow) count += 1;
+            speedSum += car.speedMps;
+            speedN += 1;
+        }
+    }
+    return {
+        actuated,
+        presence,
+        count: spec.outputs.count ? count : null,
+        queueExtent: spec.outputs.queueExtent ? queueExtent : null,
+        speedMps: spec.outputs.speed ? (speedN ? speedSum / speedN : 0) : null,
+    };
+}
+
+/** The frame a detector reports before it has produced its first delayed sample. */
+export function emptyFrame(spec) {
+    return {
+        actuated: false,
+        presence: false,
+        count: spec.outputs.count ? 0 : null,
+        queueExtent: spec.outputs.queueExtent ? false : null,
+        speedMps: spec.outputs.speed ? 0 : null,
+    };
 }
 
 /**
- * Stop-line presence detector for gap-out timing - the small loop right at
- * the line that a real actuated signal always has regardless of whatever
- * advance/system detection (`mode` above) it also uses for queue estimates.
- * Unlike `readQueueLength`, this is NOT filtered to `stoppedNow`: a car
- * rolling through on green still actuates it, which is what a gap timer
- * needs (a discharging queue must keep "counting" as present).
- *
- * @param groundTruthCars   live Car[] on this approach's lane(s)
- * @param stopLineDistanceM distance-along-arterial of the stop line
- * @param windowM           detector zone length immediately upstream of the line
- * @returns boolean - is any vehicle occupying the detector right now
+ * The spec's miss / false-call / crosstalk model on a frame (a new frame; `frame` is untouched).
+ * `neighbourPresent`: another detector at the same junction sees a vehicle - what crosstalk
+ * can falsely pick up. Count noise is NOT drawn here - see countWithNoise().
  */
-export function detectPresenceAtStopLine(groundTruthCars, stopLineDistanceM, windowM = 8) {
-    return groundTruthCars.some(
-        (c) => stopLineDistanceM - c.distanceM <= windowM && stopLineDistanceM - c.distanceM >= 0
-    );
+export function applyErrors(spec, frame, rng, neighbourPresent) {
+    const { missP, falseCallP, crosstalkP } = spec.errors;
+    if (!missP && !falseCallP && !crosstalkP) return frame;
+    const out = { ...frame };
+    for (const field of ['actuated', 'presence']) {
+        if (out[field]) {
+            if (missP && rng.next() < missP) out[field] = false;
+        } else if ((falseCallP && rng.next() < falseCallP) || (crosstalkP && neighbourPresent && rng.next() < crosstalkP)) {
+            out[field] = true;
+        }
+    }
+    return out;
+}
+
+/**
+ * The count a frame reports once its noise is drawn - drawn when the count is read, never when
+ * the frame is taken, so a detector nobody reads draws nothing.
+ */
+export function countWithNoise(spec, frame, rng, errorsOn) {
+    const noise = errorsOn ? spec.errors.countNoise : null;
+    if (!noise) return frame.count;
+    if (noise.type === 'uniform_int') return Math.max(0, frame.count + Math.round((rng.next() - 0.5) * 2 * noise.amplitude));
+    throw new Error(`Unknown count noise "${noise.type}"`);
 }
 
 export function sensorAvailable(mode, powerState, batteryBackedSensors) {

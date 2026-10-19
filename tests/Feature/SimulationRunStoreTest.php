@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\PowerState;
 use App\Models\SimulationRun;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,6 +36,33 @@ class SimulationRunStoreTest extends TestCase
         ];
     }
 
+    public function test_a_re_posted_run_of_the_same_batch_is_skipped(): void
+    {
+        $batchId = (string) Str::uuid();
+        $first = $this->runPayload(['batch_id' => $batchId, 'seed' => 1]);
+        $second = $this->runPayload(['batch_id' => $batchId, 'seed' => 2]);
+
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$first]])->assertCreated();
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$first, $second]])
+            ->assertCreated()
+            ->assertJson(['inserted' => 1, 'skipped' => 1]);
+
+        $this->assertSame([1, 2], SimulationRun::query()->orderBy('seed')->pluck('seed')->all());
+    }
+
+    public function test_the_same_seed_in_another_condition_or_batch_is_stored(): void
+    {
+        $batchId = (string) Str::uuid();
+
+        // Every row carries the same columns, as a batch's payloads do (one bulk insert).
+        $this->postJson(route('simulation-runs.store'), ['runs' => [
+            $this->runPayload(['batch_id' => $batchId, 'sensor_mode' => null]),
+            $this->runPayload(['batch_id' => $batchId, 'sensor_mode' => null, 'power_state' => PowerState::RollingBlackout->value]),
+            $this->runPayload(['batch_id' => $batchId, 'controller_mode' => 'adaptive', 'sensor_mode' => 'radar']),
+            $this->runPayload(['sensor_mode' => null]),
+        ]])->assertCreated()->assertJson(['inserted' => 4, 'skipped' => 0]);
+    }
+
     public function test_a_destination_run_stores_its_routing_metrics(): void
     {
         $stats = ['trips' => 9743, 'pulledOffByBlock' => ['GRO-3' => 120], 'drivewayFallbacks' => ['sameBlock' => 4, 'nextBlock' => 2, 'exit' => 1]];
@@ -55,6 +83,55 @@ class SimulationRunStoreTest extends TestCase
         $this->assertSame(4426, $run->pulled_off);
         $this->assertEqualsWithDelta(61.2, $run->mean_trip_delay, 1e-9);
         $this->assertSame($stats, $run->routing_stats);
+    }
+
+    public function test_a_rolling_blackout_run_stores_its_stages_and_zone_stats(): void
+    {
+        $zoneStats = [
+            'zone1' => [
+                'avgWaitTime' => 31.5, 'medianWait' => 12, 'p95Wait' => 120, 'maxWait' => 400, 'throughputPerMin' => 60.2, 'clearedTotal' => 5400, 'pctClearedWithoutStop' => 22.5,
+                'segments' => [
+                    'pre' => ['avgWaitTime' => 20, 'throughputPerMin' => 62, 'clearedTotal' => 900],
+                    'during' => ['avgWaitTime' => 45, 'throughputPerMin' => 55, 'clearedTotal' => 1650],
+                    'post' => ['avgWaitTime' => 28, 'throughputPerMin' => 61, 'clearedTotal' => 2850],
+                    'stage1' => ['avgWaitTime' => 52, 'throughputPerMin' => 50, 'clearedTotal' => 750],
+                    'stage2' => ['avgWaitTime' => 38, 'throughputPerMin' => 60, 'clearedTotal' => 900],
+                ],
+                'restoreSeconds' => 1800, 'postRestoreWindowS' => 3600, 'timeToRecoverySeconds' => 240, 'timeToRecoveryWaitSeconds' => null,
+            ],
+        ];
+
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$this->runPayload([
+            'power_state' => 'rolling_blackout',
+            'avg_wait_time_stage1' => 48.2,
+            'throughput_per_min_stage2_side_street' => 90.5,
+            'zone_stats' => $zoneStats,
+            'raw_config_json' => ['rollingSchedule' => [['zones' => [1, 3], 'fromTick' => 9000, 'toTick' => 18000], ['zones' => [2], 'fromTick' => 18000, 'toTick' => 27000]], 'zoneAccounting' => 'by-junction-v1'],
+        ])]])->assertCreated();
+
+        $run = SimulationRun::query()->sole();
+        $this->assertSame(PowerState::RollingBlackout, $run->power_state);
+        $this->assertEqualsWithDelta(48.2, $run->avg_wait_time_stage1, 1e-9);
+        $this->assertEqualsWithDelta(90.5, $run->throughput_per_min_stage2_side_street, 1e-9);
+        $this->assertNull($run->avg_wait_time_stage2);
+        $this->assertEquals($zoneStats, $run->zone_stats);
+    }
+
+    public function test_an_unknown_power_state_is_rejected(): void
+    {
+        $this->postJson(route('simulation-runs.store'), ['runs' => [$this->runPayload(['power_state' => 'brownout'])]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('runs.0.power_state');
+
+        $this->assertSame(0, SimulationRun::query()->count());
+    }
+
+    public function test_the_replay_picker_offers_every_power_state_by_its_label(): void
+    {
+        $this->actingAs(User::factory()->create())->get(route('simulator'))
+            ->assertOk()
+            ->assertSee('Total blackout')
+            ->assertSee('Load shedding');
     }
 
     public function test_a_random_run_leaves_the_routing_metrics_empty(): void

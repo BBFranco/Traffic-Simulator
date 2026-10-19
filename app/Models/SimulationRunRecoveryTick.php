@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PowerState;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Model;
     'controller_mode',
     'sensor_mode',
     'corridor_config',
+    'routing_mode',
+    'power_state',
     'tick',
     'seconds',
     'throughput_per_min',
@@ -26,11 +29,20 @@ use Illuminate\Database\Eloquent\Model;
     'avg_wait_time_side_street',
     'power_event_seconds',
     'power_outage_end_seconds',
+    'dark_windows',
 ])]
 class SimulationRunRecoveryTick extends Model
 {
     /** Immutable sample row - only created_at exists on the table, no updated_at to maintain. */
     public $timestamps = false;
+
+    protected function casts(): array
+    {
+        return [
+            'power_state' => PowerState::class,
+            'dark_windows' => 'array',
+        ];
+    }
 
     protected static function booted(): void
     {

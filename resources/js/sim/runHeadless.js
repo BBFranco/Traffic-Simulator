@@ -13,8 +13,9 @@
  * with the returned rows/summary.
  */
 import { buildLayout } from './corridor.js';
-import { SimulationEngine, WAIT_ACCOUNTING } from './engine.js';
+import { SimulationEngine, WAIT_ACCOUNTING, ZONE_ACCOUNTING } from './engine.js';
 import { controllerConfigFor } from './controllers/phasePlan.js';
+import { sensorSpecHash } from './sensorSpecs.js';
 import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
@@ -22,7 +23,7 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
 
 /**
  * @param seed                 integer PRNG seed
- * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' - applied to every arterial in the corridor
+ * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' | 'coordinated_adaptive' - applied to every arterial in the corridor
  * @param sensorMode           'none' | 'inductive_loop' | 'radar' | 'camera' | 'magnetometer'
  * @param warmupTicks          ticks run BEFORE anything is measured, discarded from every stat - the
  *                             standard traffic-sim warm-up: long enough for queue lengths/wait times to
@@ -35,6 +36,10 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  *                             the measured phase), or null for a normal-power run
  * @param powerOutageEndTick   tick power is restored at (same measured-phase-relative timing) - required
  *                             whenever `powerOutageStartTick` is set
+ * @param rollingSchedule      a rolling blackout instead of a total one: [{ zones, fromTick, toTick }] (measured ticks,
+ *                             batchSchedule.js's ROLLING_SCHEDULE) - each window's zones dark inside it. Leave the
+ *                             outage ticks null with it; the outage then runs from the first window's start to the
+ *                             last one's end (the segments' "during", the total/arterial/side recovery's restore)
  * @param corridorConfig       parsed corridor JSON (same shape `buildLayout()` already takes)
  * @param durationTicks        number of MEASURED ticks to run, after warm-up - `rows`/`sideStreetRows`
  *                             and every summary stat are scoped to this window only
@@ -43,6 +48,10 @@ const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
  * @param routingMode          'random' | 'destination' - overrides the corridor's own `routing.mode` for this run;
  *                             null keeps the corridor's (random when it has no `routing` section)
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
+ * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
+ *                             { platoonMessages: false, selfTuning: false } for the layer ablation
+ * @param sensorSpecSet        sensorSpecs.js set: 'field' (the hardware models, default) or 'legacy' (the pre-overhaul sensors)
+ * @param sensorErrors         sensitivity runs only: switch on the specs' miss / false-call / crosstalk / count-noise models
  * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
  *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
@@ -53,12 +62,16 @@ export function runHeadless({
     warmupTicks = 0,
     powerOutageStartTick = null,
     powerOutageEndTick = null,
+    rollingSchedule = null,
     corridorConfig,
     durationTicks,
     dt = 0.1,
     sampleEverySeconds = 1,
     routingMode = null,
     websterTurnWeight = false,
+    coordination = {},
+    sensorSpecSet = undefined,
+    sensorErrors = false,
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -82,6 +95,9 @@ export function runHeadless({
         power: { loadShedding: false, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
         routingMode,
         websterTurnWeight,
+        coordination,
+        sensorSpecSet,
+        sensorErrors,
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
@@ -89,6 +105,13 @@ export function runHeadless({
     const sideStreetRows = [];
     const totalRows = [];
     const arterialScopeRows = [];
+    /** Per sampled tick, one row per rolling-blackout zone - the zone scopes' segments and recovery. */
+    const zoneRows = [];
+    const schedule = outageSchedule({ powerOutageStartTick, powerOutageEndTick, rollingSchedule });
+    let darkZonesKey = '';
+    let stage = null;
+    /** stage -> engine.roadWaits' running totals as that stage opened, so each road's wait splits by stage (clear time) - recording only. */
+    const roadWaitMarks = new Map();
     let outageStarted = false;
     let outageEnded = false;
     let statsReset = warmupTicks <= 0;
@@ -111,6 +134,21 @@ export function runHeadless({
         if (powerOutageEndTick != null && outageStarted && !outageEnded && measuredTick >= powerOutageEndTick) {
             engine.setManualLoadShedding(false);
             outageEnded = true;
+        }
+        // The coordination record's stage first, so a power return it triggers counts in the stage it opens.
+        const stageNow = measuredTick >= 0 ? schedule?.stageAt(measuredTick) ?? null : null;
+        if (stageNow !== stage) {
+            engine.coordinationStats.setStage(stageNow);
+            if (stageNow) roadWaitMarks.set(stageNow, copyRoadWaits(engine.roadWaits));
+            stage = stageNow;
+        }
+        if (rollingSchedule && measuredTick >= 0) {
+            const zones = rollingSchedule.filter((w) => measuredTick >= w.fromTick && measuredTick < w.toTick).flatMap((w) => w.zones);
+            const key = [...new Set(zones)].sort().join(',');
+            if (key !== darkZonesKey) {
+                engine.setZoneDark(zones);
+                darkZonesKey = key;
+            }
         }
 
         engine.tick(dt);
@@ -180,6 +218,19 @@ export function runHeadless({
                 clearedWithoutStopping: snap.total.clearedWithoutStopPct == null ? '' : round(snap.total.clearedWithoutStopPct, 1),
                 powerState: snap.powerState,
             });
+
+            for (const [zone, s] of Object.entries(snap.zones)) {
+                zoneRows.push({
+                    tick: measuredTick,
+                    zone: Number(zone),
+                    avgWaitTime: round(s.avgWaitRolling, 3),
+                    throughputPerMin: s.throughputPerMin,
+                    clearedTotal: s.clearedTotal,
+                    waitSumTotal: s.waitSumTotal,
+                    clearedWithoutStopping: s.clearedWithoutStopPct == null ? '' : round(s.clearedWithoutStopPct, 1),
+                    powerState: snap.powerState,
+                });
+            }
         }
     }
 
@@ -193,6 +244,8 @@ export function runHeadless({
         warmupTicks,
         powerOutageStartTick,
         powerOutageEndTick,
+        schedule,
+        rollingSchedule,
         corridorConfig,
         durationTicks,
         dt,
@@ -200,11 +253,88 @@ export function runHeadless({
         sideStreetRows,
         totalRows,
         arterialScopeRows,
+        zoneRows,
         accounting,
         accountingAtMeasureStart,
+        roadWaitMarks,
     });
 
-    return { rows, sideStreetRows, totalRows, arterialScopeRows, summary };
+    return { rows, sideStreetRows, totalRows, arterialScopeRows, zoneRows, summary };
+}
+
+/**
+ * The run's outage as the summary measures it, or null at normal power: its start and FINAL restore tick (the
+ * total/arterial/side segments and recovery), its dark windows, and the stage each measured tick falls in - a total
+ * blackout's pre / during / post, a rolling blackout's pre / stage1 / stage2 / post.
+ */
+function outageSchedule({ powerOutageStartTick, powerOutageEndTick, rollingSchedule }) {
+    if (rollingSchedule?.length) {
+        const windows = [...rollingSchedule].sort((a, b) => a.fromTick - b.fromTick);
+        const startTick = windows[0].fromTick;
+        const endTick = Math.max(...windows.map((w) => w.toTick));
+        return {
+            powerState: 'rolling_blackout',
+            startTick,
+            endTick,
+            windows,
+            stageAt: (tick) => {
+                if (tick < startTick) return 'pre';
+                if (tick >= endTick) return 'post';
+                const index = windows.findIndex((w) => tick >= w.fromTick && tick < w.toTick);
+                return index < 0 ? 'post' : `stage${index + 1}`;
+            },
+        };
+    }
+    if (powerOutageStartTick == null || powerOutageEndTick == null) return null;
+    return {
+        powerState: 'load_shedding',
+        startTick: powerOutageStartTick,
+        endTick: powerOutageEndTick,
+        windows: [{ zones: null, fromTick: powerOutageStartTick, toTick: powerOutageEndTick }],
+        stageAt: (tick) => (tick < powerOutageStartTick ? 'pre' : tick < powerOutageEndTick ? 'during' : 'post'),
+    };
+}
+
+function copyRoadWaits(roadWaits) {
+    return new Map([...roadWaits].map(([id, r]) => [id, { n: r.n, waitSum: r.waitSum }]));
+}
+
+/**
+ * Each road's waits split by outage stage, by when its vehicles cleared - the difference of the running totals at
+ * consecutive stage marks: { pre: { vehicles, meanWait }, stage1: ..., post: ... }. Stages with no vehicle are left out.
+ */
+function roadWaitStages(roadId, final, marks) {
+    const stages = [...marks.keys()];
+    const out = {};
+    stages.forEach((stage, i) => {
+        const from = marks.get(stage).get(roadId) ?? { n: 0, waitSum: 0 };
+        const to = i + 1 < stages.length ? marks.get(stages[i + 1]).get(roadId) ?? { n: 0, waitSum: 0 } : final;
+        const n = to.n - from.n;
+        if (n > 0) out[stage] = { vehicles: n, meanWait: Math.round(((to.waitSum - from.waitSum) / n) * 100) / 100 };
+    });
+    return out;
+}
+
+/** `engine.roadWaits` as plain JSON, named and scoped from the layout: { roadId: { name, scope, vehicles, meanWait, maxWait, stages? } }. */
+function roadWaitsSummary(layout, roadWaits, stageMarks = null) {
+    const roads = new Map();
+    for (const arterial of layout.arterials) roads.set(arterial.id, { name: arterial.name, scope: arterial.scope === 'side' ? 'side' : 'arterial' });
+    for (const connector of layout.connectors) roads.set(connector.id, { name: connector.name ?? connector.id, scope: connector.scope === 'arterial' ? 'arterial' : 'side' });
+    const round = (value) => Math.round(value * 100) / 100;
+    return Object.fromEntries(
+        [...roadWaits]
+            .filter(([id]) => roads.has(id))
+            .map(([id, r]) => [
+                id,
+                {
+                    ...roads.get(id),
+                    vehicles: r.n,
+                    meanWait: round(r.waitSum / r.n),
+                    maxWait: round(r.maxWait),
+                    ...(stageMarks?.size ? { stages: roadWaitStages(id, r, stageMarks) } : {}),
+                },
+            ])
+    );
 }
 
 function buildSummary({
@@ -214,8 +344,10 @@ function buildSummary({
     controllerMode,
     sensorMode,
     warmupTicks,
-    powerOutageStartTick,
-    powerOutageEndTick,
+    powerOutageStartTick: outageStartArg,
+    powerOutageEndTick: outageEndArg,
+    schedule,
+    rollingSchedule,
     corridorConfig,
     durationTicks,
     dt,
@@ -223,9 +355,15 @@ function buildSummary({
     sideStreetRows,
     totalRows,
     arterialScopeRows,
+    zoneRows,
     accounting,
     accountingAtMeasureStart,
+    roadWaitMarks,
 }) {
+    // A rolling blackout's outage runs from its first window's start to its final restore - every scope below that
+    // isn't a zone is measured on that span, exactly as a total blackout's.
+    const powerOutageStartTick = schedule?.startTick ?? null;
+    const powerOutageEndTick = schedule?.endTick ?? null;
     const finalSnap = engine.snapshot();
     const durationSeconds = durationTicks * dt;
 
@@ -336,6 +474,17 @@ function buildSummary({
               };
 
     const waitDistribution = engine.waitDistributionTotal();
+    const arterialWaits = engine.waitDistribution('arterial');
+    const sideStreetWaits = engine.waitDistribution('sideStreet');
+
+    // A rolling blackout's two stages, per scope - the total/arterial/side columns' stage 1 / stage 2 split of "during".
+    const stageWindows = schedule?.powerState === 'rolling_blackout' ? schedule.windows : [];
+    const stages = {};
+    stageWindows.forEach((w, i) => {
+        stages[`stage${i + 1}`] = segmentStats(totalCumulativeByTick, w.fromTick, w.toTick, dt);
+        stages[`stage${i + 1}Arterial`] = segmentStats(arterialCumulativeByTick, w.fromTick, w.toTick, dt);
+        stages[`stage${i + 1}SideStreet`] = segmentStats(sideStreetCumulativeByTick, w.fromTick, w.toTick, dt);
+    });
 
     return {
         seed,
@@ -344,8 +493,12 @@ function buildSummary({
         /** Destination routing's trip counters over the measured window - null for a random-turning run. */
         routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures, engine.simTimeS) : null,
         diagnostics: measuredDiagnostics(engine, accountingAtMeasureStart),
-        powerState: powerOutageStartTick != null ? 'load_shedding' : 'normal',
+        powerState: schedule?.powerState ?? 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
+        /** Which sensor configuration produced the run (sensorSpecs.js) - null for the controllers that read no sensors. */
+        sensorSpec: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive'
+            ? { set: engine.sensorSpecSet, hash: sensorSpecHash(engine.sensorSpec, engine.sensorErrorsOn), errorsOn: engine.sensorErrorsOn }
+            : null,
         corridorConfig: corridorConfig.id,
         avgWaitTime,
         avgWaitTimeArterial,
@@ -359,6 +512,14 @@ function buildSummary({
         medianWait: waitDistribution.medianWait,
         p95Wait: waitDistribution.p95Wait,
         maxWait: waitDistribution.maxWait,
+        p95WaitArterial: arterialWaits.p95Wait,
+        maxWaitArterial: arterialWaits.maxWait,
+        p95WaitSideStreet: sideStreetWaits.p95Wait,
+        maxWaitSideStreet: sideStreetWaits.maxWait,
+        /** Per road: vehicles that used it, their mean and worst wait built up on it - the report's per-road table. */
+        roadWaits: roadWaitsSummary(layout, engine.roadWaits, roadWaitMarks),
+        // What the coordination did (controllers/coordinationStats.js) - coordinated adaptive runs only.
+        ...(controllerMode === 'coordinated_adaptive' ? { coordination: coordinationSummary(engine, warmupTicks * dt) } : {}),
         preOutage: segments.preOutage,
         duringOutage: segments.duringOutage,
         postRecovery: segments.postRecovery,
@@ -389,6 +550,12 @@ function buildSummary({
         }),
         powerOutageStartSeconds: powerOutageStartTick != null ? round(powerOutageStartTick * dt, 1) : null,
         powerOutageEndSeconds: powerOutageEndTick != null ? round(powerOutageEndTick * dt, 1) : null,
+        // Rolling blackout only: each stage's segments (stage1, stage1Arterial, stage1SideStreet, stage2...).
+        ...stages,
+        /** The dark windows, in measured seconds: [{ zones (null = every junction), fromS, toS }] - the charts' bands. Null at normal power. */
+        darkWindows: schedule ? schedule.windows.map((w) => ({ zones: w.zones, fromS: round(w.fromTick * dt, 1), toS: round(w.toTick * dt, 1) })) : null,
+        /** Per rolling-blackout zone (null on a layout without zones): its junctions' vehicles, each with the wait charged there. */
+        zoneStats: zoneSummary({ engine, finalSnap, zoneRows, schedule, durationTicks, durationSeconds, dt }),
         perArterial,
         carAccounting: accounting,
         durationTicks,
@@ -396,15 +563,24 @@ function buildSummary({
             seed,
             controllerMode,
             sensorMode,
+            sensorSpecSet: engine.sensorSpecSet,
+            sensorErrors: engine.sensorErrors,
             warmupTicks,
-            powerOutageStartTick,
-            powerOutageEndTick,
+            powerOutageStartTick: outageStartArg,
+            powerOutageEndTick: outageEndArg,
+            /** A rolling blackout's windows, in measured ticks - what a replay drives setZoneDark() from. */
+            ...(rollingSchedule ? { rollingSchedule } : {}),
             corridorConfig: corridorConfig.id,
             durationTicks,
             dt,
             routingMode: engine.routingMode,
             waitAccounting: WAIT_ACCOUNTING,
-            controllerConfig: controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+            ...(engine.zones.length ? { zoneAccounting: ZONE_ACCOUNTING } : {}),
+            controllerConfig: {
+                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+                // Which coordination layers ran (and their thresholds) - so an ablation run never reads as the full mode.
+                ...(controllerMode === 'coordinated_adaptive' ? { coordination: { ...engine.coordination } } : {}),
+            },
             /** Which destination tiers the corridor carried (routing.blocks) - null without a routing section. */
             routingTiersHash: tiersHash(layout.routing),
             /** Sensitivity-sweep settings (batch/runBatch.mjs) - 1 and null on an ordinary batch. */
@@ -412,6 +588,64 @@ function buildSummary({
             endToEndShare: layout.routing?.endToEndShare ?? null,
         },
     };
+}
+
+/** The coordination record, its power returns' times in measured seconds (the engine's clock counts warm-up too). */
+function coordinationSummary(engine, warmupSeconds) {
+    const summary = engine.coordinationStats.summary();
+    if (summary.restores) summary.restores = summary.restores.map((r) => ({ ...r, atS: round(r.atS - warmupSeconds, 1) }));
+    return summary;
+}
+
+/**
+ * Each zone's scope, keyed zone1..zone3: its full-run figures, its segments (a total blackout's pre / during / post, a
+ * rolling blackout's pre / stage1 / stage2 / during / post - post always from the final restore), and its recovery,
+ * measured from ITS OWN restore against the pre-outage baseline. A rolling blackout's zones 1 and 3 come back while
+ * zone 2 is still dark next to them, so theirs includes zone 2's spillback - not comparable to a total blackout's.
+ */
+function zoneSummary({ engine, finalSnap, zoneRows, schedule, durationTicks, durationSeconds, dt }) {
+    if (!engine.zones.length) return null;
+    const waitRecovery = { thresholdMultiplier: 1.25, notRecoveredWhen: (value, threshold) => value > threshold };
+    const out = {};
+    for (const zone of engine.zones) {
+        const s = finalSnap.zones[zone];
+        const rows = zoneRows.filter((row) => row.zone === zone);
+        const cumulative = buildCumulativeByTick(rows);
+        const final = { clearedTotal: s.clearedTotal, waitSumTotal: s.waitSumTotal };
+        const distribution = engine.waitDistribution(`zone${zone}`);
+        // Its own restore: the end of the last window that darkened it (every window, for a total blackout).
+        const own = schedule ? schedule.windows.filter((w) => w.zones == null || w.zones.includes(zone)) : [];
+        const restoreTick = own.length ? Math.max(...own.map((w) => w.toTick)) : null;
+        let segments = null;
+        if (schedule) {
+            segments = {
+                pre: segmentStats(cumulative, 0, schedule.startTick, dt),
+                during: segmentStats(cumulative, schedule.startTick, schedule.endTick, dt),
+                post: segmentStats(cumulative, schedule.endTick, durationTicks, dt, final),
+            };
+            if (schedule.powerState === 'rolling_blackout') {
+                schedule.windows.forEach((w, i) => {
+                    segments[`stage${i + 1}`] = segmentStats(cumulative, w.fromTick, w.toTick, dt);
+                });
+            }
+        }
+        out[`zone${zone}`] = {
+            avgWaitTime: avgWait(s.waitSumTotal, s.clearedTotal),
+            medianWait: distribution.medianWait,
+            p95Wait: distribution.p95Wait,
+            maxWait: distribution.maxWait,
+            throughputPerMin: perMin(s.clearedTotal, durationSeconds),
+            clearedTotal: s.clearedTotal,
+            pctClearedWithoutStop: s.clearedWithoutStopPct,
+            segments,
+            restoreSeconds: restoreTick != null ? round(restoreTick * dt, 1) : null,
+            /** The window its recovery is measured in, and capped at: its own restore to the end of the run. */
+            postRestoreWindowS: restoreTick != null ? round((durationTicks - restoreTick) * dt, 1) : null,
+            timeToRecoverySeconds: restoreTick != null ? computeRecoverySeconds(buildByTickThroughput(rows), schedule.startTick, restoreTick, dt) : null,
+            timeToRecoveryWaitSeconds: restoreTick != null ? computeRecoverySeconds(buildByTickWeightedAvgWait([rows]), schedule.startTick, restoreTick, dt, waitRecovery) : null,
+        };
+    }
+    return out;
 }
 
 /** Short FNV-1a hash of every block's id and tier, so two batches with edited tiers read as different. */

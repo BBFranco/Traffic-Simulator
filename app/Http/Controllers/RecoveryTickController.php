@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PowerState;
 use App\Enums\RoutingMode;
 use App\Http\Requests\StoreRecoveryTicksRequest;
 use App\Models\SimulationRunRecoveryTick;
@@ -22,12 +23,15 @@ class RecoveryTickController extends Controller
         $sensorMode = $request->validated('sensor_mode');
         $corridorConfig = $request->validated('corridor_config');
         $routingMode = $request->validated('routing_mode', RoutingMode::Random->value);
+        $powerState = $request->validated('power_state', PowerState::LoadShedding->value);
+        $darkWindows = $request->validated('dark_windows');
 
         SimulationRunRecoveryTick::query()
             ->where('controller_mode', $controllerMode)
             ->where('sensor_mode', $sensorMode)
             ->where('corridor_config', $corridorConfig)
             ->where('routing_mode', $routingMode)
+            ->where('power_state', $powerState)
             ->delete();
 
         $now = now();
@@ -36,6 +40,7 @@ class RecoveryTickController extends Controller
             'sensor_mode' => $sensorMode,
             'corridor_config' => $corridorConfig,
             'routing_mode' => $routingMode,
+            'power_state' => $powerState,
             'tick' => $tick['tick'],
             'seconds' => $tick['seconds'],
             'throughput_per_min' => $tick['throughput_per_min'],
@@ -46,6 +51,7 @@ class RecoveryTickController extends Controller
             'avg_wait_time_side_street' => $tick['avg_wait_time_side_street'],
             'power_event_seconds' => $request->validated('power_event_seconds'),
             'power_outage_end_seconds' => $request->validated('power_outage_end_seconds'),
+            'dark_windows' => $darkWindows === null ? null : json_encode($darkWindows),
             'created_at' => $now,
         ]);
 

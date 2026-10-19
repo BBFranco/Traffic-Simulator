@@ -67,7 +67,7 @@ export function accumulateRecoveryTicks(acc, { totalRows, arterialScopeRows, sid
 /** Averages an accumulator built by accumulateRecoveryTicks() into the `POST /api/recovery-ticks` payload shape. */
 export function finalizeRecoveryTickPayload(
     acc,
-    { controllerMode, sensorMode, corridorId, dt, powerOutageStartTick, powerOutageEndTick, routingMode = 'random' }
+    { controllerMode, sensorMode, corridorId, dt, powerOutageStartTick, powerOutageEndTick, routingMode = 'random', powerState = 'load_shedding', darkWindows = null }
 ) {
     const ticks = downsample([...acc.total.keys()].sort((a, b) => a - b), MAX_CHART_POINTS);
     const mean = (byTick, tick, field) => (byTick.get(tick)?.[field] ?? 0) / acc.reps;
@@ -75,11 +75,14 @@ export function finalizeRecoveryTickPayload(
     return {
         controller_mode: controllerMode,
         // fixed-time and green-wave never vary by sensor (matches simulation_runs' own column).
-        sensor_mode: controllerMode === 'adaptive' ? sensorMode : null,
+        sensor_mode: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive' ? sensorMode : null,
         corridor_config: corridorId,
         routing_mode: routingMode,
+        // A rolling blackout's curve is a separate row: its first cut and FINAL restore, plus each zone's own window.
+        power_state: powerState,
         power_event_seconds: round(powerOutageStartTick * dt, 1),
         power_outage_end_seconds: round(powerOutageEndTick * dt, 1),
+        dark_windows: darkWindows,
         ticks: ticks.map((tick) => ({
             tick,
             seconds: round(tick * dt, 1),

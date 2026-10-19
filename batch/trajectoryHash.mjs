@@ -28,10 +28,16 @@ export function everyCar(engine) {
     return cars;
 }
 
+/** `rolling: true`: a rolling blackout inside the default 600 s hash run - zones 1+3 dark 100-300 s, zone 2 300-500 s. */
+export const HASH_ROLLING_WINDOWS = [
+    { zones: [1, 3], fromS: 100, toS: 300 },
+    { zones: [2], fromS: 300, toS: 500 },
+];
+
 /**
  * Builds and resets an engine the same way fingerprint.mjs always has.
  */
-export function startEngine({ config, seed, controllerMode, loadShedding = false, routingMode = null }) {
+export function startEngine({ config, seed, controllerMode, loadShedding = false, rolling = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined }) {
     const layout = buildLayout(config);
     const engine = new SimulationEngine(layout);
     const arterialModes = {};
@@ -45,9 +51,10 @@ export function startEngine({ config, seed, controllerMode, loadShedding = false
         seed,
         arterialModes,
         demand,
-        sensorMode: 'inductive_loop',
+        sensorMode,
+        sensorSpecSet,
         batteryBackedSensors: true,
-        power: { loadShedding, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
+        power: { loadShedding, scheduledOutages: false, offMinutes: 2, periodMinutes: 8, ...(rolling ? { zoneSchedule: HASH_ROLLING_WINDOWS } : {}) },
         routingMode,
     });
     return { layout, engine };
@@ -57,8 +64,8 @@ export function startEngine({ config, seed, controllerMode, loadShedding = false
  * Runs `ticks` ticks and returns the 16-hex trajectory hash. `onTick(engine, tick, cars)` lets
  * callers observe each tick (fingerprint.mjs's stuck-car check, the live-metrics collector).
  */
-export function hashRun({ config, seed, controllerMode, loadShedding = false, routingMode = null, ticks = 6000, dt = 0.1, onStart = null, onTick = null }) {
-    const { layout, engine } = startEngine({ config, seed, controllerMode, loadShedding, routingMode });
+export function hashRun({ config, seed, controllerMode, loadShedding = false, rolling = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined, ticks = 6000, dt = 0.1, onStart = null, onTick = null }) {
+    const { layout, engine } = startEngine({ config, seed, controllerMode, loadShedding, rolling, routingMode, sensorMode, sensorSpecSet });
     onStart?.(engine, layout);
     const hash = createHash('sha1');
     for (let tick = 0; tick < ticks; tick += 1) {

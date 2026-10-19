@@ -38,7 +38,7 @@
 
                 <button type="button" id="batch-run-button"
                         class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Generate dataset (360 runs)
+                    Generate dataset (900 runs)
                 </button>
             </div>
         </div>
@@ -59,7 +59,7 @@
                 <div>
                     <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Generate dataset - demand parameters</h2>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Per-street sinusoidal demand for the 360-run batch against the corridor selected above.
+                        Per-street sinusoidal demand for the 600-run batch against the corridor selected above.
                         All fields editable; import a finished Traffic Counter upload to overwrite mid/amplitude
                         from a least-squares fit of field counts.
                     </p>
@@ -74,7 +74,7 @@
             <div id="batch-modal-streets" class="space-y-3"></div>
 
             <label class="mt-4 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
-                <input type="checkbox" id="batch-modal-destination" class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
+                <input type="checkbox" id="batch-modal-destination" checked class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
                 <span>
                     <span class="font-semibold">Destination routing</span>
                     <span class="block text-slate-500 dark:text-slate-400">
@@ -89,7 +89,7 @@
                     Cancel
                 </button>
                 <button type="button" id="batch-modal-confirm" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Run batch (360 runs)
+                    Run batch (900 runs)
                 </button>
             </div>
         </div>
@@ -97,8 +97,8 @@
 
     <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
         <strong class="font-semibold">Nothing below is measured yet.</strong>
-        Click <strong>Generate dataset</strong> to run the full 12-condition x 30-rep experimental matrix
-        (360 headless runs) in this browser tab and populate
+        Click <strong>Generate dataset</strong> to run the full 30-condition x 30-rep experimental matrix
+        (900 headless runs) in this browser tab and populate
         <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
         while it runs - the tab is not frozen, just busy.
     </div>
@@ -125,17 +125,51 @@
         Runs: <span id="starved-label">{{ $starvedLabel }}</span>.
     </div>
 
+    {{-- results.js shows it when the latest batch stopped short of the full matrix. --}}
+    <div id="resume-banner" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 text-[12px] leading-relaxed text-sky-900 dark:border-sky-500/25 dark:bg-sky-500/5 dark:text-sky-200">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="min-w-0 flex-1">
+                <strong class="font-semibold">Unfinished batch.</strong>
+                <span id="resume-banner-label"></span>
+                Resume runs only what it is missing, on its own settings and seeds.
+            </span>
+            <button type="button" id="resume-batch-button"
+                    class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
+                Resume batch
+            </button>
+        </div>
+    </div>
+
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">
             <span id="batch-progress-label" class="font-semibold">Starting...</span>
-            <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+            <span class="flex items-baseline gap-3">
+                <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+                <button type="button" id="batch-details-toggle" aria-expanded="false" aria-controls="batch-details"
+                        class="inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">
+                    Details
+                    <svg id="batch-details-chevron" class="h-3.5 w-3.5 transition-transform" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+                </button>
+            </span>
         </div>
         <div class="h-2.5 w-full overflow-hidden rounded-full bg-sky-200/70 dark:bg-sky-900/60">
             <div id="batch-progress-bar" class="h-full w-0 rounded-full bg-sky-600 transition-[width] duration-150 dark:bg-sky-400"></div>
         </div>
+        {{-- What kind of batch this is, always shown; the per-condition breakdown opens under Details (results.js's batch monitor). --}}
+        <p id="batch-progress-meta" class="mt-2 text-[11px] text-sky-800 dark:text-sky-300/90"></p>
+        <div id="batch-details" class="hidden mt-3 border-t border-sky-200 pt-3 dark:border-sky-500/20">
+            <dl id="batch-details-facts" class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px] text-sky-900 sm:grid-cols-3 lg:grid-cols-4 dark:text-sky-200"></dl>
+            <div id="batch-details-conditions" class="mt-4 grid gap-5 lg:grid-cols-3"></div>
+            <p class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-sky-800/80 dark:text-sky-300/70">
+                <span class="inline-flex items-center gap-1.5"><span class="h-2 w-3 rounded-sm bg-sky-300 dark:bg-sky-700"></span>saved earlier (resumed)</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2 w-3 rounded-sm bg-sky-600 dark:bg-sky-400"></span>finished this run</span>
+                <span class="inline-flex items-center gap-1.5"><span class="h-2 w-3 rounded-sm bg-amber-400"></span>running now</span>
+                <span>Reruns rebuild a cut-off condition's recovery curve and are not posted again.</span>
+            </p>
+        </div>
     </div>
 
-    {{-- Completion toast + fireworks burst, shown once the 360-run batch finishes. --}}
+    {{-- Completion toast + fireworks burst, shown once the 600-run batch finishes. --}}
     <div id="batch-complete-toast" class="hidden fixed right-4 top-4 z-[60] flex items-center gap-2 rounded-md border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 shadow-lg dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300">
         <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
         <span id="batch-complete-toast-label">Dataset generated.</span>
@@ -172,9 +206,9 @@
         <div>
             <label for="filter-scope" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Scope</label>
             <select id="filter-scope" class="{{ $select }}">
-                <option value="total" selected>Total (main + side streets)</option>
-                <option value="arterial">Main arterial only</option>
-                <option value="side_street">Side streets only</option>
+                @foreach ($scopeLabels as $scope => $label)
+                    <option value="{{ $scope }}" {{ $loop->first ? 'selected' : '' }}>{{ $label }}</option>
+                @endforeach
             </select>
         </div>
         <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
@@ -210,7 +244,7 @@
             <div>
                 <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Per-condition means</h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                    Each controller mode under normal power and under load shedding. Adaptive's bars follow the
+                    Each controller mode under each power state. Adaptive's bars follow the
                     "Compare against fixed-time" selection above.
                 </p>
             </div>
@@ -279,7 +313,7 @@
 
     {{-- ============================================ segmented + distribution --}}
     <section class="mb-8">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Load shedding, segmented</h2>
+        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Outages, segmented</h2>
         <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
             Pre-outage / during-outage / post-recovery averages, computed from cumulative
             counters rather than a rolling window - this is what shows the real Adaptive-vs-
@@ -289,7 +323,8 @@
             still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
             regardless of the selector above - a single mean can't tell "everyone waits a bit
             longer" apart from "most people are fine, a few are stranded", but that distribution
-            isn't split by arterial/side-street.
+            isn't split by arterial/side-street. Under load shedding, during-outage covers both
+            stages and post-recovery starts at the final restore.
         </p>
 
         <div class="overflow-x-auto {{ $card }}" id="segmented-table">
@@ -297,6 +332,7 @@
                 <thead class="{{ $tableHead }}">
                     <tr>
                         <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
+                        <th scope="col" class="px-4 py-2 font-semibold">Power</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
                         <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, run mean (s, Total)</th>

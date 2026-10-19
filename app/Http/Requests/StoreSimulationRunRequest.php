@@ -3,7 +3,10 @@
 namespace App\Http\Requests;
 
 use App\Enums\BatchKind;
+use App\Enums\ControllerMode;
+use App\Enums\PowerState;
 use App\Enums\RoutingMode;
+use App\Enums\SensorSpecSet;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,13 +31,15 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.batch_id' => ['required', 'uuid'],
             'runs.*.batch_started_at' => ['nullable', 'date'],
             'runs.*.seed' => ['required', 'integer'],
-            'runs.*.controller_mode' => ['required', 'in:fixed,adaptive,green_wave'],
+            'runs.*.controller_mode' => ['required', Rule::enum(ControllerMode::class)],
             'runs.*.routing_mode' => ['sometimes', Rule::enum(RoutingMode::class)],
             'runs.*.batch_kind' => ['sometimes', Rule::enum(BatchKind::class)],
-            'runs.*.power_state' => ['required', 'in:normal,load_shedding'],
+            'runs.*.power_state' => ['required', Rule::enum(PowerState::class)],
             // Null (fixed-time never reads sensors) or one of the four real modes -
             // 'none' is a UI-only option and never a valid stored run.
             'runs.*.sensor_mode' => ['nullable', 'in:inductive_loop,radar,camera,magnetometer'],
+            'runs.*.sensor_spec_set' => ['nullable', Rule::enum(SensorSpecSet::class)],
+            'runs.*.sensor_spec_hash' => ['nullable', 'string', 'regex:/^[0-9a-f]{16}$/'],
             'runs.*.corridor_config' => ['required', 'string', 'max:255'],
             'runs.*.avg_wait_time' => ['required', 'numeric', 'min:0'],
             'runs.*.avg_wait_time_arterial' => ['required', 'numeric', 'min:0'],
@@ -71,9 +76,26 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.throughput_per_min_pre_outage_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.throughput_per_min_during_outage_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.throughput_per_min_post_recovery_side_street' => ['nullable', 'numeric', 'min:0'],
+            // Rolling blackout only: its two stages, splitting the during-outage segment.
+            'runs.*.avg_wait_time_stage1' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_stage1' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_stage2' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_stage2' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_stage1_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_stage1_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_stage2_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_stage2_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_stage1_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_stage1_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.avg_wait_time_stage2_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.throughput_per_min_stage2_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.median_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.p95_wait_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.max_wait_time' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.p95_wait_time_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.max_wait_time_arterial' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.p95_wait_time_side_street' => ['nullable', 'numeric', 'min:0'],
+            'runs.*.max_wait_time_side_street' => ['nullable', 'numeric', 'min:0'],
             'runs.*.trips' => ['nullable', 'integer', 'min:0'],
             'runs.*.mean_trip_time' => ['nullable', 'numeric', 'min:0'],
             'runs.*.mean_trip_delay' => ['nullable', 'numeric', 'min:0'],
@@ -82,6 +104,11 @@ class StoreSimulationRunRequest extends FormRequest
             'runs.*.missed_driveways' => ['nullable', 'integer', 'min:0'],
             'runs.*.diversion_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'runs.*.routing_stats' => ['nullable', 'array'],
+            'runs.*.coordination_stats' => ['nullable', 'array'],
+            'runs.*.road_waits' => ['nullable', 'array'],
+            // Per zone (zone1..zone3), every power state - read by the zone scopes (ZoneScopes). No per-key rules:
+            // validated() would then keep only the listed keys.
+            'runs.*.zone_stats' => ['nullable', 'array'],
             'runs.*.raw_config_json' => ['required', 'array'],
             'runs.*.warmup_ticks' => ['nullable', 'integer', 'min:0'],
             'runs.*.warmup_stationary' => ['nullable', 'boolean'],

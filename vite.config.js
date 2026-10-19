@@ -3,7 +3,8 @@ import laravel from 'laravel-vite-plugin';
 import { buildStamp } from './batch/buildStamp.mjs';
 
 export default defineConfig(({ command }) => {
-    // Stamped on every /results batch. The dev server's code changes after it starts, so its stamp always counts as dirty.
+    // Stamped on every /results batch. The dev server's code changes after it starts, so its baked stamp counts as dirty -
+    // a batch fetches a fresh one from /__build-stamp below, and only falls back to this when it can't.
     const stamp = buildStamp(process.cwd(), command === 'serve' ? 'vite-dev' : 'vite-build');
     if (command === 'serve') stamp.dirty = true;
 
@@ -12,6 +13,18 @@ export default defineConfig(({ command }) => {
             __BUILD_STAMP__: JSON.stringify(stamp),
         },
         plugins: [
+            {
+                // The dev server's code is the working tree as it is now, so a /results batch asks for a fresh stamp
+                // when it starts (results.js's currentBuildStamp()) instead of trusting the one taken at server start.
+                name: 'build-stamp',
+                configureServer(server) {
+                    server.middlewares.use('/__build-stamp', (req, res) => {
+                        res.setHeader('Content-Type', 'application/json');
+                        // fresh: checked at batch start - the report tells it apart from the baked always-dirty stamp.
+                        res.end(JSON.stringify({ ...buildStamp(process.cwd(), 'vite-dev'), fresh: true }));
+                    });
+                },
+            },
             laravel({
                 input: [
                     'resources/css/app.css',

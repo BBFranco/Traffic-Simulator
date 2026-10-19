@@ -24,7 +24,7 @@ import {
     VEHICLE_TYPES,
     TRUCK_VEHICLE_TYPES,
 } from './car.js';
-import { nextPoissonArrival, fluctuatingDemand, hasSufficientCall, mobilShouldChangeLane, mobilIsSafe } from './equations.js';
+import { nextPoissonArrival, fluctuatingDemand, mobilShouldChangeLane, mobilIsSafe, COORDINATED_DEFAULTS, IDM_DEFAULTS } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
 import { AdaptiveController, MAX_TURN_GREEN_S } from './controllers/adaptive.js';
 import { MIN_TURN_GREEN_S } from './controllers/phasePlan.js';
@@ -36,7 +36,12 @@ import {
     RELEASE_HESITATION_MIN_S,
     RELEASE_HESITATION_JITTER_S,
 } from './controllers/allWayStop.js';
-import { buildGreenWaveControllers } from './controllers/greenWave.js';
+import { buildGreenWaveControllers, planCoordination } from './controllers/greenWave.js';
+import { CoordinatedAdaptiveController } from './controllers/coordinatedAdaptive.js';
+import { CoordinationBus, travelTimeS } from './controllers/coordinationBus.js';
+import { SelfTuner, chooseMarried, marriedCriticalCycle, stageKey } from './controllers/selfTuning.js';
+import { CoordinationStats } from './controllers/coordinationStats.js';
+import { chooseMarriedOnChains, planRoute } from './controllers/coordinationRoutes.js';
 import { MinorStopController } from './controllers/minorStop.js';
 import {
     RoundaboutController,
@@ -46,7 +51,9 @@ import {
     ROUNDABOUT_OCCUPANT_TIMEOUT_S,
 } from './controllers/roundabout.js';
 import { carShapeFor } from './carShapes.js';
-import { readQueueLength, detectQueuePresence, detectPresenceAtStopLine, sensorAvailable } from './sensors.js';
+import { observeDetector, emptyFrame, applyErrors, countWithNoise, sensorAvailable } from './sensors.js';
+import { sensorSpecFor, latencyTicks, DEFAULT_SENSOR_SPEC_SET } from './sensorSpecs.js';
+import { isOtherCallSufficient, legacyCallSufficient } from './demandEstimator.js';
 import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection } from './corridor.js';
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
@@ -67,6 +74,12 @@ const ALL_RED_S = 1;
  * once, with only the wait it built up on that scope's roads (_attributeWaits()).
  */
 export const WAIT_ACCOUNTING = 'trip-carried-scope-by-road-v2';
+/**
+ * How the rolling-blackout zone scopes charge wait - recorded on top of WAIT_ACCOUNTING, which they never change.
+ * 'by-junction-v1': a vehicle counts once in every zone whose junctions it queued at or drove through, with the wait it
+ * built up queuing for (or inside the box of) that zone's junctions (_stampWaitZones()).
+ */
+export const ZONE_ACCOUNTING = 'by-junction-v1';
 /** Minimum clearance ahead of a freshly spawned/diverted car so it doesn't start already emergency-braking. */
 const SPAWN_CLEARANCE_M = 4;
 /** How close to the stop line a car commits to its planned movement (and a car still in the wrong lane gives up on it). */
@@ -152,6 +165,13 @@ const EVENT_SEED_SALT = 0x9e3779b9;
  */
 const ARRIVAL_SEED_SALT = 0x85ebca6b;
 const TRIP_SEED_SALT = 0xc2b2ae35;
+
+/**
+ * Sensor measurement noise (sensors.js) - one stream per sensor type, junction and detector, seeded from the run
+ * seed, never the main RNG: a noisy sensor perturbs what the controller sees, not how the traffic is generated.
+ * Created on first draw, so the order detectors are built in never shifts any sequence.
+ */
+const SENSOR_SEED_SALT = 0x27d4eb2f;
 
 /** _routeArc()'s answer for a car already on its destination block. */
 const ON_DESTINATION_BLOCK = { kind: 'onBlock' };
@@ -303,6 +323,11 @@ function carryTripStats(from, to) {
     to.stoppedForSignal = from.stoppedForSignal;
     to.trip = from.trip;
     to.waitByKey = from.waitByKey;
+    to.waitByRoad = from.waitByRoad;
+    to.waitByZone = from.waitByZone;
+    to.stoppedZones = from.stoppedZones;
+    // In the box its wait is still the junction's it is turning at (engine.js's _waitZoneOf()).
+    to.waitZone = from.waitZone;
     to.stoppedKeys = from.stoppedKeys;
     to.waitSeenS = from.waitSeenS;
     to.stopCount = from.stopCount;
@@ -311,7 +336,21 @@ function carryTripStats(from, to) {
     to.stopMark = from.stopCount;
     // Wait in the junction box belongs to the road it is turning off.
     to.turnFromKey = from.road.statsKey;
+    to.turnFromRoadId = from.road.roadId;
     return to;
+}
+
+/**
+ * Sorts `cars` front of the queue first, in place. Most ticks a lane is already in order, and a stable sort leaves an
+ * ordered array untouched, so checking first returns exactly what sort() would - without its comparator calls.
+ */
+function sortFrontFirst(cars) {
+    for (let i = 1; i < cars.length; i += 1) {
+        if (cars[i - 1].distanceM - cars[i].distanceM < 0) {
+            cars.sort((a, b) => b.distanceM - a.distanceM);
+            return;
+        }
+    }
 }
 
 function nearestAhead(a, b) {
@@ -584,9 +623,28 @@ function mergeDropBackCap(car) {
     return car.speedMps > MERGE_DROP_BACK_MIN_SPEED_MPS ? MERGE_DROP_BACK_DECEL_MPS2 : Infinity;
 }
 
+/** Median/p95/max of a list of per-vehicle waits (s) - nulls when nothing cleared. */
+function waitDistributionOf(waits) {
+    if (!waits.length) return { medianWait: null, p95Wait: null, maxWait: null };
+
+    const sorted = [...waits].sort((a, b) => a - b);
+    const percentile = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+    return {
+        medianWait: percentile(0.5),
+        p95Wait: percentile(0.95),
+        maxWait: sorted[sorted.length - 1],
+    };
+}
+
 /** A junction run by traffic lights: signal control, with something arriving on the arterial side to stop the cross street for. */
 function isSignalled(info) {
     return info.node.control === 'signal' && info.arterialGates.length > 0;
+}
+
+/** The controller a junction gets from its layout control alone, whatever the power or mode - null for a signal, whose control depends on both. */
+function nativeControllerType(info) {
+    if (!info.arterialGates.length) return null;
+    return { roundabout: 'roundabout', stop: 'minorStop', allWayStop: 'allWayStop' }[info.node.control] ?? null;
 }
 
 /** Do all-way stop approaches `a` and `b` face each other across the box? */
@@ -676,7 +734,15 @@ export class SimulationEngine {
         this.rng = new SeededRandom(1);
         this.simTimeS = 0;
         this.powerState = 'normal';
-        this.power = { manual: false, scheduled: false, offMinutes: 2, periodMinutes: 8 };
+        this.power = { manual: false, scheduled: false, offMinutes: 2, periodMinutes: 8, zones: new Set(), zoneSchedule: null };
+        /** Arterials (horizontal roads) whose junctions are dark - every one under load shedding, a rolling blackout's zones' otherwise. */
+        this.darkArterials = new Set();
+        /** The junctions on `darkArterials` - each one an all-way stop until its power is back. */
+        this.darkNodes = new Set();
+        /** Rolling blackout: the zones dark right now, or null. */
+        this.darkZones = null;
+        /** Coordinated adaptive's resync hold: nodeId -> until when (sim s) a junction whose power came back stays unmarried. */
+        this.recoveryHoldUntil = new Map();
         this.sensorMode = 'inductive_loop';
         this.batteryBackedSensors = true;
         /** Fraction (0-1) of newly-spawned vehicles that are trucks, split evenly across TRUCK_VEHICLE_TYPES - see setTruckRatio()/_rollVehicleType(). */
@@ -700,11 +766,13 @@ export class SimulationEngine {
                     arterial,
                     controller: null,
                     controllerType: null,
-                    // Per-phase "how long has this approach had an uninterrupted call" - only
-                    // consumed by _isOtherCallSufficient() (debounce for narrow sensors, maxCallWaitS for wide ones).
+                    // Per-phase "how long has this approach had an uninterrupted call" - the shared call rule's
+                    // memory (demandEstimator.js: a call persisting callDebounceS is served, whatever the sensor).
                     callPersistenceS: [0, 0],
-                    /** Per-phase radar count samples over the last `callDebounceS` - see _isOtherCallSufficient(). */
-                    radarSamples: [[], []],
+                    /** Per-phase count samples for a spec's count filter (demandEstimator.js). */
+                    countSamples: [[], []],
+                    /** Detector key -> its sampling/latency state - see _sampleDetectors(). */
+                    detectors: new Map(),
                     /** The arterial direction(s) through this junction - one gate each (signal phase 0). */
                     arterialGates: [],
                     /** The cross-street direction(s) through it (phase 1). */
@@ -871,10 +939,53 @@ export class SimulationEngine {
      * on it shares, so _attributeWaits() reads it straight off `car.road`.
      */
     _stampStatsKeys() {
-        for (const carriageway of this.carriageways) carriageway.road.statsKey = carriageway.arterial.scope === 'side' ? 'side' : carriageway.arterial.id;
-        for (const connector of this.layout.connectors) {
-            for (const dir of Object.values(this.connectorDirs.get(connector.id))) dir.road.statsKey = connector.scope === 'arterial' ? 'arterialConnectors' : 'side';
+        for (const carriageway of this.carriageways) {
+            carriageway.road.statsKey = carriageway.arterial.scope === 'side' ? 'side' : carriageway.arterial.id;
+            carriageway.road.roadId = carriageway.arterial.id;
         }
+        for (const connector of this.layout.connectors) {
+            for (const dir of Object.values(this.connectorDirs.get(connector.id))) {
+                dir.road.statsKey = connector.scope === 'arterial' ? 'arterialConnectors' : 'side';
+                dir.road.roadId = connector.id;
+            }
+        }
+
+        // Rolling blackout zones (the layout's \`zone\`, scripts/add-zones.mjs): a junction takes its horizontal road's.
+        this.zoneOfNode = new Map();
+        for (const arterial of this.layout.arterials) {
+            if (arterial.zone != null) for (const node of arterial.intersections) this.zoneOfNode.set(node.id, arterial.zone);
+        }
+        /** The layout's zones, ascending - empty on a layout without any (no zone stats, no rolling blackout). */
+        this.zones = [...new Set(this.zoneOfNode.values())].sort((a, b) => a - b);
+        for (const carriageway of this.carriageways) this._stampWaitZones(carriageway.road, carriageway.gates, carriageway.arterial.zone);
+        for (const connector of this.layout.connectors) {
+            for (const dir of Object.values(this.connectorDirs.get(connector.id))) this._stampWaitZones(dir.road, dir.gates, connector.zone);
+        }
+    }
+
+    /**
+     * Zone wait is charged by junction (ZONE_ACCOUNTING): a car's wait goes to the zone of the junction it is queuing
+     * for - its road's next one, until it is out the far side of that junction's box. So Jan Shoba's queue at a zone 2
+     * junction is zone 2 wait, though Jan Shoba itself has no zone. Past its last junction a car falls back to its
+     * road's own zone (none on a vertical road).
+     */
+    _stampWaitZones(road, gates, roadZone) {
+        road.zone = roadZone ?? null;
+        road.zoneStops = gates
+            .filter(Boolean)
+            .map((gate) => ({ untilM: 2 * gate.centreDistanceM - gate.stopLineDistanceM, zone: this.zoneOfNode.get(gate.node.id) ?? road.zone }))
+            .sort((a, b) => a.untilM - b.untilM);
+    }
+
+    /** The zone \`car\`'s wait is charged to right now (_stampWaitZones()) - cached on the car until it is past that junction. */
+    _waitZoneOf(car) {
+        const { road } = car;
+        if (car.waitZoneRoad === road && car.distanceM <= car.waitZoneUntilM) return car.waitZone;
+        const stop = road.zoneStops?.find((s) => s.untilM >= car.distanceM) ?? null;
+        car.waitZoneRoad = road;
+        car.waitZoneUntilM = stop ? stop.untilM : Infinity;
+        car.waitZone = stop ? stop.zone : road.zone ?? null;
+        return car.waitZone;
     }
 
     _statsFor(key) {
@@ -1093,16 +1204,35 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false }) {
         /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
         this.websterTurnWeight = websterTurnWeight;
+        /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
+        this.coordination = { ...COORDINATED_DEFAULTS, ...coordination };
+        /**
+         * Coordinated adaptive's groups - each arterial, and each connector route (Jan Shoba) - by id, and each coordinated
+         * junction's group: { id, coordinatedPhase, bus, tuner, nodeInfos, ... } - see _rebuildCoordination().
+         */
+        this.coordinationGroups = new Map();
+        this.coordinationGroupOfNode = new Map();
+        /** Ablation (coordination.freezeAfterWarmup): group id -> the frozen self-tuner state a rebuild restores. */
+        this.frozenTuning = new Map();
+        /** What coordinated adaptive did over the run - the report's coordination section (runHeadless.js's summary.coordination). */
+        this.coordinationStats = new CoordinationStats();
         this.rng.reseed(seed);
         this.eventRng.reseed(seed ^ EVENT_SEED_SALT);
+        this.sensorSeed = seed;
+        this.sensorRngs = new Map();
         this._resetRouting(seed, routingMode);
         this.randomEvents = randomEvents;
         resetCarIdCounter();
         this.simTimeS = 0;
-        this.sensorMode = sensorMode;
+        this.recoveryHoldUntil = new Map();
+        /** Which sensorSpecs.js set the sensors run under ('field' hardware models, or 'legacy' - the pre-overhaul reproduction). */
+        this.sensorSpecSet = sensorSpecSet;
+        /** Sensitivity runs only: switch on the specs' miss / false-call / crosstalk / count-noise models. */
+        this.sensorErrors = sensorErrors;
+        this.setSensorMode(sensorMode);
         this.batteryBackedSensors = batteryBackedSensors;
         this.truckRatio = truckRatio;
         this.busRatio = busRatio;
@@ -1111,8 +1241,13 @@ export class SimulationEngine {
             scheduled: !!power.scheduledOutages,
             offMinutes: power.offMinutes,
             periodMinutes: power.periodMinutes,
+            zones: new Set(power.darkZones ?? []),
+            zoneSchedule: power.zoneSchedule ? { windows: power.zoneSchedule } : null,
         };
-        this.powerState = this._computePowerState();
+        const powerNow = this._computePower();
+        this.powerState = powerNow.state;
+        this.darkZones = powerNow.zones;
+        this._setDark(this._darkArterialsFor(powerNow));
         this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0 };
         this.lockupWatch = new LockupWatch(this);
         /** Cars currently driving their turn through a junction - on neither the arterial nor the cross street yet (see _stepTurningCars()). */
@@ -1135,6 +1270,13 @@ export class SimulationEngine {
         // Every completed vehicle's total wait, network-wide, in clear order - the raw
         // material for a full-run median/p95/max wait (see waitDistributionTotal()).
         this.allWaitTimesTotal = [];
+        // The same per scope: each vehicle's wait on the arterials / the side streets, if it used them (waitDistribution()).
+        this.allWaitTimesByScope = { arterial: [], sideStreet: [] };
+        /** roadId -> { n, waitSum, maxWait } over the vehicles that used each road, with the wait built up there. */
+        this.roadWaits = new Map();
+        // Per rolling-blackout zone: every vehicle that queued at (or drove through) one of its junctions, once, with the wait charged there (_stampWaitZones()).
+        this.zoneStats = new Map(this.zones.map((zone) => [zone, { clearedTotal: 0, clearedWithoutStopTotal: 0, waitSumTotal: 0, recentClears: [] }]));
+        this.allWaitTimesByZone = new Map(this.zones.map((zone) => [zone, []]));
 
         this.arterialState.clear();
         this.carriagewayState.clear();
@@ -1249,6 +1391,10 @@ export class SimulationEngine {
 
     setSensorMode(mode) {
         this.sensorMode = mode;
+        this.sensorSpec = sensorSpecFor(mode, this.sensorSpecSet ?? DEFAULT_SENSOR_SPEC_SET);
+        this.sensorErrorsOn = !!(this.sensorSpec.errorsAlwaysOn || this.sensorErrors);
+        // A different sensor type: nothing the old one sampled or delayed carries over.
+        for (const info of this.nodesInfo?.values() ?? []) if (info.detectors) info.detectors = new Map();
     }
 
     setBatteryBackedSensors(value) {
@@ -1335,6 +1481,7 @@ export class SimulationEngine {
      * mid-trip at that instant, not an ongoing bias.
      */
     resetStats() {
+        this.coordinationStats?.reset();
         for (const state of this.arterialState.values()) {
             state.stats.clearedTotal = 0;
             state.stats.clearedWithoutStopTotal = 0;
@@ -1343,12 +1490,16 @@ export class SimulationEngine {
                 state.stats.clearedByNode[nodeId] = 0;
             }
         }
-        for (const bucket of [this.sideStreetStats, this.arterialConnectorStats, this.totalStats, this.arterialScopeStats]) {
+        for (const bucket of [this.sideStreetStats, this.arterialConnectorStats, this.totalStats, this.arterialScopeStats, ...this.zoneStats.values()]) {
             bucket.clearedTotal = 0;
             bucket.clearedWithoutStopTotal = 0;
             bucket.waitSumTotal = 0;
         }
         this.allWaitTimesTotal = [];
+        this.allWaitTimesByScope = { arterial: [], sideStreet: [] };
+        this.allWaitTimesByZone = new Map(this.zones.map((zone) => [zone, []]));
+        this.roadWaits = new Map();
+        this._freezeTuners();
         this.routingStats = newRoutingStats();
         this.lockupWatch.resetRecord();
     }
@@ -1365,6 +1516,18 @@ export class SimulationEngine {
         this._syncPowerState();
     }
 
+    /** Rolling blackout: \`zones\`' junctions dark (all-way stops), the rest lit; empty restores them. The batch's stage ticks and a replay drive it (runHeadless.js). */
+    setZoneDark(zones) {
+        this.power.zones = new Set(zones);
+        this._syncPowerState();
+    }
+
+    /** The simulator's rolling-blackout checkbox: \`windows\` [{ zones, fromS, toS }] in sim seconds - each zone dark inside its window - or null to clear it. */
+    setZoneSchedule(windows) {
+        this.power.zoneSchedule = windows ? { windows } : null;
+        this._syncPowerState();
+    }
+
     /** Advance the whole simulation by one fixed timestep. */
     tick(dt) {
         this.simTimeS += dt;
@@ -1375,9 +1538,17 @@ export class SimulationEngine {
         for (const info of this.nodesInfo.values()) {
             if (info.controllerType === 'adaptive') {
                 const { controller } = info;
-                const detected = controller.inTurn ? this._turnLaneDetected(info, controller.phase) : this._vehicleDetectedAtStopLine(info, controller.phase);
-                const otherCallSufficient = this._isOtherCallSufficient(info, controller.phase, dt);
-                controller.tick(dt, detected, otherCallSufficient, [this._turnLaneCalled(info, 0), this._turnLaneCalled(info, 1)]);
+                const frames = this._sampleDetectors(info, dt);
+                const detected = controller.inTurn ? this._turnLaneDetected(frames, controller.phase) : this._vehicleDetected(frames, controller.phase);
+                const otherCallSufficient = this._isOtherCallSufficient(info, frames, controller.phase, dt);
+                controller.tick(dt, detected, otherCallSufficient, [this._turnLaneCalled(frames, 0), this._turnLaneCalled(frames, 1)]);
+            } else if (info.controllerType === 'coordinatedAdaptive') {
+                const { controller } = info;
+                const frames = this._sampleDetectors(info, dt);
+                const detected = controller.inTurn ? this._turnLaneDetected(frames, controller.phase) : this._vehicleDetected(frames, controller.phase);
+                const otherCallSufficient = this._isOtherCallSufficient(info, frames, controller.phase, dt);
+                const turnCalls = [this._turnLaneCalled(frames, 0), this._turnLaneCalled(frames, 1)];
+                controller.tick(dt, this.simTimeS, detected, otherCallSufficient, turnCalls, info.platoonView, info.callPersistenceS[1 - controller.layout.coordinatedPhase]);
             } else if (info.controllerType === 'greenWave') {
                 info.controller.tick(dt, this.simTimeS);
             } else {
@@ -1385,6 +1556,7 @@ export class SimulationEngine {
             }
         }
 
+        this._tickCoordination(dt);
         this._updateAllWayStopReleases();
         this._updateRoundaboutReleases();
 
@@ -1417,6 +1589,7 @@ export class SimulationEngine {
         this._pruneRolling(this.arterialConnectorStats);
         this._pruneRolling(this.totalStats);
         this._pruneRolling(this.arterialScopeStats);
+        for (const bucket of this.zoneStats.values()) this._pruneRolling(bucket);
 
         this.lockupWatch.observe();
     }
@@ -1478,7 +1651,7 @@ export class SimulationEngine {
 
         const signals = new Map();
         for (const [nodeId, info] of this.nodesInfo) {
-            const dark = this.powerState === 'load_shedding';
+            const dark = this.darkNodes.has(nodeId);
             const isYellow = !dark && info.controllerType !== 'none' && info.controller.phaseState === 'yellow';
             const inTurn = Boolean(info.controller.inTurn);
             signals.set(nodeId, {
@@ -1548,10 +1721,15 @@ export class SimulationEngine {
         const arterialScope = bucketStats(this.arterialScopeStats);
         // Null on a corridor with no `scope: "arterial"` connector, so it adds nothing to the arterial scope there.
         const arterialConnectors = this.layout.connectors.some((c) => c.scope === 'arterial') ? bucketStats(this.arterialConnectorStats) : null;
+        /** Per rolling-blackout zone, the same as \`total\` - empty on a layout without zones. */
+        const zones = Object.fromEntries([...this.zoneStats].map(([zone, bucket]) => [zone, bucketStats(bucket)]));
 
         return {
             simTimeS: this.simTimeS,
             powerState: this.powerState,
+            /** Rolling blackout: the zones dark right now (ascending), else null. */
+            darkZones: this.darkZones ? [...this.darkZones].sort((a, b) => a - b) : null,
+            zones,
             randomEvents: this.randomEvents,
             cars,
             signals,
@@ -1560,7 +1738,8 @@ export class SimulationEngine {
             arterialConnectors,
             total,
             arterialScope,
-            sensorAvailable: sensorAvailable(this.sensorMode, this.powerState, this.batteryBackedSensors),
+            // A rolling blackout cuts some junctions' sensors - what the pill shows is the dark ones'.
+            sensorAvailable: sensorAvailable(this.sensorMode, this.powerState === 'normal' ? 'normal' : 'load_shedding', this.batteryBackedSensors),
         };
     }
 
@@ -1636,6 +1815,24 @@ export class SimulationEngine {
      * turn-in only reaches the gates beyond the junction it turned at.
      */
     _plannedApproachFlows() {
+        // Pure function of the design demand, turn chances and routed flows - memoised on exactly those, since every
+        // junction's Webster inputs (and every self-tuning re-plan) ask for the whole corridor's flows.
+        const key = this._plannedFlowsKey();
+        if (this._plannedFlowsCache?.key !== key || this._plannedFlowsCache.routingModel !== this.routingModel) {
+            this._plannedFlowsCache = { key, routingModel: this.routingModel, flows: this._computePlannedApproachFlows() };
+        }
+        return this._plannedFlowsCache.flows;
+    }
+
+    /** Everything _computePlannedApproachFlows() reads that can change during a run, as one string. */
+    _plannedFlowsKey() {
+        let key = this.routingActive ? 'd' : 'r';
+        for (const carriageway of this.carriageways) key += `|${carriageway.noSpawn ? 'x' : ''}${this.arterialState.get(carriageway.arterial.id).spawnRatePerLanePerMin}`;
+        for (const connector of this.layout.connectors) key += `|${connector.demand.spawnRatePerLanePerMin},${connector.crossChance},${connector.turnChance}`;
+        return key;
+    }
+
+    _computePlannedApproachFlows() {
         if (this.routingActive) return this._flowsFromArrivals(new Map([...this.routingModel.movementFlowByGate].map(([gate, flow]) => [gate, flow.total])));
         const arrivals = new Map(); // gate -> veh/min arriving on that approach (all its lanes)
         const arterialRoads = this.carriageways.map((carriageway) => ({
@@ -1872,31 +2069,98 @@ export class SimulationEngine {
         return 'normal';
     }
 
-    _syncPowerState() {
-        const next = this._computePowerState();
-        if (next !== this.powerState) {
-            this.powerState = next;
-            this._rebuildAllControllers();
+    /**
+     * Every power source resolved into one state, each tick: a manual cut or a scheduled outage darkens the whole
+     * network ('load_shedding' - the total blackout); otherwise a rolling blackout darkens its zones, from
+     * setZoneDark() or a zone schedule's open window ('rolling_blackout'). Nothing edits the dark sets directly, so
+     * switching between sources can't leave a junction dark.
+     */
+    _computePower() {
+        const total = this._computePowerState();
+        if (total === 'load_shedding') return { state: total, zones: null };
+        const zones = new Set(this.power.zones);
+        for (const window of this.power.zoneSchedule?.windows ?? []) {
+            if (this.simTimeS >= window.fromS && this.simTimeS < window.toS) for (const zone of window.zones) zones.add(zone);
         }
+        return zones.size ? { state: 'rolling_blackout', zones } : { state: 'normal', zones: null };
+    }
+
+    /** The arterials dark under \`power\` - a junction's zone is its arterial's, so darkness never splits an arterial. */
+    _darkArterialsFor({ state, zones }) {
+        if (state === 'load_shedding') return new Set(this.layout.arterials.map((arterial) => arterial.id));
+        if (state === 'rolling_blackout') return new Set(this.layout.arterials.filter((arterial) => zones.has(arterial.zone)).map((arterial) => arterial.id));
+        return new Set();
+    }
+
+    _setDark(darkArterials) {
+        this.darkArterials = darkArterials;
+        this.darkNodes = new Set([...darkArterials].flatMap((id) => (this.nodeInfosByArterial.get(id) ?? []).map((info) => info.node.id)));
+    }
+
+    _syncPowerState() {
+        const power = this._computePower();
+        const dark = this._darkArterialsFor(power);
+        if (power.state === this.powerState && dark.size === this.darkArterials.size && [...dark].every((id) => this.darkArterials.has(id))) return;
+        const changed = this.layout.arterials.map((arterial) => arterial.id).filter((id) => dark.has(id) !== this.darkArterials.has(id));
+        const restored = changed.filter((id) => !dark.has(id));
+        const nodesOf = (ids) => ids.flatMap((id) => (this.nodeInfosByArterial.get(id) ?? []).map((info) => info.node.id));
+        // A junction going dark drops any hold; one whose power is back: coordinated adaptive holds it on plain adaptive for a while (recoveryHold) to flush the outage queues.
+        for (const nodeId of nodesOf(changed.filter((id) => dark.has(id)))) this.recoveryHoldUntil.delete(nodeId);
+        if (this.coordination?.recoveryHold && restored.length) {
+            // Ablation A1: a held zone restored while another is still dark holds until every zone is lit - then marries at once.
+            const holdThrough = new Set(this.coordination.recoveryHoldThroughOutageZones ?? []);
+            const zoneOf = (id) => this.layout.arterials.find((arterial) => arterial.id === id)?.zone;
+            for (const id of restored) {
+                const untilS = dark.size && holdThrough.has(zoneOf(id)) ? Infinity : this.simTimeS + this.coordination.recoveryHoldS;
+                for (const nodeId of nodesOf([id])) this.recoveryHoldUntil.set(nodeId, untilS);
+            }
+            if (!dark.size) for (const [nodeId, untilS] of this.recoveryHoldUntil) if (untilS === Infinity) this.recoveryHoldUntil.delete(nodeId);
+            const coordinates = [...this.arterialState.values()].some((state) => state.mode === 'coordinated_adaptive');
+            if (coordinates) this.coordinationStats.onRecoveryHold(this.coordination.recoveryHoldS, this.simTimeS);
+        }
+        this.powerState = power.state;
+        this.darkZones = power.zones;
+        this._setDark(dark);
+        if (changed.length === this.layout.arterials.length) {
+            this._rebuildAllControllers();
+            return;
+        }
+        // Only the arterials that changed get new controllers - the lit ones keep their place in the cycle. Coordinated
+        // adaptive is planned network-wide (Jan Shoba's route spans every zone), so it is re-planned on every change.
+        this.deferCoordination = true;
+        for (const id of changed) this._rebuildControllersForArterial(id);
+        this.deferCoordination = false;
+        this._rebuildCoordination();
     }
 
     _rebuildAllControllers() {
+        // Coordinated adaptive is built once, network-wide, after every arterial's other controllers.
+        this.deferCoordination = true;
         for (const arterial of this.layout.arterials) {
             this._rebuildControllersForArterial(arterial.id);
         }
+        this.deferCoordination = false;
+        this._rebuildCoordination();
     }
 
     /** Mode or power-state change: every node on this arterial gets a fresh controller. */
     _rebuildControllersForArterial(arterialId) {
         const state = this.arterialState.get(arterialId);
         const nodeInfos = this.nodeInfosByArterial.get(arterialId) ?? [];
+        const lit = !this.darkArterials.has(arterialId);
 
-        if (this.powerState !== 'load_shedding' && state.mode === 'green_wave') {
+        if (lit && state.mode === 'green_wave') {
             this._buildGreenWaveControllersFor(nodeInfos);
             for (const info of nodeInfos) if (!isSignalled(info)) this._rebuildController(info.node.id);
             return;
         }
-        for (const info of nodeInfos) this._rebuildController(info.node.id);
+        if (lit && state.mode === 'coordinated_adaptive') {
+            for (const info of nodeInfos) if (!isSignalled(info)) this._rebuildController(info.node.id);
+        } else {
+            for (const info of nodeInfos) this._rebuildController(info.node.id);
+        }
+        // Network-wide: a connector route spans several arterials' junctions, so any arterial's change can reshape it.
+        if (this.coordinationGroups) this._rebuildCoordination();
     }
 
     /**
@@ -1909,9 +2173,15 @@ export class SimulationEngine {
     _recomputeTimingForArterial(arterialId) {
         const state = this.arterialState.get(arterialId);
         const nodeInfos = this.nodeInfosByArterial.get(arterialId) ?? [];
+        const lit = !this.darkArterials.has(arterialId);
 
-        if (this.powerState !== 'load_shedding' && state.mode === 'green_wave') {
+        if (lit && state.mode === 'green_wave') {
             this._buildGreenWaveControllersFor(nodeInfos);
+            return;
+        }
+        if (lit && state.mode === 'coordinated_adaptive') {
+            // A new planned demand is a new background plan - restarts self-tuning from it, like a power return.
+            this._rebuildCoordination();
             return;
         }
         for (const info of nodeInfos) {
@@ -1940,8 +2210,337 @@ export class SimulationEngine {
         }
     }
 
+    /**
+     * Coordinated adaptive, network-wide (controllers/coordinatedAdaptive.js): green wave's plan as the background,
+     * adaptive actuation on top, plus - per this.coordination - the platoon bus (layer 2) and self-tuning (layer 3).
+     * The groups are each coordinated arterial's signals, and - `connectorRoutes` - each connector route (Jan Shoba,
+     * coordinated on its own phase 1 along its connector chains, controllers/coordinationRoutes.js). A junction on
+     * both coordinates one: the route takes it unless its arterial married it and carries more there. Roundabouts and
+     * stops keep their own control. Built fresh on every mode change and power return, so self-tuning always restarts
+     * from the planned demand.
+     */
+    _rebuildCoordination() {
+        if (this.deferCoordination) return;
+        this.coordinationGroups.clear();
+        this.coordinationGroupOfNode.clear();
+        if (this.powerState === 'load_shedding') return;
+        /** Jan Shoba's signals (every connector-route stop) - the coordination record's married share by stage. */
+        this.coordinationStats.routeNodeIds ??= new Set(this._connectorChains().flatMap((chain) => chain.stops.map((stop) => stop.nodeId)));
+
+        // A rolling blackout's dark arterials sit out - their junctions are all-way stops, and a route only takes lit ones.
+        const coordinated = this.layout.arterials.filter((arterial) => this.arterialState.get(arterial.id).mode === 'coordinated_adaptive' && !this.darkArterials.has(arterial.id));
+        const groups = coordinated.map((arterial) => this._arterialCoordinationGroup(arterial)).filter(Boolean);
+        const routes = this.coordination.connectorRoutes ? this._connectorRoutes(groups) : [];
+        // A route that took junctions out of an arterial leaves it a shorter chain - its planned marriage is re-decided on that.
+        for (const group of groups) group.marriage = chooseMarried(group.nodeInfos, group.arterialQ, group.targetSpeedMps, this.coordination);
+        for (const group of [...groups, ...routes]) if (group.nodeInfos.length) this._buildCoordinationGroup(group);
+    }
+
+    /** One coordinated arterial's signals, planned along it (greenWave.js's planCoordination()), with its planned-demand marriage. */
+    _arterialCoordinationGroup(arterial) {
+        const nodeInfos = (this.nodeInfosByArterial.get(arterial.id) ?? []).filter(isSignalled);
+        if (!nodeInfos.length) return null;
+        const targetSpeedMps = (arterial.targetSpeedKph ?? 50) / 3.6;
+        const q = (nodeId) => this._arterialDemandAt(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0;
+        return {
+            id: arterial.id,
+            coordinatedPhase: 0,
+            nodeInfos,
+            targetSpeedMps,
+            arterialQ: q,
+            marriage: chooseMarried(nodeInfos, q, targetSpeedMps, this.coordination),
+            planner: (infos, arterialDemandFor, crossDemandFor, turnFor, options) => planCoordination(infos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, options),
+            marry: null,
+        };
+    }
+
+    /**
+     * Connector routes: every `scope: "arterial"` connector direction chained end to end through its joins, grouped by
+     * road name (Jan Shoba's southbound and northbound chains form one route), coordinating phase 1 at its signals. A
+     * signal stays with its arterial group when that group married it and its arterial carries more there; otherwise
+     * the route takes it out of the arterial group.
+     */
+    _connectorRoutes(arterialGroups) {
+        const groupOf = new Map();
+        for (const group of arterialGroups) for (const info of group.nodeInfos) groupOf.set(info.node.id, group);
+        const chainsByName = new Map();
+        for (const chain of this._connectorChains()) {
+            if (!chainsByName.has(chain.name)) chainsByName.set(chain.name, []);
+            chainsByName.get(chain.name).push(chain);
+        }
+
+        const routes = [];
+        for (const [name, chains] of chainsByName) {
+            const targetSpeedMps = chains[0].targetSpeedMps;
+            const crossQ = (nodeId) => this._crossDemandFor(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0;
+            const arterialQ = (nodeId) => this._arterialDemandAt(this.nodesInfo.get(nodeId).node)?.spawnRatePerLanePerMin ?? 0;
+            // Only signals whose arterial runs coordinated adaptive can join; the route's own planned marriage over all of them.
+            const eligible = (stops) => stops.filter((stop) => groupOf.has(stop.nodeId));
+            const toChains = (pick) => chains.map((chain) => {
+                const stops = pick(eligible(chain.stops));
+                return { nodeIds: stops.map((stop) => stop.nodeId), gapsM: stops.slice(1).map((stop, i) => stop.sM - stops[i].sM), weight: 1 };
+            });
+            const allChains = toChains((stops) => stops);
+            const routeNodeIds = [...new Set(allChains.flatMap((chain) => chain.nodeIds))];
+            // forceRoutes: the route marries every link whatever its flow - selective off for it alone.
+            const routeCoord = this.coordination.forceRoutes ? { ...this.coordination, selective: false } : this.coordination;
+            const routeMarriage = chooseMarriedOnChains(allChains, routeNodeIds, crossQ, targetSpeedMps, routeCoord);
+            const owned = new Set(routeNodeIds.filter((nodeId) => {
+                const arterialMarried = groupOf.get(nodeId).marriage.nodes.has(nodeId);
+                return !arterialMarried || (routeMarriage.nodes.has(nodeId) && crossQ(nodeId) > arterialQ(nodeId));
+            }));
+            if (!owned.size) continue;
+            for (const nodeId of owned) {
+                const group = groupOf.get(nodeId);
+                group.nodeInfos = group.nodeInfos.filter((info) => info.node.id !== nodeId);
+            }
+
+            const routeChains = toChains((stops) => stops.filter((stop) => owned.has(stop.nodeId))).filter((chain) => chain.nodeIds.length);
+            // Ablation A3 (connectorRouteMarriage off): the route still takes its junctions, but never marries one.
+            const marry = this.coordination.connectorRouteMarriage === false
+                ? () => ({ nodes: new Set(), links: new Set() })
+                : (q, previousLinks) => chooseMarriedOnChains(routeChains, [...owned], q, targetSpeedMps, routeCoord, previousLinks);
+            const route = {
+                id: `route:${name}`,
+                coordinatedPhase: 1,
+                nodeInfos: [...owned].map((nodeId) => this.nodesInfo.get(nodeId)),
+                chains: routeChains,
+                targetSpeedMps,
+                marriage: marry(crossQ),
+            };
+            route.planner = (infos, arterialDemandFor, crossDemandFor, turnFor, options) => planRoute(route, arterialDemandFor, crossDemandFor, turnFor, options);
+            route.marry = marry;
+            routes.push(route);
+        }
+        return routes;
+    }
+
+    /**
+     * Every `scope: "arterial"` connector direction chained end to end through its end-of-road joins, with each signal
+     * it passes (phase 1 gates only) at its distance along the chain: [{ name, targetSpeedMps, stops: [{ nodeId, sM }] }].
+     */
+    _connectorChains() {
+        const isRouteRoad = (key) => {
+            const [id] = key.split(':');
+            const connector = this.connectorsById.get(id);
+            return Boolean(connector && connector.scope === 'arterial' && connector.name);
+        };
+        const keys = [];
+        for (const connector of this.layout.connectors) {
+            if (connector.scope !== 'arterial' || !connector.name) continue;
+            const dirs = this.connectorDirs.get(connector.id);
+            for (const dirKey of ['fwd', 'rev']) if (dirs[dirKey].road.lanes) keys.push(`${connector.id}:${dirKey}`);
+        }
+        const nextOf = (key) => {
+            const join = this.joinsFrom.get(key);
+            return join && !join.slip && isRouteRoad(join.to.key) && this.connectorsById.get(join.to.key.split(':')[0]).name === this.connectorsById.get(key.split(':')[0]).name ? join : null;
+        };
+        const fed = new Set(keys.map((key) => nextOf(key)?.to.key).filter(Boolean));
+
+        const chains = [];
+        for (const start of keys.filter((key) => !fed.has(key))) {
+            const [startId] = start.split(':');
+            const connector = this.connectorsById.get(startId);
+            const chain = { name: connector.name, targetSpeedMps: (connector.targetSpeedKph ?? 40) / 3.6, stops: [] };
+            let key = start;
+            let roadStartM = 0;
+            let entryM = 0;
+            const seen = new Set();
+            while (key && !seen.has(key)) {
+                seen.add(key);
+                const [id, dirKey] = key.split(':');
+                const dir = this.connectorDirs.get(id)[dirKey];
+                for (const gate of dir.gates) {
+                    if (gate.phase !== 1 || !gate.approach || !isSignalled(gate.info)) continue;
+                    chain.stops.push({ nodeId: gate.node.id, sM: roadStartM + gate.stopLineDistanceM - entryM });
+                }
+                const join = nextOf(key);
+                if (!join) break;
+                roadStartM += this.connectorsById.get(id).routeLengthM - entryM;
+                entryM = join.toAtM ?? 0;
+                key = join.to.key;
+            }
+            chains.push(chain);
+        }
+        return chains;
+    }
+
+    /** Warm-up over: with `coordination.freezeAfterWarmup`, every self-tuner stops re-planning where it has settled. */
+    _freezeTuners() {
+        if (!this.coordination?.freezeAfterWarmup) return;
+        for (const [groupId, group] of this.coordinationGroups) if (group.tuner) this.frozenTuning.set(groupId, group.tuner.freeze());
+    }
+
+    /** One coordination group's plan, bus, self-tuner and controllers - registered for its junctions. */
+    _buildCoordinationGroup(group) {
+        const { nodeInfos, targetSpeedMps, coordinatedPhase } = group;
+        const arterialDemandFor = (node) => this._arterialDemandAt(node);
+        const crossDemandFor = (node) => this._crossDemandFor(node);
+        const turnFor = (node) => this._turnStagesAt(this.nodesInfo.get(node.id));
+        const coord = this.coordination;
+        // Selective coordination from the planned demand to start with; self-tuning re-decides it from measured flows.
+        // Ablation (coord.divorceNodes): those junctions never marry - out of every marriage decision, so out of the common cycle too.
+        const forced = new Set(coord.divorceNodes ?? []);
+        const strip = (m) => ({ nodes: new Set([...m.nodes].filter((nodeId) => !forced.has(nodeId))), links: m.links });
+        const marriage = forced.size ? strip(group.marriage) : group.marriage;
+        if (forced.size) {
+            const marry = group.marry ?? ((q, previousLinks) => chooseMarried(nodeInfos, q, targetSpeedMps, coord, previousLinks));
+            group = { ...group, marry: (q, previousLinks) => strip(marry(q, previousLinks)) };
+        }
+        const unmarriedPlan = group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, {});
+        const marriedCycleS = marriedCriticalCycle(unmarriedPlan, marriage.nodes);
+        let plan = marriedCycleS != null && marriedCycleS !== unmarriedPlan.commonCycleS
+            ? group.planner(nodeInfos, arterialDemandFor, crossDemandFor, turnFor, { commonCycleS: marriedCycleS })
+            : unmarriedPlan;
+        // Ablations A2 / A4: a listed zone's arterial route, built while another zone is dark, until the next rebuild -
+        // A2 tunes freely, A4 runs without platoon messages (no arterial holds, no early cross-green ends).
+        const zone = coordinatedPhase === 0 ? this.layout.arterials.find((arterial) => arterial.id === group.id)?.zone : undefined;
+        const partialOutage = this.darkNodes.size > 0;
+        const noPlatoonMessages = partialOutage && (coord.noPlatoonMessageZones ?? []).includes(zone);
+        const bus = coord.platoonMessages && !noPlatoonMessages ? new CoordinationBus() : null;
+        const freeCycle = partialOutage && (coord.freeCycleZones ?? []).includes(zone);
+        const tunerCoord = freeCycle ? { ...coord, retuneEveryCycles: 1, retuneSmoothing: 1, retuneMaxStepS: Infinity } : coord;
+        const tuner = coord.selfTuning
+            ? new SelfTuner({ nodeInfos, arterialDemandFor, crossDemandFor, turnFor, targetSpeedMps, plan, nowS: this.simTimeS, coord: tunerCoord, planner: group.planner, marry: group.marry, coordinatedPhase })
+            : null;
+        // A rebuild (power back) under the freeze ablation: the settled state, not the planned demand.
+        const frozen = tuner && this.frozenTuning.get(group.id);
+        if (frozen) {
+            tuner.restore(frozen);
+            plan = tuner.planNow();
+        }
+        const marriedNodes = frozen ? tuner.marriage.nodes : marriage.nodes;
+        for (const info of nodeInfos) {
+            const holding = this.simTimeS < (this.recoveryHoldUntil.get(info.node.id) ?? -Infinity);
+            const controller = new CoordinatedAdaptiveController(plan.nodes.get(info.node.id), this.simTimeS, { coord, married: !holding && marriedNodes.has(info.node.id) });
+            if (holding && coord.restartOnArterialGreen) controller.startOnArterialGreen();
+            if (tuner) {
+                controller.onGreenEnd = (end) => {
+                    const stage = controller.layout.stages[end.stageIndex];
+                    tuner.recordGreenEnd(info.node.id, stageKey(stage.phase, stage.turn), end);
+                    this.coordinationStats.onGreenEnd(end.reason);
+                };
+            } else {
+                controller.onGreenEnd = (end) => this.coordinationStats.onGreenEnd(end.reason);
+            }
+            info.controllerType = 'coordinatedAdaptive';
+            info.controller = controller;
+            info.callPersistenceS = [0, 0];
+            info.countSamples = [[], []];
+            info.detectors = new Map();
+            info.platoonView = bus ? bus.viewFor(info.node.id) : null;
+        }
+        const entry = { id: group.id, coordinatedPhase, bus, tuner, nodeInfos, targetSpeedMps, marriedNodes, commonCycleS: plan.commonCycleS };
+        this.coordinationGroups.set(group.id, entry);
+        for (const info of nodeInfos) this.coordinationGroupOfNode.set(info.node.id, entry);
+    }
+
+    /** Per tick: stale platoon messages dropped, self-tuning's new plan handed out on its re-tuning boundary, and the run's coordination record sampled. */
+    _tickCoordination(dt) {
+        // Dark under load shedding: no groups exist, but every coordinated junction was unmarried for the tick - counted, so the married share is of the whole window.
+        if (this.powerState === 'load_shedding' && this.coordinationStats.tracking) this.coordinationStats.sampleDark(dt);
+        // A rolling blackout: only its dark junctions sat unmarried.
+        else if (this.darkNodes.size && this.coordinationStats.tracking) this.coordinationStats.sampleDarkNodes(dt, this.darkNodes);
+        let holdsEnded = null;
+        for (const [nodeId, untilS] of this.recoveryHoldUntil) if (this.simTimeS >= untilS) (holdsEnded ??= new Set()).add(nodeId);
+        for (const nodeId of holdsEnded ?? []) this.recoveryHoldUntil.delete(nodeId);
+        const holding = (nodeId) => this.simTimeS < (this.recoveryHoldUntil.get(nodeId) ?? -Infinity);
+        for (const [groupId, coordination] of this.coordinationGroups) {
+            const { bus, tuner, nodeInfos } = coordination;
+            bus?.expire(this.simTimeS);
+            this.coordinationStats.sample(dt, groupId, nodeInfos, tuner?.commonCycleS ?? coordination.commonCycleS);
+            const plan = tuner?.tick(this.simTimeS);
+            if (plan) {
+                this.coordinationStats.onRetune(groupId);
+                for (const info of nodeInfos) info.controller.setPlan(plan.nodes.get(info.node.id));
+            }
+            const holdEnds = holdsEnded != null && nodeInfos.some((info) => holdsEnded.has(info.node.id));
+            if (!plan && !holdEnds) continue;
+            const married = tuner?.marriage.nodes ?? coordination.marriedNodes;
+            for (const info of nodeInfos) info.controller.setMarried(!holding(info.node.id) && married.has(info.node.id));
+        }
+    }
+
+    /**
+     * A vehicle has just entered `gate`'s junction (committed to going straight, or started its turn) - what a stop-line
+     * counter sees. Coordinated adaptive only: it is counted for self-tuning, it is off the bus's list for this junction,
+     * and one going straight on is posted to the next signal along its road.
+     */
+    _onJunctionEntry(gate, car) {
+        if (gate.info.controllerType !== 'coordinatedAdaptive') return;
+        const coordination = this.coordinationGroupOfNode.get(gate.node.id);
+        if (!coordination) return;
+        coordination.bus?.arrived(gate.node.id, car.id);
+        if (coordination.tuner) {
+            const turnLane = Boolean(gate.turnPhase) && isTurnOnlyLane(gate.slotLaneUse?.[car.lane] ?? [], gate.turnPhase.movement);
+            const hasTurnStage = gate.info.controller.layout.stages.some((s) => s.phase === gate.phase && s.turn);
+            const roadKey = gate.carriageway?.id ?? `${gate.connector?.id}:${gate.dirKey}`;
+            coordination.tuner.recordEntry(gate.node.id, stageKey(gate.phase, turnLane && hasTurnStage), `${roadKey}#${car.lane}`);
+        }
+        if (!car.turnPlan?.option) this._postPlatoon(this._roadOfGate(gate), car, gate.stopLineDistanceM);
+    }
+
+    /** The road a gate is on, as _joinRoad() describes one - an arterial direction or a connector direction. */
+    _roadOfGate(gate) {
+        return gate.carriageway
+            ? this._joinRoad({ kind: 'arterial', key: gate.carriageway.id })
+            : this._joinRoad({ kind: 'connector', id: gate.connector.id, dirKey: gate.dirKey, key: `${gate.connector.id}:${gate.dirKey}` });
+    }
+
+    /**
+     * Layer 2: `car` is on `road` (_joinRoad()'s shape) heading away from a junction (past `pastM`) - post it to the next
+     * signal ahead, if that one coordinates this road's phase with the bus on and the car's way takes it there (not off
+     * at a driveway, peel-off or slip road first). With no signal left on this road, the next one along its end-of-road
+     * join counts (Jan Shoba runs on through several connectors). The arrival time is free-flow from where it is now
+     * (coordinationBus.js's travelTimeS()).
+     */
+    _postPlatoon(road, car, pastM = car.distanceM) {
+        let gate = road.gates.find((g) => g.stopLineDistanceM > pastM + 0.01);
+        let distanceM = gate ? gate.stopLineDistanceM - car.distanceM : 0;
+        if (!gate) {
+            const join = this.joinsFrom.get(road.key);
+            gate = join?.to.gates.find((g) => g.stopLineDistanceM > (join.toAtM ?? 0));
+            if (!gate) return;
+            distanceM = road.lengthM - car.distanceM + gate.stopLineDistanceM - (join.toAtM ?? 0);
+        }
+        if (!gate.approach || gate.info.controllerType !== 'coordinatedAdaptive') return;
+        const coordination = this.coordinationGroupOfNode.get(gate.node.id);
+        if (!coordination?.bus || gate.phase !== coordination.coordinatedPhase || !this._carHeadsFor(road.key, car, Math.min(road.lengthM, car.distanceM + distanceM))) return;
+        const v = coordination.targetSpeedMps * (VEHICLE_TYPES[car.vehicleType].desiredSpeedFactor ?? 1);
+        coordination.bus.post(gate.node.id, car.id, this.simTimeS + travelTimeS(distanceM, car.speedMps, v, IDM_DEFAULTS.a));
+        this.coordinationStats.onPlatoonMessage();
+    }
+
+    /** Does `car`'s way along road `roadKey` reach `untilM` on it - by its route (destination mode), or the peel-offs it has already decided on. */
+    _carHeadsFor(roadKey, car, untilM) {
+        const driveway = car.trip?.driveway;
+        if (driveway && car.road === driveway.road && driveway.atM < untilM) return false;
+        for (const join of this.divergesFrom.get(roadKey) ?? []) {
+            if (join.fromAtM <= car.distanceM || join.fromAtM >= untilM) continue;
+            if (car.trip && this.routingActive) {
+                const stateId = this.routingModel.stateOfDiverge.get(join);
+                const kind = stateId && this._routeArcPeek(car, stateId)?.kind;
+                if (kind === 'peel' || kind === 'slip') return false;
+            } else if (car.peelDecisions?.get(join)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** _routeArc() without its side effects (no re-aim at an exit) - for looking ahead along a route. */
+    _routeArcPeek(car, stateId) {
+        const { od, blockStates } = this.routingModel;
+        if (blockStates.get(car.trip.destId)?.has(stateId)) return ON_DESTINATION_BLOCK;
+        return od.variants[car.trip.variant].get(car.trip.destId)?.get(stateId) ?? null;
+    }
+
     _rebuildController(nodeId) {
         const info = this.nodesInfo.get(nodeId);
+        // A roundabout, stop street or all-way stop by layout has no lights: it runs the same lit or dark, in every mode.
+        // Rebuilding it on a power or mode change would empty its ring/box record and its arrival clocks with cars still
+        // in them - so an existing one keeps its controller and state.
+        if (info.controller && info.controllerType === nativeControllerType(info)) return;
         const arterialState = this.arterialState.get(info.arterial.id);
         const crossDemand = this._crossDemandFor(info.node);
 
@@ -1966,7 +2565,7 @@ export class SimulationEngine {
                 0: { arrivedAtS: null, requiredDwellS: null },
                 1: { arrivedAtS: null, requiredDwellS: null },
             };
-        } else if (this.powerState === 'load_shedding' || info.node.control === 'allWayStop') {
+        } else if (this.darkArterials.has(info.arterial.id) || info.node.control === 'allWayStop') {
             info.controllerType = 'allWayStop';
             info.controller = new AllWayStopController();
             // Fresh outage, fresh junction - don't let a lock timestamp or an
@@ -1983,7 +2582,8 @@ export class SimulationEngine {
             info.controllerType = 'adaptive';
             info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null));
             info.callPersistenceS = [0, 0];
-            info.radarSamples = [[], []];
+            info.countSamples = [[], []];
+            info.detectors = new Map();
         } else {
             // Defensive fallback only - green_wave is intercepted one level up in
             // _rebuildControllersForArterial and never reaches here while power is
@@ -2061,7 +2661,7 @@ export class SimulationEngine {
         const arterialState = this.arterialState.get(arterial.id);
 
         for (const lane of state.lanes) {
-            lane.cars.sort((a, b) => b.distanceM - a.distanceM); // front of the queue first
+            sortFrontFirst(lane.cars); // front of the queue first
 
             // Cross-routing (build step 9) first, as its own pass - a car that
             // diverts this tick is removed here and never IDM-steps on the
@@ -2078,7 +2678,7 @@ export class SimulationEngine {
         this._leaveClosedTurnLanes(state);
 
         for (const lane of state.lanes) {
-            lane.cars.sort((a, b) => b.distanceM - a.distanceM); // a lane change may have just reordered this lane
+            sortFrontFirst(lane.cars); // a lane change may have just reordered this lane
 
             for (let i = 0; i < lane.cars.length; i += 1) {
                 const car = lane.cars[i];
@@ -2363,7 +2963,7 @@ export class SimulationEngine {
         car.laneChangeCooldownS = cooldownS;
         const toCars = state.lanes[targetIndex].cars;
         toCars.push(car);
-        toCars.sort((a, b) => b.distanceM - a.distanceM);
+        sortFrontFirst(toCars);
     }
 
     /** Native side-street arrivals (build step 9 gap) - separate from _maybeCrossRoute, which only diverts arterial cars onto a connector. */
@@ -2421,24 +3021,25 @@ export class SimulationEngine {
             const dir = dirs[dirKey];
             const dirState = state[dirKey];
             if (!dir.road.lanes) continue; // one-way connector's unused direction
+            const roadKey = `${connector.id}:${dirKey}`;
 
             // Turns onto the arterial first, as their own pass - same reason as
             // _stepArterialCars()'s cross-routing pass.
             for (const lane of dirState.lanes) {
-                lane.cars.sort((a, b) => b.distanceM - a.distanceM);
+                sortFrontFirst(lane.cars);
                 lane.cars = lane.cars.filter((car) => !this._maybeTurnOffConnector(connector, dir, dirKey, car));
             }
             if (dirState.lanes.length > 1) this._performConnectorLaneChanges(dir, dirState, dt);
             this._leaveClosedTurnLanes(dirState);
 
             for (const lane of dirState.lanes) {
-                lane.cars.sort((a, b) => b.distanceM - a.distanceM);
+                sortFrontFirst(lane.cars);
 
                 for (let i = 0; i < lane.cars.length; i += 1) {
                     const car = lane.cars[i];
                     const realAhead = i > 0 ? lane.cars[i - 1] : null;
-                    const joinAhead = i === 0 ? this._joinObstacle(`${connector.id}:${dirKey}`, car) : null;
-                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(`${connector.id}:${dirKey}`, dirState, lane, car));
+                    const joinAhead = i === 0 ? this._joinObstacle(roadKey, car) : null;
+                    const ahead = nearestAhead(nearestAhead(nearestAhead(nearestAhead(nearestAhead(realAhead, this._connectorObstacleAhead(dir, car)), joinAhead), this._drivewayHold(car)), this._letInHold(car)), this._peelHold(roadKey, dirState, lane, car));
                     const speedLimitMps = Math.min(this._connectorTurnApproachSpeedLimit(dir, car), this._drivewaySpeedLimit(car));
                     if (car.steppedTick !== this.tickNo) stepCar(car, ahead, dt, car.mergeDropBack ? mergeDropBackCap(car) : Infinity, speedLimitMps);
                     car.steppedTick = this.tickNo;
@@ -2446,8 +3047,8 @@ export class SimulationEngine {
                 }
 
                 if (this.routingActive) this._drivewayArrivals(dirState, lane);
-                this._peelOff(`${connector.id}:${dirKey}`, dirState, lane);
-                const join = this.joinsFrom.get(`${connector.id}:${dirKey}`);
+                this._peelOff(roadKey, dirState, lane);
+                const join = this.joinsFrom.get(roadKey);
                 while (lane.cars.length && lane.cars[0].distanceM > routeLengthM) {
                     if (join) {
                         if (!this._handOff(join, lane)) break; // no room on the next road yet
@@ -2588,10 +3189,14 @@ export class SimulationEngine {
         }
         if (!car.turnPlan.option) {
             car.crossRollNodeId = nodeId;
+            this._onJunctionEntry(gate, car);
             return false;
         }
         // Off a road arriving along the arterial's line, the turn is onto the cross street.
-        if (car.turnPlan.option.connectorId ? this._divertCarToConnector(car, gate, car.turnPlan.option) : this._divertCarToArterial(car, gate, connector, dirKey)) return true;
+        if (car.turnPlan.option.connectorId ? this._divertCarToConnector(car, gate, car.turnPlan.option) : this._divertCarToArterial(car, gate, connector, dirKey)) {
+            this._onJunctionEntry(gate, car);
+            return true;
+        }
 
         this._holdForTurn(car, nodeId, !gate.approach.noStraight && isThroughSlot(dir.laneLayout, car.lane));
         return false;
@@ -3429,7 +4034,7 @@ export class SimulationEngine {
             car.nextNodeIndex = next === -1 ? join.to.gates.length : next;
         }
         target.cars.push(car);
-        target.cars.sort((a, b) => b.distanceM - a.distanceM);
+        sortFrontFirst(target.cars);
         return true;
     }
 
@@ -3481,7 +4086,7 @@ export class SimulationEngine {
                 car.turnPlan = null;
                 this._glideFrom(car, drawnAt);
                 target.cars.push(car);
-                target.cars.sort((a, b) => b.distanceM - a.distanceM);
+                sortFrontFirst(target.cars);
             }
         }
     }
@@ -3513,8 +4118,10 @@ export class SimulationEngine {
      * arriving at speed with no room (and missing the turn, or driving into the tail).
      */
     _peelHold(key, dirState, lane, car) {
+        const joins = this.divergesFrom.get(key);
+        if (!joins) return null;
         let hold = null;
-        for (const join of this.divergesFrom.get(key) ?? []) {
+        for (const join of joins) {
             const toGoM = join.fromAtM - car.distanceM;
             if (toGoM > DIVERGE_DECISION_M || toGoM < -15) continue;
             if (!join.slip && !car.peelDecisions?.get(join)) continue;
@@ -3734,9 +4341,13 @@ export class SimulationEngine {
         }
         if (!car.turnPlan.option) {
             car.crossRollNodeId = nearest.node.id;
+            this._onJunctionEntry(nearest, car);
             return false;
         }
-        if (this._divertCarToConnector(car, nearest, car.turnPlan.option)) return true;
+        if (this._divertCarToConnector(car, nearest, car.turnPlan.option)) {
+            this._onJunctionEntry(nearest, car);
+            return true;
+        }
 
         // No gap on the cross street yet: wait at the stop line (see _signalAheadFor()) and retry next tick.
         this._holdForTurn(car, nearest.node.id, isThroughSlot(carriageway.laneLayout, car.lane));
@@ -3916,7 +4527,7 @@ export class SimulationEngine {
      * from this approach are already waiting in there.
      */
     _mayWaitInBox(gate) {
-        if (!['fixed', 'greenWave', 'adaptive'].includes(gate.info.controllerType)) return false;
+        if (!['fixed', 'greenWave', 'adaptive', 'coordinatedAdaptive'].includes(gate.info.controllerType)) return false;
         const controller = gate.info.controller;
         if (!(gate.phase === 0 ? controller.isArterialGreen() : controller.isCrossGreen())) return false;
         return this.turningCars.filter((c) => c.turnPath.boxWait?.gate === gate).length < MAX_WAITING_IN_BOX;
@@ -3929,7 +4540,7 @@ export class SimulationEngine {
 
     _stepTurningCars(dt) {
         if (!this.turningCars.length) return;
-        this.turningCars.sort((a, b) => b.distanceM - a.distanceM);
+        sortFrontFirst(this.turningCars);
 
         const leaderByKey = new Map();
         const stillTurning = [];
@@ -3974,8 +4585,12 @@ export class SimulationEngine {
                 const next = gates.findIndex((gate) => gate.stopLineDistanceM > car.distanceM);
                 car.nextNodeIndex = next === -1 ? gates.length : next;
             }
+            if (!path.sameRoad && (path.carriagewayId || path.connectorId)) {
+                const key = path.carriagewayId ?? `${path.connectorId}:${path.dirKey}`;
+                this._postPlatoon(this._joinRoad(path.carriagewayId ? { kind: 'arterial', key } : { kind: 'connector', id: path.connectorId, dirKey: path.dirKey, key }), car);
+            }
             lane.cars.push(car);
-            lane.cars.sort((a, b) => b.distanceM - a.distanceM);
+            sortFrontFirst(lane.cars);
             this._letInDone(car, car.road, car.lane);
         }
         this.turningCars = stillTurning;
@@ -4095,95 +4710,122 @@ export class SimulationEngine {
         return { distanceM: car.distanceM + best.aheadM, speedMps: best.other.speedMps, lengthM: best.other.lengthM, car: best.other };
     }
 
-    /** Stop-line detector for gap-out timing - independent of `sensorMode`, see sensors.js's detectPresenceAtStopLine(). */
-    _vehicleDetectedAtStopLine(info, phase) {
-        return this._phaseApproaches(info, phase).some((a) => detectPresenceAtStopLine(a.cars, a.gateDistanceM));
+    /**
+     * Every detector at an actuated junction, sampled once per tick whether or not its frame is read this
+     * tick - so latency and sampling run on an unbroken clock. Returns the frames the controller sees (after
+     * each spec's latency and, when on, its error model): `phase[p]` one per approach road `p` serves,
+     * `turn[p]` one per protected-turn lane group.
+     */
+    _sampleDetectors(info, dt) {
+        const spec = this.sensorSpec;
+        const delay = latencyTicks(spec, dt);
+        const groups = {
+            phase: [this._phaseApproaches(info, 0), this._phaseApproaches(info, 1)],
+            turn: [this._turnLaneApproaches(info, 0), this._turnLaneApproaches(info, 1)],
+        };
+        const states = { phase: [[], []], turn: [[], []] };
+        for (const kind of ['phase', 'turn']) {
+            for (const p of [0, 1]) {
+                for (const approach of groups[kind][p]) {
+                    let det = info.detectors.get(approach.key);
+                    if (!det) {
+                        det = { key: approach.key, history: [], sample: null, lastSampleS: -Infinity };
+                        info.detectors.set(approach.key, det);
+                    }
+                    const due = spec.samplePeriodS == null || this.simTimeS - det.lastSampleS >= spec.samplePeriodS - 1e-9;
+                    if (due) {
+                        det.sample = observeDetector(spec, approach.cars, approach.gateDistanceM);
+                        det.lastSampleS = this.simTimeS;
+                    }
+                    det.history.push(det.sample);
+                    if (det.history.length > delay + 1) det.history.shift();
+                    states[kind][p].push(det);
+                }
+            }
+        }
+        const reported = (det) => (det.history.length > delay ? det.history[0] : emptyFrame(spec));
+        const errorsOn = this.sensorErrorsOn && (spec.errors.missP || spec.errors.falseCallP || spec.errors.crosstalkP);
+        const all = errorsOn ? [...states.phase[0], ...states.phase[1], ...states.turn[0], ...states.turn[1]] : null;
+        const frameOf = (det) => {
+            const frame = reported(det);
+            const out = errorsOn ? applyErrors(spec, frame, this._sensorRng(info, det.key), all.some((other) => other !== det && reported(other).presence)) : frame;
+            return { ...out, key: det.key };
+        };
+        return {
+            phase: states.phase.map((dets) => dets.map(frameOf)),
+            turn: states.turn.map((dets) => dets.map(frameOf)),
+        };
+    }
+
+    /** The shared gap-out rule's input: did any detector on road `phase`'s approaches actuate this tick (stop-line zone or an advance zone). */
+    _vehicleDetected(frames, phase) {
+        return frames.phase[phase].some((f) => f.actuated);
     }
 
     /** The cars in the lane(s) road `phase`'s protected turn serves, per gate with its stop-line distance - what its detectors watch. */
     _turnLaneApproaches(info, phase) {
-        return (info.turnStages[phase]?.gates ?? []).map((gate) => ({
+        return (info.turnStages[phase]?.gates ?? []).map((gate, i) => ({
             cars: this._gateLanes(gate)
                 .flatMap((lane) => lane.cars)
                 .filter((car) => isTurnOnlyLane(gate.slotLaneUse?.[car.lane] ?? [], gate.turnPhase.movement)),
             gateDistanceM: gate.stopLineDistanceM,
+            key: `turn${phase}:${i}`,
         }));
     }
 
     /** Is a vehicle waiting in road `phase`'s turn lane(s), as the junction's sensors see it - what calls its turn stage. */
-    _turnLaneCalled(info, phase) {
-        return this._turnLaneApproaches(info, phase).some((a) => detectQueuePresence(a.cars, a.gateDistanceM, this.sensorMode));
+    _turnLaneCalled(frames, phase) {
+        return frames.turn[phase].some((f) => f.presence);
     }
 
-    /** Stop-line detector over road `phase`'s turn lane(s), for the turn stage's gap-out - see _vehicleDetectedAtStopLine(). */
-    _turnLaneDetected(info, phase) {
-        return this._turnLaneApproaches(info, phase).some((a) => detectPresenceAtStopLine(a.cars, a.gateDistanceM));
+    /** The turn lane(s)' detectors, for the turn stage's gap-out - see _vehicleDetected(). */
+    _turnLaneDetected(frames, phase) {
+        return frames.turn[phase].some((f) => f.actuated);
     }
 
-    /**
-     * Is the phase that would receive the next green already worth taking green away for?
-     * `inductive_loop`/`magnetometer` have detection windows too short to ever count up to
-     * `minCallToSwitch` real vehicles (8m/15m holds maybe 1-3 car lengths) - counting is simply
-     * not a capability those sensors have, so instead of a threshold that can never trip, a call
-     * just has to persist for `callDebounceS` uninterrupted seconds to count as sufficient. Wider
-     * sensors (radar/camera) keep the queue-depth threshold, which they can actually see, with two
-     * guards: a call held `maxCallWaitS` is served whatever its depth (a short queue isn't stranded
-     * until maxGreen), and radar's count is averaged over `callDebounceS` so a single noisy +1 tick
-     * can't trip the threshold early.
-     */
-    _isOtherCallSufficient(info, currentPhase, dt) {
-        const otherPhase = 1 - currentPhase;
-        const params = info.controller.params;
-        info.callPersistenceS[currentPhase] = 0; // never "waiting" on itself while it holds green
-        if (this.sensorMode === 'inductive_loop' || this.sensorMode === 'magnetometer') {
-            const present = this._sensedQueueForApproach(info, otherPhase) > 0;
-            info.callPersistenceS[otherPhase] = present ? info.callPersistenceS[otherPhase] + dt : 0;
-            return info.callPersistenceS[otherPhase] >= params.callDebounceS;
+    /** The shared call rule (demandEstimator.js) on the waiting phase's frames - the legacy set keeps the pre-overhaul rule. */
+    _isOtherCallSufficient(info, frames, currentPhase, dt) {
+        if (this.sensorSpecSet !== 'legacy') {
+            return isOtherCallSufficient({ state: info, currentPhase, frames: frames.phase[1 - currentPhase], params: info.controller.params, dt });
         }
-
-        const queue = this._sensedQueueForApproach(info, otherPhase);
-        const present = this._phaseApproaches(info, otherPhase).some((a) => detectQueuePresence(a.cars, a.gateDistanceM, this.sensorMode));
-        info.callPersistenceS[otherPhase] = present ? info.callPersistenceS[otherPhase] + dt : 0;
-        if (info.callPersistenceS[otherPhase] >= params.maxCallWaitS) return true;
-
-        if (this.sensorMode !== 'radar') return hasSufficientCall(queue, params);
-
-        const samples = info.radarSamples[otherPhase];
-        info.radarSamples[currentPhase] = [];
-        samples.push({ tS: this.simTimeS, queue });
-        while (samples.length && samples[0].tS <= this.simTimeS - params.callDebounceS) samples.shift();
-        const windowCovered = info.callPersistenceS[otherPhase] >= params.callDebounceS;
-        const meanQueue = samples.reduce((sum, s) => sum + s.queue, 0) / samples.length;
-        return windowCovered && hasSufficientCall(Math.round(meanQueue), params);
+        return legacyCallSufficient({
+            state: info,
+            currentPhase,
+            frames: frames.phase[1 - currentPhase],
+            readCount: (frame) => (this.sensorErrorsOn ? countWithNoise(this.sensorSpec, frame, this._sensorRng(info, frame.key), true) : frame.count),
+            outputs: this.sensorSpec.outputs,
+            params: info.controller.params,
+            dt,
+            simTimeS: this.simTimeS,
+        });
     }
 
     /**
-     * Sense whatever traffic is actually approaching this node on `phase`'s
-     * road - both directions of a two-way road, summed rather than picking one,
-     * since the phase serves both.
+     * The cars on each road direction `phase` (0 the arterial, 1 the cross street) serves at `info`'s junction, with that direction's stop-line
+     * distance there, and `key` - which detector at the junction watches them (its noise stream, _sensorRng()).
      */
-    _sensedQueueForApproach(info, phase) {
-        return this._phaseApproaches(info, phase).reduce(
-            (sum, a) => sum + readQueueLength(a.cars, a.gateDistanceM, this.sensorMode, this.rng),
-            0
-        );
-    }
-
-    /** The cars on each road direction `phase` (0 the arterial, 1 the cross street) serves at `info`'s junction, with that direction's stop-line distance there. */
     _phaseApproaches(info, phase) {
         const gates = phase === 0 ? info.arterialGates : info.crossGates;
         const own = phase === 0
-            ? gates.map((gate) => ({ cars: this._gateLanes(gate).flatMap((l) => l.cars), gateDistanceM: gate.stopLineDistanceM }))
-            : gates.map((gate) => ({
+            ? gates.map((gate, i) => ({ cars: this._gateLanes(gate).flatMap((l) => l.cars), gateDistanceM: gate.stopLineDistanceM, key: `${phase}:${i}` }))
+            : gates.map((gate, i) => ({
                   cars: this.connectorState.get(gate.connector.id)[gate.dirKey].lanes.flatMap((l) => l.cars),
                   gateDistanceM: gate.stopLineDistanceM,
+                  key: `${phase}:${i}`,
               }));
         // A gate right at a joined road's start queues on the road before it - in that road's frame.
-        const fed = gates.flatMap((gate) => {
+        const fed = gates.flatMap((gate, i) => {
             const join = this.feedersByGate.get(gate);
-            return join ? [{ cars: join.from.lanes().flatMap((l) => l.cars), gateDistanceM: join.from.lengthM + gate.stopLineDistanceM }] : [];
+            return join ? [{ cars: join.from.lanes().flatMap((l) => l.cars), gateDistanceM: join.from.lengthM + gate.stopLineDistanceM, key: `${phase}:fed:${i}` }] : [];
         });
         return [...own, ...fed];
+    }
+
+    /** The noise stream of detector `detectorKey` at `info`'s junction for the current sensor type - see SENSOR_SEED_SALT. */
+    _sensorRng(info, detectorKey) {
+        const key = `${this.sensorMode}|${info.node.id}|${detectorKey}`;
+        if (!this.sensorRngs.has(key)) this.sensorRngs.set(key, new SeededRandom((this.sensorSeed ^ SENSOR_SEED_SALT ^ hashKey(key)) >>> 0));
+        return this.sensorRngs.get(key);
     }
 
     /** The live lanes of the road a gate is on - an arterial direction's or a connector direction's. */
@@ -4283,8 +4925,8 @@ export class SimulationEngine {
 
     /**
      * Ground-truth (never RNG-touching) read of everything the hover tooltip
-     * shows - unlike `_sensedQueueForApproach()`, safe to call on every mouse
-     * move without perturbing the seeded run (radar's noise draws from `rng`).
+     * shows - unlike reading a detector frame's count, safe to call on every mouse
+     * move without perturbing the seeded run (count noise draws from the sensor streams).
      */
     signalDebugInfo(nodeId) {
         const info = this.nodesInfo.get(nodeId);
@@ -4340,6 +4982,8 @@ export class SimulationEngine {
      * `{ kind: 'cycle', cycleS, positionS, roads: [arterial, cross] }`, each road a run of
      * `{ state: 'green' | 'arrow' | 'yellow' | 'red', durationS }` from the start of the cycle.
      * Adaptive has no cycle, only the current stage's window: `{ kind: 'actuated', ... }`.
+     * Coordinated adaptive: its background cycle, plus `coordination` - where it is against its yield
+     * point / force-off, the next platoon posted to it, and self-tuning's last update.
      */
     _signalTiming(info) {
         const controller = info.controller;
@@ -4358,8 +5002,38 @@ export class SimulationEngine {
                 sinceDetectionS: controller.secondsSinceLastDetection,
             };
         }
+        if (info.controllerType === 'coordinatedAdaptive') return this._coordinatedTiming(info);
         if (info.controllerType !== 'fixed' && info.controllerType !== 'greenWave') return null;
+        return this._cycleTiming(controller);
+    }
 
+    _coordinatedTiming(info) {
+        const controller = info.controller;
+        const { stages, stageGreens, C } = controller.layout;
+        const coordination = this.coordinationGroupOfNode.get(info.node.id);
+        const now = this.simTimeS;
+        const ends = controller.lastEnd;
+        return {
+            ...this._cycleTiming({ stages, stageGreens }),
+            positionS: controller.cyclePositionS(now),
+            cycleS: C,
+            coordination: {
+                married: controller.married,
+                offsetS: controller.layout.offsetS,
+                group: coordination?.id ?? null,
+                yieldInS: controller.isCoordinatedGreen() ? controller.yieldAtS - now : null,
+                forceOffInS: controller.phaseState === 'green' && !controller.isCoordinatedGreen() ? controller.forceOffAtS - now : null,
+                platoonHeldS: controller.platoonHeldS,
+                nextPlatoon: coordination?.bus?.nextPlatoon(info.node.id, now, this.coordination.platoonLookaheadS) ?? null,
+                lastEnd: ends && { stage: stageKey(stages[ends.stageIndex].phase, stages[ends.stageIndex].turn), reason: ends.reason, greenS: ends.greenS, agoS: now - ends.atS },
+                retune: coordination?.tuner?.lastUpdate ?? null,
+                pendingPlan: Boolean(controller.pendingPlan),
+            },
+        };
+    }
+
+    /** The whole-cycle timing bars for a controller with fixed `stages` / `stageGreens` - see _signalTiming(). */
+    _cycleTiming(controller) {
         const { stages, stageGreens } = controller;
         const stageLengthS = (i) => stageGreens[i] + YELLOW_S + ALL_RED_S;
         const roads = [0, 1].map((road) => {
@@ -4396,6 +5070,17 @@ export class SimulationEngine {
         if (phaseState === 'yellow') return `${Math.max(0, YELLOW_S - phaseElapsed).toFixed(1)}s (yellow)`;
         if (phaseState === 'allRed') return `${Math.max(0, ALL_RED_S - phaseElapsed).toFixed(1)}s (all-red)`;
 
+        if (info.controllerType === 'coordinatedAdaptive') {
+            const now = this.simTimeS;
+            if (!controller.married) return 'isolated - plain adaptive rules (no strong arterial link to coordinate on)';
+            if (controller.isCoordinatedGreen()) {
+                if (phaseElapsed < controller.params.minGreen || now < controller.yieldAtS) return `≥ ${Math.max(0, controller.yieldAtS - now).toFixed(1)}s (coordinated - holds to its yield point)`;
+                if (controller.platoonHeldS > 0) return `holding for an arriving platoon (${controller.platoonHeldS.toFixed(1)}s of ${this.coordination.platoonExtendMaxS}s)`;
+                return 'resting - yields to a sufficient call on the cross street while it can still be served';
+            }
+            return `≤ ${Math.max(0, controller.forceOffAtS - now).toFixed(1)}s (gaps out after ${controller.params.gapOutS}s, forced off at the plan's end)`;
+        }
+
         if (info.controllerType === 'fixed' || info.controllerType === 'greenWave') {
             const duration = controller.inTurn ? controller.turnDurations[phase] : controller.greenDurations[phase];
             return `${Math.max(0, duration - phaseElapsed).toFixed(1)}s (fixed split)`;
@@ -4406,7 +5091,7 @@ export class SimulationEngine {
             const { minGreen, maxGreen, gapOutS, minCallToSwitch, callDebounceS, maxCallWaitS } = controller.params;
             const otherQueue = phase === 0 ? crossQueue : arterialQueue; // ground truth, for the human reading this
             const otherName = phase === 0 ? 'cross street' : 'arterial';
-            const usesNarrowSensor = this.sensorMode === 'inductive_loop' || this.sensorMode === 'magnetometer';
+            const usesNarrowSensor = this.sensorSpecSet !== 'legacy' || !this.sensorSpec.outputs.count;
             const gapRemaining = gapOutS - controller.secondsSinceLastDetection;
 
             if (phaseElapsed < minGreen) return `≥ ${(minGreen - phaseElapsed).toFixed(1)}s (holding minimum green)`;
@@ -4414,7 +5099,7 @@ export class SimulationEngine {
             if (usesNarrowSensor) {
                 const persistedS = info.callPersistenceS[1 - phase];
                 if (persistedS < callDebounceS)
-                    return `≤ ${(maxGreen - phaseElapsed).toFixed(1)}s (call on ${otherName} too new to trust - can't count depth on this sensor, capped by max green)`;
+                    return `≤ ${(maxGreen - phaseElapsed).toFixed(1)}s (call on ${otherName} too new to trust - served once it has persisted ${callDebounceS}s, capped by max green)`;
             } else if (otherQueue < minCallToSwitch && info.callPersistenceS[1 - phase] < maxCallWaitS) {
                 const capS = Math.min(maxGreen - phaseElapsed, maxCallWaitS - info.callPersistenceS[1 - phase]);
                 return `≤ ${capS.toFixed(1)}s (small call on ${otherName}, served once it has waited ${maxCallWaitS}s or at max green)`;
@@ -4966,22 +5651,44 @@ export class SimulationEngine {
             if (info.controllerType === 'roundabout' && info.roundaboutOccupants.delete(car.id)) this.accounting.roundaboutOverruns += 1;
         }
         this.nodeWaitMarkS.delete(car.id);
-        this._addWait(car, car.road.statsKey);
+        this._addWait(car, car.road.statsKey, car.road.roadId, this.zones.length ? this._waitZoneOf(car) : null);
         this._recordInBucket(this.totalStats, car.totalWaitS, car.everStopped);
         let arterialWaitS = 0;
         let usedArterial = false;
         let stoppedOnArterial = false;
+        for (const [roadId, waitS] of car.waitByRoad ?? []) this._recordRoadWait(roadId, waitS);
         for (const [key, waitS] of car.waitByKey) {
             const stopped = car.stoppedKeys?.has(key) ?? false;
             this._recordInBucket(this._statsFor(key), waitS, stopped);
-            if (key === 'side') continue;
+            if (key === 'side') {
+                this.allWaitTimesByScope.sideStreet.push(waitS);
+                continue;
+            }
             usedArterial = true;
             arterialWaitS += waitS;
             stoppedOnArterial ||= stopped;
         }
-        if (usedArterial) this._recordInBucket(this.arterialScopeStats, arterialWaitS, stoppedOnArterial);
+        if (usedArterial) {
+            this._recordInBucket(this.arterialScopeStats, arterialWaitS, stoppedOnArterial);
+            this.allWaitTimesByScope.arterial.push(arterialWaitS);
+        }
+        for (const [zone, waitS] of car.waitByZone ?? []) {
+            const bucket = this.zoneStats.get(zone);
+            if (!bucket) continue; // a stub zoned with no junctions of its own zone
+            this._recordInBucket(bucket, waitS, car.stoppedZones?.has(zone) ?? false);
+            this.allWaitTimesByZone.get(zone).push(waitS);
+        }
         this.allWaitTimesTotal.push(car.totalWaitS);
         this.liveMetrics?.onVehicleClear(car);
+    }
+
+    /** A vehicle that used `roadId` cleared: once into that road's count, with the wait it built up on it (the report's per-road waits - recording only). */
+    _recordRoadWait(roadId, waitS) {
+        const road = this.roadWaits.get(roadId) ?? { n: 0, waitSum: 0, maxWait: 0 };
+        road.n += 1;
+        road.waitSum += waitS;
+        if (waitS > road.maxWait) road.maxWait = waitS;
+        this.roadWaits.set(roadId, road);
     }
 
     _recordInBucket(bucket, waitS, stopped) {
@@ -4993,7 +5700,10 @@ export class SimulationEngine {
 
     /** Each car's wait since last tick goes to the scope of the road it built up on (WAIT_ACCOUNTING). */
     _attributeWaits() {
-        const attribute = (car) => this._addWait(car, car.turnPath && car.turnFromKey ? car.turnFromKey : car.road.statsKey);
+        const zoned = this.zones.length > 0;
+        const attribute = (car) => (car.turnPath && car.turnFromKey
+            ? this._addWait(car, car.turnFromKey, car.turnFromRoadId, zoned ? car.waitZone ?? null : null)
+            : this._addWait(car, car.road.statsKey, car.road.roadId, zoned ? this._waitZoneOf(car) : null));
         for (const state of this.carriagewayState.values()) for (const lane of state.lanes) lane.cars.forEach(attribute);
         for (const state of this.connectorState.values()) {
             for (const lane of state.fwd.lanes) lane.cars.forEach(attribute);
@@ -5002,12 +5712,25 @@ export class SimulationEngine {
         this.turningCars.forEach(attribute);
     }
 
-    _addWait(car, key) {
-        car.waitByKey ??= new Map();
-        if (!car.waitByKey.has(key)) car.waitByKey.set(key, 0);
+    /** \`zone\`: the rolling-blackout zone the wait is charged to (_waitZoneOf()), or null - recorded on top, the scopes never read it. */
+    _addWait(car, key, roadId, zone = null) {
+        const waitByKey = (car.waitByKey ??= new Map());
+        const waitByRoad = (car.waitByRoad ??= new Map());
+        const soFarS = waitByKey.get(key);
+        if (soFarS === undefined) waitByKey.set(key, 0);
+        const roadSoFarS = waitByRoad.get(roadId);
+        if (roadSoFarS === undefined) waitByRoad.set(roadId, 0);
+        const waitByZone = zone == null ? null : (car.waitByZone ??= new Map());
+        const zoneSoFarS = waitByZone?.get(zone);
+        if (waitByZone && zoneSoFarS === undefined) waitByZone.set(zone, 0);
         const deltaS = car.totalWaitS - (car.waitSeenS ?? 0);
         if (deltaS <= 0) return;
-        car.waitByKey.set(key, car.waitByKey.get(key) + deltaS);
+        waitByKey.set(key, (soFarS ?? 0) + deltaS);
+        waitByRoad.set(roadId, (roadSoFarS ?? 0) + deltaS);
+        if (waitByZone) {
+            waitByZone.set(zone, (zoneSoFarS ?? 0) + deltaS);
+            (car.stoppedZones ??= new Set()).add(zone);
+        }
         car.stoppedKeys ??= new Set();
         car.stoppedKeys.add(key);
         car.waitSeenS = car.totalWaitS;
@@ -5020,16 +5743,14 @@ export class SimulationEngine {
      * longer" apart from "most people are fine, a few are stranded" - this can.
      */
     waitDistributionTotal() {
-        const waits = this.allWaitTimesTotal;
-        if (!waits.length) return { medianWait: null, p95Wait: null, maxWait: null };
+        return waitDistributionOf(this.allWaitTimesTotal);
+    }
 
-        const sorted = [...waits].sort((a, b) => a - b);
-        const percentile = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-        return {
-            medianWait: percentile(0.5),
-            p95Wait: percentile(0.95),
-            maxWait: sorted[sorted.length - 1],
-        };
+    /** waitDistributionTotal() for one scope - 'arterial' or 'sideStreet' - over the same per-vehicle waits that scope's mean counts. */
+    waitDistribution(scope) {
+        // 'zone1'..'zone3': the vehicles each zone's junctions saw, with the wait charged there.
+        if (scope.startsWith('zone')) return waitDistributionOf(this.allWaitTimesByZone.get(Number(scope.slice(4))) ?? []);
+        return waitDistributionOf(this.allWaitTimesByScope[scope]);
     }
 
     _pruneRolling(stats) {

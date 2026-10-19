@@ -14,9 +14,18 @@
 import { runHeadless } from './runHeadless.js';
 import { probeSeries } from './warmupProbe.js';
 
+/**
+ * Only what results.js's runBatch() reads: the per-arterial `rows` (the bulk of a run, ~16 rows per sim second) are
+ * left behind, so they're neither copied to the page nor held there while the run waits its turn to be taken.
+ */
+function batchResult(options) {
+    const { sideStreetRows, totalRows, arterialScopeRows, summary } = runHeadless(options);
+    return { sideStreetRows, totalRows, arterialScopeRows, summary };
+}
+
 self.addEventListener('message', ({ data: { id, task, options } }) => {
     try {
-        self.postMessage({ id, result: task === 'probeSeries' ? probeSeries(options) : runHeadless(options) });
+        self.postMessage({ id, result: task === 'probeSeries' ? probeSeries(options) : batchResult(options) });
     } catch (error) {
         self.postMessage({ id, error: error.message });
     }

@@ -2,6 +2,7 @@
 
 namespace App\View\Composers;
 
+use App\Enums\PowerState;
 use Illuminate\View\View;
 
 /**
@@ -18,6 +19,7 @@ class SimulatorComposer
             'sensorModes' => $this->sensorModes(),
             'toneClasses' => $this->toneClasses(),
             'controllerModeOptions' => $this->controllerModeOptions(),
+            'replayPowerOptions' => PowerState::options(),
             'speedOptions' => $this->speedOptions(),
             'viewOptions' => $this->viewOptions(),
             'liveKpis' => $this->liveKpis(),
@@ -47,10 +49,10 @@ class SimulatorComposer
     {
         return [
             'none' => ['label' => 'None (timer only)', 'sees' => 'Nothing - fixed-time cycles on a timer.', 'power' => 'n/a', 'tone' => 'slate'],
-            'inductive_loop' => ['label' => 'Inductive loop', 'sees' => 'Binary occupancy at the stop line, per approach.', 'power' => 'Low', 'tone' => 'emerald'],
-            'radar' => ['label' => 'Radar', 'sees' => 'Approach speed plus rough volume.', 'power' => 'Moderate', 'tone' => 'amber'],
-            'camera' => ['label' => 'Camera', 'sees' => 'Precise queue length and vehicle count per approach.', 'power' => 'High', 'tone' => 'rose'],
-            'magnetometer' => ['label' => 'Magnetometer', 'sees' => 'Vehicle presence and count only. Cheap.', 'power' => 'Very low', 'tone' => 'emerald'],
+            'inductive_loop' => ['label' => 'Inductive loop', 'sees' => 'Long presence loop over the 8 m behind the stop line: occupied or not, no count. Reports within one tick (65 ms).', 'power' => 'Low', 'tone' => 'emerald'],
+            'radar' => ['label' => 'Radar', 'sees' => 'Stopped-vehicle count and speed over the 60 m approach (medium-range mode), smoothed over 3 s. Reports after two ticks (3 x 55 ms cycles).', 'power' => 'Moderate', 'tone' => 'amber'],
+            'camera' => ['label' => 'Camera', 'sees' => 'Stopped-vehicle count and speed over the 120 m tracked approach. Reports within one tick (30 ms processing at 17 FPS).', 'power' => 'High', 'tone' => 'rose'],
+            'magnetometer' => ['label' => 'Magnetometer', 'sees' => 'Stop-bar pucks plus an advance puck 30 m back: holds green for cars still approaching, and switches at once for a queue that long. Reports after up to two ticks (125 ms radio slot). Cheap.', 'power' => 'Very low', 'tone' => 'emerald'],
         ];
     }
 
@@ -81,6 +83,7 @@ class SimulatorComposer
             'fixed' => 'Fixed-time',
             'adaptive' => 'Adaptive',
             'green_wave' => 'Green wave',
+            'coordinated_adaptive' => 'Coordinated adaptive',
             'none' => 'Free flow',
         ];
     }

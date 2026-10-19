@@ -514,7 +514,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 250
+            "approachLengthM": 250,
+            "zone": 3
         },
         {
             "id": "pretorius",
@@ -592,7 +593,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 250
+            "approachLengthM": 250,
+            "zone": 3
         },
         {
             "id": "francisbaard",
@@ -679,7 +681,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 250
+            "approachLengthM": 250,
+            "zone": 3
         },
         {
             "id": "arcadia_west",
@@ -713,7 +716,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 250
+            "approachLengthM": 250,
+            "zone": 2
         },
         {
             "id": "arcadia",
@@ -778,7 +782,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 0
+            "approachLengthM": 0,
+            "zone": 2
         },
         {
             "id": "park",
@@ -839,7 +844,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 0,
-            "scope": "side"
+            "scope": "side",
+            "zone": 2
         },
         {
             "id": "burnett",
@@ -916,7 +922,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 0,
-            "scope": "side"
+            "scope": "side",
+            "zone": 2
         },
         {
             "id": "prospect",
@@ -984,7 +991,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 250,
-            "scope": "side"
+            "scope": "side",
+            "zone": 2
         },
         {
             "id": "south",
@@ -1039,7 +1047,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 250,
-            "scope": "side"
+            "scope": "side",
+            "zone": 2
         },
         {
             "id": "south_janshoba_divided",
@@ -1097,7 +1106,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 100,
-            "scope": "side"
+            "scope": "side",
+            "zone": 2
         },
         {
             "id": "duxbury",
@@ -1159,7 +1169,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 100,
-            "scope": "side"
+            "scope": "side",
+            "zone": 1
         },
         {
             "id": "lunnon",
@@ -1215,7 +1226,8 @@
             ],
             "targetSpeedKph": 60,
             "approachLengthM": 255.5,
-            "scope": "side"
+            "scope": "side",
+            "zone": 1
         },
         {
             "id": "lynnwood",
@@ -1224,8 +1236,8 @@
             "lanes": 4,
             "demand": {
                 "fluctuationPeriodS": 300,
-                "spawnRatePerLanePerMinMax": 9,
-                "spawnRatePerLanePerMinMin": 3,
+                "spawnRatePerLanePerMinMax": 11,
+                "spawnRatePerLanePerMinMin": 5,
                 "saturationFlowPerLanePerHour": 1250
             },
             "oneWay": false,
@@ -1418,7 +1430,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 100
+            "approachLengthM": 100,
+            "zone": 1
         },
         {
             "id": "dyer_mall",
@@ -1458,7 +1471,8 @@
                 }
             ],
             "targetSpeedKph": 60,
-            "approachLengthM": 150
+            "approachLengthM": 150,
+            "zone": 1
         },
         {
             "id": "duxbury_west",
@@ -1498,7 +1512,8 @@
                     },
                     "roundaboutDiameterM": 36
                 }
-            ]
+            ],
+            "zone": 1
         },
         {
             "id": "lunnon_west",
@@ -1538,7 +1553,8 @@
                     },
                     "roundaboutDiameterM": 36
                 }
-            ]
+            ],
+            "zone": 1
         }
     ],
     "sortOrder": 2,
@@ -2492,7 +2508,8 @@
                 "duxbury_janshoba",
                 "lunnon_duxbury",
                 "lynnwood_duxbury"
-            ]
+            ],
+            "zone": 1
         },
         {
             "id": "conn_duxbury_south",
@@ -2542,7 +2559,8 @@
             "targetSpeedKph": 60,
             "linksArterialNodes": [
                 "lynnwood_duxbury"
-            ]
+            ],
+            "zone": 1
         },
         {
             "id": "conn_lunnon_w_on",
@@ -2574,7 +2592,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 1
         },
         {
             "id": "conn_lunnon_w_off",
@@ -2606,7 +2625,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 1
         },
         {
             "id": "conn_lunnon_e_off",
@@ -2638,7 +2658,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 1
         },
         {
             "id": "conn_lunnon_e_on",
@@ -2670,7 +2691,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 1
         },
         {
             "id": "conn_prospect_east",
@@ -2700,7 +2722,8 @@
             "twoWay": true,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 60
+            "targetSpeedKph": 60,
+            "zone": 2
         },
         {
             "id": "conn_prospect_w_on",
@@ -2732,7 +2755,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 2
         },
         {
             "id": "conn_prospect_w_off",
@@ -2764,7 +2788,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 2
         },
         {
             "id": "conn_prospect_e_off",
@@ -2796,7 +2821,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 2
         },
         {
             "id": "conn_prospect_e_on",
@@ -2828,7 +2854,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 40
+            "targetSpeedKph": 40,
+            "zone": 2
         },
         {
             "id": "conn_arcadia_oneway",
@@ -2863,7 +2890,8 @@
             "targetSpeedKph": 60,
             "linksArterialNodes": [
                 "arcadia_hilda"
-            ]
+            ],
+            "zone": 2
         },
         {
             "id": "conn_arcadia_east",
@@ -2893,7 +2921,8 @@
             "twoWay": true,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 60
+            "targetSpeedKph": 60,
+            "zone": 2
         },
         {
             "id": "conn_park_east",
@@ -2922,7 +2951,8 @@
             "targetSpeedKph": 60,
             "linksArterialNodes": [
                 "park_janshoba"
-            ]
+            ],
+            "zone": 2
         },
         {
             "id": "conn_burnett_east",
@@ -2962,7 +2992,8 @@
             "targetSpeedKph": 60,
             "linksArterialNodes": [
                 "burnett_janshoba"
-            ]
+            ],
+            "zone": 2
         },
         {
             "id": "conn_south_east",
@@ -2992,7 +3023,8 @@
             "twoWay": true,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 60
+            "targetSpeedKph": 60,
+            "zone": 2
         },
         {
             "id": "slip_duxbury_janshoba_southbound",
@@ -3024,7 +3056,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 30
+            "targetSpeedKph": 30,
+            "zone": 1
         },
         {
             "id": "slip_lynnwood_duxbury_eastbound",
@@ -3056,7 +3089,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 30
+            "targetSpeedKph": 30,
+            "zone": 1
         },
         {
             "id": "slip_burnett_janshoba_northbound",
@@ -3088,7 +3122,8 @@
             "twoWay": false,
             "turnChance": 0,
             "crossChance": 0,
-            "targetSpeedKph": 30
+            "targetSpeedKph": 30,
+            "zone": 2
         },
         {
             "id": "conn_dyer",

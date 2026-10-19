@@ -74,17 +74,20 @@ export const MODE_COLOURS = {
     fixed: '#ea580c',
     adaptive: '#8b5cf6',
     green_wave: '#059669',
+    coordinated_adaptive: '#f43f5e',
 };
 
 export const MODE_LABELS = {
     fixed: 'Fixed-time',
     adaptive: 'Adaptive',
     green_wave: 'Green wave',
+    coordinated_adaptive: 'Coordinated adaptive',
 };
 
 export const POWER_LABELS = {
     normal: 'Normal power',
-    load_shedding: 'Load shedding',
+    load_shedding: 'Total blackout',
+    rolling_blackout: 'Load shedding',
 };
 
 export const SENSOR_LABELS = {
@@ -279,8 +282,8 @@ export const lineEndLabels = {
  * `from`/`to` are CATEGORY INDICES, not axis values: on a category scale
  * `getPixelForValue` takes an index, so passing seconds would place the band far
  * off-canvas. Callers resolve the index from their label array. Several windows
- * (the live panel's scheduled outages) go in `bands: [{ from, to }]`, sharing
- * one `label`.
+ * (the live panel's scheduled outages, a rolling blackout's zones) go in
+ * `bands: [{ from, to, label? }]` - each band's own `label`, else the shared one.
  */
 export const xRangeBand = {
     id: 'xRangeBand',
@@ -307,12 +310,13 @@ export const xRangeBand = {
             ctx.lineTo(x1, chartArea.bottom);
             ctx.stroke();
 
-            if (opts.label) {
+            const label = band.label ?? opts.label;
+            if (label) {
                 ctx.font = "600 9px Figtree, ui-sans-serif, system-ui, sans-serif";
                 ctx.fillStyle = INK.bandLabel;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
-                ctx.fillText(opts.label, (x0 + x1) / 2, chartArea.top + 3);
+                ctx.fillText(label, (x0 + x1) / 2, chartArea.top + 3);
             }
             ctx.restore();
         }
