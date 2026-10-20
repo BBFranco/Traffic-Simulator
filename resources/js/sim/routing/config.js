@@ -46,6 +46,11 @@ const DEFAULTS = {
     decayPerSecond: 0.002,
     routeVariants: 5,
     routeCostNoise: 0.1,
+    /**
+     * Dial's logit route choice (routing/odTable.js) in place of the cost-noise variants: `{ thetaPerS, variants }` -
+     * a route dearer by d seconds at a split is taken in proportion exp(-thetaPerS x d). Null keeps the noise variants.
+     */
+    routeChoice: null,
     detourLimit: 2.5,
     nodePenaltyS: { signal: 20, roundabout: 5, allWayStop: 8, stop: 8 },
     /** Extra route cost per turn (s) - a U-turn round a roundabout by default a little more than a right turn. */
@@ -101,6 +106,12 @@ export function parseRouting(raw, nodesById, roadIds) {
 
     if (raw.drivewaysPerSide != null && !(Number.isInteger(raw.drivewaysPerSide) && raw.drivewaysPerSide >= 1 && raw.drivewaysPerSide <= 5)) {
         throw new Error('routing.drivewaysPerSide must be a whole number from 1 to 5.');
+    }
+
+    if (raw.routeChoice != null) {
+        const { thetaPerS, variants } = raw.routeChoice;
+        if (!(thetaPerS > 0)) throw new Error('routing.routeChoice.thetaPerS must be above 0.');
+        if (!(Number.isInteger(variants) && variants >= 1 && variants <= 1024)) throw new Error('routing.routeChoice.variants must be a whole number from 1 to 1024.');
     }
 
     for (const roadId of raw.crossableMedianRoads ?? []) {

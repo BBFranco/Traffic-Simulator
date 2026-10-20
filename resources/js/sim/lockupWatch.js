@@ -206,7 +206,11 @@ export class LockupWatch {
                 const target = engine._roundaboutTarget(arrival.car, arrival.gate);
                 if (!target) continue;
                 const exitDistanceM = target.centreM + info.node.roundabout.mouthM + ROUNDABOUT_EXIT_RUN_M;
-                entry.waitsOn = blockerAt(target.lanes[target.laneIndex], exitDistanceM, arrival.car.lengthM) ?? entry.waitsOn;
+                const lane = target.lanes[target.laneIndex];
+                // With the exit clear for a moment - a car going round took the room first - it is still that queue the
+                // entry can't get into (Prospect & Hilda, its way out backed up from the Festival stop): with no link the
+                // chain stopped at the entry and a starved approach read as locked.
+                entry.waitsOn = blockerAt(lane, exitDistanceM, arrival.car.lengthM) ?? nearestFrom(lane, exitDistanceM - LANDING_REACH_M) ?? entry.waitsOn;
             }
         }
     }
@@ -275,6 +279,13 @@ export class LockupWatch {
 }
 
 /** The car in `lane` occupying the stretch a car of `lengthM` needs at `atM` - what a blocked turn or exit waits on. */
+/** The nearest car in `lane` at or past `fromM`, however far down the road. */
+function nearestFrom(lane, fromM) {
+    let best = null;
+    for (const car of lane?.cars ?? []) if (car.distanceM >= fromM && (!best || car.distanceM < best.distanceM)) best = car;
+    return best;
+}
+
 function blockerAt(lane, atM, lengthM) {
     let best = null;
     for (const car of lane?.cars ?? []) {

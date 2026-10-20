@@ -3338,11 +3338,15 @@
         "decayPerSecond": 0.01,
         "routeVariants": 5,
         "routeCostNoise": 0.1,
+        "routeChoice": {
+            "thetaPerS": 0.05,
+            "variants": 64
+        },
         "detourLimit": 2.5,
         "nodePenaltyS": {
             "signal": 20,
-            "roundabout": 5,
-            "allWayStop": 8,
+            "roundabout": 10,
+            "allWayStop": 20,
             "stop": 8
         },
         "turnPenaltyS": {
