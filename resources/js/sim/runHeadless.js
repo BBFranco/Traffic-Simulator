@@ -492,7 +492,12 @@ function buildSummary({
         routingMode: engine.routingMode,
         /** Destination routing's trip counters over the measured window - null for a random-turning run. */
         routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures, engine.simTimeS) : null,
-        diagnostics: measuredDiagnostics(engine, accountingAtMeasureStart),
+        diagnostics: {
+            ...measuredDiagnostics(engine, accountingAtMeasureStart),
+            // Threshold-sensitivity data for wait recovery (dissertation plan step 2) - stored in the diagnostics column.
+            recoveryWait: recoveryWaitSweep({ total: totalWaitByTick, arterial: arterialWaitByTick, sideStreet: sideStreetWaitByTick }, powerOutageStartTick, powerOutageEndTick, durationTicks, dt),
+            waitSeries: binnedWaitSeries({ total: totalWaitByTick, arterial: arterialWaitByTick, sideStreet: sideStreetWaitByTick }, dt),
+        },
         powerState: schedule?.powerState ?? 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         /** Which sensor configuration produced the run (sensorSpecs.js) - null for the controllers that read no sensors. */
@@ -670,6 +675,52 @@ function measuredDiagnostics(engine, atMeasureStart) {
         arrivalsLost: Math.round(engine.accounting.arrivalsLost - atMeasureStart.arrivalsLost),
         roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
         lockup: engine.lockupWatch.report(),
+    };
+}
+
+/** Wait-recovery tolerances the sweep reports, as multiples of the pre-outage baseline - 1.25 is the summary's own. */
+export const RECOVERY_WAIT_THRESHOLDS = [1.1, 1.25, 1.5];
+
+/**
+ * Wait recovery at every RECOVERY_WAIT_THRESHOLDS tolerance, per scope, by the same rule as timeToRecoveryWaitSeconds.
+ * `censorAtS` is the post-restore window: a null time means "not recovered by then" (right-censored there), which is
+ * what a Kaplan-Meier or restricted-mean analysis needs. Null at normal power.
+ */
+function recoveryWaitSweep(waitByTickByScope, powerOutageStartTick, powerOutageEndTick, durationTicks, dt) {
+    if (powerOutageStartTick == null || powerOutageEndTick == null) return null;
+    const recoveryAt = (byTick, thresholdMultiplier) =>
+        computeRecoverySeconds(byTick, powerOutageStartTick, powerOutageEndTick, dt, {
+            thresholdMultiplier,
+            notRecoveredWhen: (value, threshold) => value > threshold,
+        });
+    return {
+        thresholds: RECOVERY_WAIT_THRESHOLDS,
+        censorAtS: round((durationTicks - powerOutageEndTick) * dt, 1),
+        ...Object.fromEntries(Object.entries(waitByTickByScope).map(([scope, byTick]) => [
+            scope,
+            Object.fromEntries(RECOVERY_WAIT_THRESHOLDS.map((m) => [String(m), recoveryAt(byTick, m)])),
+        ])),
+    };
+}
+
+const WAIT_SERIES_BIN_SECONDS = 60;
+
+/** Each scope's sampled mean wait averaged into WAIT_SERIES_BIN_SECONDS bins from the measured start - for offline re-analysis of recovery. */
+function binnedWaitSeries(waitByTickByScope, dt) {
+    const binTicks = WAIT_SERIES_BIN_SECONDS / dt;
+    const bin = (byTick) => {
+        const sums = [];
+        const counts = [];
+        for (const [tick, value] of byTick) {
+            const i = Math.floor(tick / binTicks);
+            sums[i] = (sums[i] ?? 0) + value;
+            counts[i] = (counts[i] ?? 0) + 1;
+        }
+        return Array.from(sums, (sum, i) => (counts[i] ? round(sum / counts[i], 2) : null));
+    };
+    return {
+        binS: WAIT_SERIES_BIN_SECONDS,
+        ...Object.fromEntries(Object.entries(waitByTickByScope).map(([scope, byTick]) => [scope, bin(byTick)])),
     };
 }
 
