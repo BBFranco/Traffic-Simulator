@@ -1362,6 +1362,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     applyItsTargetFilter();
     applyTableScopeFilter();
     if (exportPdfButton) exportPdfButton.disabled = !data.aggregates?.length;
+    if (exportCsvButton) exportCsvButton.disabled = !data.aggregates?.length;
     document.getElementById('fake-data-badge')?.classList.add('hidden');
     document.getElementById('fake-data-banner')?.classList.add('hidden');
 }
@@ -1415,6 +1416,26 @@ exportPdfButton?.addEventListener('click', async () => {
     } finally {
         exportPdfButton.disabled = !data.aggregates?.length;
         exportPdfLabel.textContent = 'Export PDF';
+    }
+});
+
+/* ------------------------------------------------------------ CSV export */
+
+const exportCsvButton = document.getElementById('export-csv-button');
+
+exportCsvButton?.addEventListener('click', async () => {
+    exportCsvButton.disabled = true;
+
+    try {
+        // Same re-sync as the PDF: the dropdown can disagree with the loaded data.
+        await refreshAggregatesAndRerender();
+        const { exportResultsCsv } = await import('./resultsCsv.js');
+        exportResultsCsv(data, { corridorId: document.getElementById('filter-corridor')?.value ?? '' });
+    } catch (error) {
+        // eslint-disable-next-line no-alert
+        alert(`CSV export failed: ${error.message}`);
+    } finally {
+        exportCsvButton.disabled = !data.aggregates?.length;
     }
 });
 

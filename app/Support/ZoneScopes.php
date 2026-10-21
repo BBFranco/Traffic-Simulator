@@ -49,7 +49,7 @@ class ZoneScopes
     public function value(SimulationRun $run, string $column): ?float
     {
         [$metric, $zone] = $this->split($column) ?? [null, null];
-        $zoneStats = $run->zone_stats[$zone] ?? null;
+        $zoneStats = $this->decoded($run)[$zone] ?? null;
         if ($metric === null || $zoneStats === null) {
             return null;
         }
@@ -72,6 +72,20 @@ class ZoneScopes
         return collect(self::SUFFIXES)->keys()
             ->flatMap(fn (string $suffix): array => collect($metrics)->map(fn (string $metric): string => $metric.$suffix)->all())
             ->all();
+    }
+
+    /**
+     * A run's zone_stats, decoded once: the array cast re-decodes the JSON on every attribute read, and the Results
+     * page reads it hundreds of thousands of times per load.
+     *
+     * @return array<string, mixed>
+     */
+    private function decoded(SimulationRun $run): array
+    {
+        static $cache = null;
+        $cache ??= new \WeakMap;
+
+        return $cache[$run] ??= $run->zone_stats ?? [];
     }
 
     private function segmentValue(?array $segments, string $metric): int|float|null

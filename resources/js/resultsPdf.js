@@ -32,6 +32,7 @@ import {
     xRangeBand,
 } from './charts/theme.js';
 import { currentTheme } from './theme.js';
+import { reportFileName } from './resultsFileName.js';
 import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { MAX_WARMUP_TICKS, PROBE_REPLICATIONS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
 import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS } from './sim/equations.js';
@@ -1677,20 +1678,6 @@ function drawMethodNotes(report, data, number) {
  * @param {{corridorId: string, corridorName: string, corridorUrl: ?string}} corridor
  *   `corridorUrl` is null for "All corridors" - no single layout to draw then.
  */
-/**
- * e.g. results-hatfield-realistic-2026-10-03-2130-794f8bf-dirty.pdf - named for the batch it
- * reports (its start time and code), so two PDFs can't be mistaken for the same dataset.
- */
-function reportFileName(corridorId, stamp, now) {
-    const at = stamp?.startedAt ? new Date(stamp.startedAt) : now;
-    const pad = (n) => String(n).padStart(2, '0');
-    const when = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}`;
-    const treeState = { unchecked: '-dev', unknown: '-unknown', dirty: '-dirty' }[stamp?.treeState] ?? '';
-    const code = stamp?.commit ? `-${stamp.commit}${treeState}` : '-unstamped';
-    const routing = stamp?.routingMode === 'destination' ? '-destination' : '';
-    return `results-${corridorId || 'all-corridors'}-${when}${code}${routing}.pdf`;
-}
-
 export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl }) {
     // A layout that fails to load or draw just leaves the cover without it.
     const corridorLayout = corridorUrl ? await corridorLayoutImage(corridorUrl).catch(() => null) : null;
@@ -1715,7 +1702,7 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         drawMethodNotes(report, data, SECTION.methodNotes);
 
         report.stampPages();
-        report.doc.save(reportFileName(corridorId, data.batchStamp, now));
+        report.doc.save(reportFileName(corridorId, data.batchStamp, now, 'pdf'));
     } finally {
         applyChartTheme(pageTheme);
     }

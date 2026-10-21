@@ -19,6 +19,7 @@ use App\Support\ZoneScopes;
 use BackedEnum;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -651,7 +652,20 @@ class ResultsController extends Controller
         return RoutingMode::tryFrom((string) request()->query('routing')) ?? RoutingMode::Random;
     }
 
+    /**
+     * The payload only changes when runs are added or removed (a batch run, a delete), so it is kept until the run or
+     * recovery-tick tables change - the build reads and decodes every run of the latest batches.
+     */
     private function buildPayload(?string $corridorFilter, RoutingMode $routingMode): array
+    {
+        $runs = SimulationRun::query()->toBase()->selectRaw('count(*) as total, max(id) as last_id')->first();
+        $ticks = SimulationRunRecoveryTick::query()->toBase()->selectRaw('count(*) as total, max(id) as last_id')->first();
+        $key = sprintf('results.payload.%s.%s.%s', $corridorFilter ?: 'all', $routingMode->value, md5(json_encode([$runs, $ticks, filemtime(__FILE__)])));
+
+        return Cache::remember($key, now()->addDay(), fn (): array => $this->computePayload($corridorFilter, $routingMode));
+    }
+
+    private function computePayload(?string $corridorFilter, RoutingMode $routingMode): array
     {
         $batchIds = $this->latestBatchIds($corridorFilter, $routingMode);
         $query = SimulationRun::query()->whereIn('batch_id', $batchIds);
@@ -1162,8 +1176,9 @@ class ResultsController extends Controller
             ->map(function (Collection $groupRuns) use ($metricColumns): array {
                 // A group from before zones has nothing to build the zone intervals from.
                 $hasZoneStats = $groupRuns->contains(fn (SimulationRun $run): bool => $run->zone_stats !== null);
+                $bySeed = $groupRuns->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->seed}");
                 $ci95s = collect($metricColumns)->mapWithKeys(fn (string $column): array => [
-                    $column => $hasZoneStats || ! $this->zoneScopes->isZoneColumn($column) ? $this->ci95OnSeedMeans($groupRuns, $column) : null,
+                    $column => $hasZoneStats || ! $this->zoneScopes->isZoneColumn($column) ? $this->ci95OnGroupedSeedMeans($bySeed, $column) : null,
                 ]);
                 $zoneCi95s = $ci95s->only($this->zoneMetricColumns())
                     ->mapWithKeys(fn (?float $ci95, string $column): array => ["{$column}_ci95" => $ci95]);
@@ -1225,21 +1240,37 @@ class ResultsController extends Controller
         return $run->{$column} === null ? null : (float) $run->{$column};
     }
 
-    /** @param  Collection<int, SimulationRun>  $runs */
-    private function ci95OnSeedMeans(Collection $runs, string $column): ?float
+    /**
+     * 95% CI half-width of a column's per-seed means. Takes runs already grouped by seed - the grouping doesn't depend
+     * on the column, so a caller doing many columns groups once.
+     *
+     * @param  Collection<string, Collection<int, SimulationRun>>  $bySeed
+     */
+    private function ci95OnGroupedSeedMeans(Collection $bySeed, string $column): ?float
     {
-        $seedMeans = $runs->filter(fn (SimulationRun $run): bool => $this->runValue($run, $column) !== null)
-            ->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->seed}")
-            ->map(fn (Collection $seedRuns): float => (float) $seedRuns->avg(fn (SimulationRun $run): ?float => $this->runValue($run, $column)))
-            ->values();
+        $seedMeans = [];
+        foreach ($bySeed as $seedRuns) {
+            $sum = 0.0;
+            $count = 0;
+            foreach ($seedRuns as $run) {
+                $value = $this->runValue($run, $column);
+                if ($value !== null) {
+                    $sum += $value;
+                    $count++;
+                }
+            }
+            if ($count > 0) {
+                $seedMeans[] = $sum / $count;
+            }
+        }
 
-        $samples = $seedMeans->count();
+        $samples = count($seedMeans);
         if ($samples < 2) {
             return null;
         }
 
-        $mean = $seedMeans->avg();
-        $variance = $seedMeans->sum(fn (float $value): float => ($value - $mean) ** 2) / ($samples - 1);
+        $mean = array_sum($seedMeans) / $samples;
+        $variance = array_sum(array_map(fn (float $value): float => ($value - $mean) ** 2, $seedMeans)) / ($samples - 1);
 
         return round(ConfidenceInterval::halfWidth95(sqrt($variance), $samples), 1);
     }
