@@ -29,6 +29,7 @@
  */
 import { roadPointAt } from '../corridor.js';
 import { SeededRandom } from '../rng.js';
+import { approachCapacities, congestedCosts, roadSegments, segmentDelays } from './assignment.js';
 import { stateId } from './graph.js';
 
 /** Pairs closer than this are never dropped as detours - a short hop is always reasonable. */
@@ -98,7 +99,7 @@ function mixUnit(h) {
  * Dial's choice sets towards one destination: per state, the arcs that end strictly closer to it (or the best arc,
  * whatever it costs - an exit arc is free) with their logit weights. Strictly closer keeps every route loop-free.
  */
-function dialChoices({ dist, next }, arcsFrom, thetaPerS) {
+function dialChoices({ dist, next }, arcsFrom, thetaPerS, costOf = (arc) => arc.costS) {
     const choices = new Map();
     for (const [from, best] of next) {
         const d = dist.get(from);
@@ -108,12 +109,55 @@ function dialChoices({ dist, next }, arcsFrom, thetaPerS) {
             const dTo = dist.get(arc.to);
             if (dTo == null || (arc !== best && !(dTo < d - 1e-9))) continue;
             arcs.push(arc);
-            weights.push(Math.exp(-thetaPerS * Math.max(0, arc.costS + dTo - d)));
+            weights.push(Math.exp(-thetaPerS * Math.max(0, costOf(arc) + dTo - d)));
         }
         const total = weights.reduce((s, w) => s + w, 0);
         choices.set(from, arcs.length === 1 ? { arcs, probs: [1] } : { arcs, probs: weights.map((w) => w / total) });
     }
     return choices;
+}
+
+/**
+ * The exact Dial split: each destination's trips (`tripsTo`: dest id -> state id -> { mean, peak } veh/min) poured in
+ * at their origins and spread down its choice sets, furthest from the destination first, so every state has all its
+ * inflow before it splits it on. Returns every arc's flow (veh/min, mean and peak); `onSplit(arc, mean, peak)`, if given,
+ * also sees each share as it is passed on.
+ */
+function dialLoading(tripsTo, trees, choicesByDest, onSplit = null) {
+    const flows = new Map();
+    for (const [destId, trips] of tripsTo) {
+        const mass = new Map([...trips].map(([id, m]) => [id, { mean: m.mean, peak: m.peak }]));
+        const { dist } = trees.get(destId);
+        const choices = choicesByDest.get(destId);
+        const queue = [...mass.keys()];
+        const queued = new Set(queue);
+        while (queue.length) {
+            // Furthest first: dist strictly falls along every choice, so nothing reaches a state after it has split.
+            let far = 0;
+            for (let i = 1; i < queue.length; i += 1) if (dist.get(queue[i]) > dist.get(queue[far])) far = i;
+            const id = queue.splice(far, 1)[0];
+            const here = mass.get(id);
+            const choice = choices.get(id);
+            if (!choice) continue;
+            choice.arcs.forEach((arc, i) => {
+                const p = choice.probs[i];
+                onSplit?.(arc, here.mean * p, here.peak * p);
+                const flow = flows.get(arc) ?? { mean: 0, peak: 0 };
+                flow.mean += here.mean * p;
+                flow.peak += here.peak * p;
+                flows.set(arc, flow);
+                const on = mass.get(arc.to) ?? { mean: 0, peak: 0 };
+                on.mean += here.mean * p;
+                on.peak += here.peak * p;
+                mass.set(arc.to, on);
+                if (!queued.has(arc.to)) {
+                    queued.add(arc.to);
+                    queue.push(arc.to);
+                }
+            });
+        }
+    }
+    return flows;
 }
 
 /**
@@ -197,21 +241,6 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
     // Free-flow (no noise) costs, for the destination choice and the detour check.
     const freeFlow = new Map(destinations.map((dest) => [dest.id, towards(graph, arcsTo, dest.target, (arc) => arc.costS)]));
     const { routeChoice } = routing;
-    /** Dial's choice sets per destination - only with `routeChoice`. */
-    const choicesByDest = routeChoice ? new Map(destinations.map((dest) => [dest.id, dialChoices(freeFlow.get(dest.id), graph.arcsFrom, routeChoice.thetaPerS)])) : null;
-    const variants = [];
-    if (choicesByDest) {
-        variants.push(...routeChoiceTables(choicesByDest, routeChoice.variants));
-    } else {
-        const rng = new SeededRandom(seed);
-        for (let v = 0; v < routing.routeVariants; v += 1) {
-            const factor = new Map(graph.arcs.map((arc) => [arc, 1 + routing.routeCostNoise * (2 * rng.next() - 1)]));
-            const costOf = (arc) => arc.costS * factor.get(arc);
-            const next = new Map();
-            for (const dest of destinations) next.set(dest.id, towards(graph, arcsTo, dest.target, costOf).next);
-            variants.push(next);
-        }
-    }
 
     // Per origin: candidates, detour filter, shares.
     let maxRoute = { timeS: 0 };
@@ -348,9 +377,10 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
         entry[movement].meanPerMin += perMin;
         entry[movement].peakPerMin += peakPerMin;
     };
-    if (choicesByDest) {
-        // The exact Dial split: each destination's trips poured in at their origins and spread down its choice sets,
-        // furthest from the destination first, so every state has all its inflow before it splits it on.
+    const variants = [];
+    /** With `routing.assignment`, how the capacity-aware routes settled (routing/assignment.js) - for the record. */
+    let assignmentReport = null;
+    if (routeChoice) {
         const tripsTo = new Map();
         for (const origin of origins) {
             for (const { destId, share } of origin.shares) {
@@ -362,34 +392,74 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
                 at.set(origin.stateId, mass);
             }
         }
-        for (const [destId, mass] of tripsTo) {
-            const { dist } = freeFlow.get(destId);
-            const choices = choicesByDest.get(destId);
-            const queue = [...mass.keys()];
-            const queued = new Set(queue);
-            while (queue.length) {
-                // Furthest first: dist strictly falls along every choice, so nothing reaches a state after it has split.
-                let far = 0;
-                for (let i = 1; i < queue.length; i += 1) if (dist.get(queue[i]) > dist.get(queue[far])) far = i;
-                const id = queue.splice(far, 1)[0];
-                const here = mass.get(id);
-                const choice = choices.get(id);
-                if (!choice) continue;
-                choice.arcs.forEach((arc, i) => {
-                    const p = choice.probs[i];
-                    if (arc.kind === 'move' || arc.kind === 'peel' || arc.kind === 'slip') addFlow(arc, here.mean * p, here.peak * p);
-                    const on = mass.get(arc.to) ?? { mean: 0, peak: 0 };
-                    on.mean += here.mean * p;
-                    on.peak += here.peak * p;
-                    mass.set(arc.to, on);
-                    if (!queued.has(arc.to)) {
-                        queued.add(arc.to);
-                        queue.push(arc.to);
-                    }
-                });
+        /** Dial's choice sets per destination under `costOf`, with the trees they were read from. */
+        const chooseUnder = (costOf) => {
+            const trees = costOf ? new Map(destinations.map((dest) => [dest.id, towards(graph, arcsTo, dest.target, costOf)])) : freeFlow;
+            const choices = new Map(destinations.map((dest) => [dest.id, dialChoices(trees.get(dest.id), graph.arcsFrom, routeChoice.thetaPerS, costOf ?? undefined)]));
+            return { trees, choices };
+        };
+        let routes = chooseUnder(null);
+        if (routing.assignment) {
+            // Method of successive averages: load under the costs of the averaged flows, fold the new loading in at 1/n.
+            const params = routing.assignment;
+            // The driveways cars on each road direction can turn into or pull out of - the road segments' friction.
+            const accessPointsByRoad = new Map();
+            for (const dir of drivewayDirs.values()) {
+                for (const point of dir.reach) {
+                    if (!accessPointsByRoad.has(point.roadKey)) accessPointsByRoad.set(point.roadKey, []);
+                    accessPointsByRoad.get(point.roadKey).push(point.atM);
+                }
             }
+            const segmentOfState = roadSegments(graph, accessPointsByRoad, params);
+            const costsOf = (averaged) => {
+                const flowOf = (arc) => averaged.get(arc)?.mean ?? 0;
+                return congestedCosts(graph, approachCapacities(graph, flowOf, params), params, { ofState: segmentOfState, delays: segmentDelays(graph, segmentOfState, flowOf, params) });
+            };
+            let averaged = dialLoading(tripsTo, routes.trees, routes.choices);
+            let changePerMin = 0;
+            for (let n = 2; n <= params.iterations; n += 1) {
+                const costs = costsOf(averaged);
+                routes = chooseUnder((arc) => costs.get(arc));
+                const loaded = dialLoading(tripsTo, routes.trees, routes.choices);
+                changePerMin = 0;
+                const next = new Map();
+                for (const arc of new Set([...averaged.keys(), ...loaded.keys()])) {
+                    const a = averaged.get(arc) ?? { mean: 0, peak: 0 };
+                    const b = loaded.get(arc) ?? { mean: 0, peak: 0 };
+                    const mean = a.mean + (b.mean - a.mean) / n;
+                    if (arc.kind === 'move') changePerMin = Math.max(changePerMin, Math.abs(mean - a.mean));
+                    next.set(arc, { mean, peak: a.peak + (b.peak - a.peak) / n });
+                }
+                averaged = next;
+            }
+            const finalCosts = costsOf(averaged);
+            routes = chooseUnder((arc) => finalCosts.get(arc));
+            const approaches = approachCapacities(graph, (arc) => averaged.get(arc)?.mean ?? 0, params);
+            const segments = segmentDelays(graph, segmentOfState, (arc) => averaged.get(arc)?.mean ?? 0, params);
+            assignmentReport = {
+                iterations: params.iterations,
+                /** Largest change in any move's flow on the last iteration (veh/min) - how settled the averaging is. */
+                lastChangePerMin: changePerMin,
+                /** Approaches at or over capacity at the settled flows: state id -> { flowPerH, capacityPerH }. */
+                saturated: [...approaches].filter(([, e]) => e.flowPerH >= e.capacityPerH).map(([id, e]) => ({ id, nodeId: e.nodeId, flowPerH: Math.round(e.flowPerH), capacityPerH: Math.round(e.capacityPerH) })),
+                /** Road segments at or over capacity at the settled flows. */
+                saturatedSegments: [...segments].filter(([, d]) => d.flowPerH >= d.capacityPerH).map(([seg, d]) => ({ roadKey: seg.roadKey, fromM: Math.round(seg.fromM), toM: Math.round(seg.toM), flowPerH: Math.round(d.flowPerH), capacityPerH: Math.round(d.capacityPerH) })),
+            };
         }
+        // The exact Dial split under the routes cars will follow - what signal timing reads.
+        dialLoading(tripsTo, routes.trees, routes.choices, (arc, mean, peak) => {
+            if (arc.kind === 'move' || arc.kind === 'peel' || arc.kind === 'slip') addFlow(arc, mean, peak);
+        });
+        variants.push(...routeChoiceTables(routes.choices, routeChoice.variants));
     } else {
+        const rng = new SeededRandom(seed);
+        for (let v = 0; v < routing.routeVariants; v += 1) {
+            const factor = new Map(graph.arcs.map((arc) => [arc, 1 + routing.routeCostNoise * (2 * rng.next() - 1)]));
+            const costOf = (arc) => arc.costS * factor.get(arc);
+            const next = new Map();
+            for (const dest of destinations) next.set(dest.id, towards(graph, arcsTo, dest.target, costOf).next);
+            variants.push(next);
+        }
         for (const origin of origins) {
             for (const { destId, share } of origin.shares) {
                 const target = destinationsById.get(destId).target;
@@ -405,5 +475,5 @@ export function buildOdTable(graph, blocks, drivewayDirs, routing, seed = 1) {
 
     /** Each destination's best (free-flow) next arcs - the one shortest way, whatever the variant. */
     const best = new Map([...freeFlow].map(([destId, { next }]) => [destId, next]));
-    return { destinations, origins, variants, best, expectedMovementFlow, maxRoute, demandScale };
+    return { destinations, origins, variants, best, expectedMovementFlow, maxRoute, demandScale, assignment: assignmentReport };
 }

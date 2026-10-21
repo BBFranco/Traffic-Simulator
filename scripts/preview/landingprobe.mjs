@@ -37,7 +37,7 @@ for (let tick = 0; tick <= warm + to; tick += 1) {
     const lanes = e.letIn.get(road);
     const signal = e.snapshot();
     console.log(`\n== ${(m * dt).toFixed(1)} s  tick ${e.tickNo}  anchor ${anchor ? `${anchor.id}@${anchor.distanceM.toFixed(1)} v${anchor.speedMps.toFixed(1)} L${anchor.lengthM}` : 'gone'}`);
-    for (const [lane, w] of lanes ?? []) {
+    for (const [lane, w] of [...(lanes ?? [])].flatMap(([l, ws]) => ws.map((w) => [l, w]))) {
         const turner = allCars().find((c) => c.id === w.carId);
         console.log(`  letIn lane ${lane}: car ${w.carId} exit ${w.exitDistanceM.toFixed(1)} until ${w.untilS.toFixed(0)} (now ${e.simTimeS.toFixed(0)}) held ${w.heldPlan ? `blk ${w.heldPlan.blockedSinceS?.toFixed(0)} seen ${w.heldPlan.heldSeenTick}` : '-'} active ${e._letInActive(w)}`
             + `  turner ${turner ? `${turner.turnPath ? 'TURNING' : turner.road?.id ?? '?'} @${turner.distanceM.toFixed(1)} v${turner.speedMps.toFixed(1)} plan ${JSON.stringify(turner.turnPlan && { n: turner.turnPlan.nodeId, mv: turner.turnPlan.movement, blk: turner.turnPlan.blockedSinceS })}` : 'gone'}`);

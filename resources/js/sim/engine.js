@@ -225,6 +225,19 @@ const DRIVEWAY_EXIT_GAP_S = 3;
 const LET_IN_AFTER_S = 10;
 /** Longest a let-in holds the lane without being asked again (s) - it ends sooner, once the car is in (_letInDone()). */
 const LET_IN_HOLD_S = 60;
+/**
+ * Once a lane has let a car in, it doesn't stop for the next one asking until this long after (s): one in, then the lane
+ * moves on. A driveway or ramp with a queue of its own otherwise asked again the moment the last car was in, and the lane
+ * behind never moved (Lunnon westbound behind driveway LUN-1-A1 at Dyer, 300-700 s after an outage).
+ */
+const LET_IN_COOLDOWN_S = LET_IN_AFTER_S;
+/**
+ * Let-ins this far apart along a lane (m) are separate spots, each kept for its own car: a lane can let in a car at one
+ * junction and another further up at once. With one let-in a lane, two cars asking took it from each other every tick
+ * and the one asked for first never got it - a Dyer Road left-turner stood 800 s onto Lunnon westbound, the lane kept for
+ * a car joining 120 m back at Duxbury, and the queue behind it backed through the Dyer roundabout onto Lynnwood.
+ */
+const LET_IN_SPOT_M = 30;
 
 /** Destination-routing counters for one run (or since resetStats()). */
 function newRoutingStats() {
@@ -1326,8 +1339,10 @@ export class SimulationEngine {
         /** Cars currently driving their turn through a junction - on neither the arterial nor the cross street yet (see _stepTurningCars()). */
         this.turningCars = [];
         this._resetNodeStats();
-        /** Road -> lane -> the car its cars are letting in (_askToBeLetIn()): where it joins, its length, until when. */
+        /** Road -> lane -> the cars its cars are letting in (_askToBeLetIn()), one a spot: where each joins, its length, until when. */
         this.letIn = new Map();
+        /** Road -> lane -> the spots it has just let a car in at, and until when it lets no new car in there (LET_IN_COOLDOWN_S). */
+        this.letInCooldown = new Map();
         /** Turn path key -> the turn plan held longest at its stop line for it (_turnHeldForOther()). */
         this.turnClaims = new Map();
         /** Landing lane -> the turn plans held for room in it, each with where it lands (_turnHeldForOther()). */
@@ -3238,7 +3253,8 @@ export class SimulationEngine {
                 // A car taking a peel-off ahead heads for the kerb lane first, then stays in it - its plan for the
                 // junction past the peel-off would otherwise pull it back out, and it would pass the peel-off in the wrong lane.
                 if (this._divergeAhead(dir, car)) {
-                    if (car.lane !== dirState.laneLayout.kerbSlots) this._tryMandatoryLaneChange(dirState, car, [dirState.laneLayout.kerbSlots], true);
+                    const peelSlot = this._peelSlot(this._divergeAhead(dir, car), dirState.laneLayout);
+                    if (car.lane !== peelSlot) this._tryMandatoryLaneChange(dirState, car, [peelSlot], true);
                     continue;
                 }
                 const gate = this._nextGate(dir, car);
@@ -4112,13 +4128,21 @@ export class SimulationEngine {
         const offsetM = join.from.lengthM;
         const { leader, follower } = aroundPoint(lane, join.toAtM);
         const ahead = leader ? { distanceM: offsetM + leader.distanceM - join.toAtM, speedMps: leader.speedMps, lengthM: leader.lengthM } : null;
-        if (offsetM - car.distanceM < MERGE_WATCH_M && ((follower && !mergeGapBehind(follower, car, join.toAtM)) || this._turnComingInto(join.to.road, lane, join.toAtM))) {
+        const nearEnd = offsetM - car.distanceM < MERGE_WATCH_M;
+        const askAfterWait = () => {
+            if (this.simTimeS - car.joinHeldSinceS >= LET_IN_AFTER_S) this._askToBeLetIn(car, join.to.road, join.to.lanes().indexOf(lane), join.toAtM);
+        };
+        if (nearEnd && ((follower && !mergeGapBehind(follower, car, join.toAtM)) || this._turnComingInto(join.to.road, lane, join.toAtM))) {
             if (car.speedMps < JOIN_HOLD_SPEED_MPS) {
                 car.joinHeldSinceS ??= this.simTimeS;
-                if (this.simTimeS - car.joinHeldSinceS >= LET_IN_AFTER_S) this._askToBeLetIn(car, join.to.road, join.to.lanes().indexOf(lane), join.toAtM);
+                askAfterWait();
             }
             return nearestAhead(ahead, { distanceM: offsetM, speedMps: 0 });
         }
+        // Room behind, but the queue it merges into stands over the merge point: it keeps its let-in while it waits for
+        // that queue to move, or the lane's next car creeps into the room it needs and it starts over (the Lunnon ramp
+        // onto Jan Shoba, 300 s through an outage).
+        if (nearEnd && car.joinHeldSinceS != null && car.speedMps < JOIN_HOLD_SPEED_MPS) askAfterWait();
         return ahead;
     }
 
@@ -4150,8 +4174,10 @@ export class SimulationEngine {
         if (car.joinSlot?.key === join.from.key) return car.joinSlot.slot;
         const { to, from } = join;
         if (join.toAtM != null) {
-            // A turn road merges into the kerb lane.
-            car.joinSlot = { key: from.key, slot: to.laneLayout.kerbSlots };
+            // A turn road merges into the kerb lane - a turn lane already open where it comes in (Lunnon's on-ramp into
+            // Jan Shoba's left lane for Lynnwood) when there is one: its cars change out of it further on.
+            const pocket = [...Array(to.laneLayout.kerbSlots).keys()].find((slot) => slotOpenAt(to.laneLayout, slot, join.toAtM) && slotOpenAt(to.laneLayout, slot, join.toAtM + car.lengthM));
+            car.joinSlot = { key: from.key, slot: pocket ?? to.laneLayout.kerbSlots };
             return car.joinSlot.slot;
         }
         const lanes = to.lanes();
@@ -4317,8 +4343,17 @@ export class SimulationEngine {
 
     /** Whether `lane` is the one a peel-off takes cars from: the kerb lane, or a slip road's left-turn lane. */
     _peelsFrom(join, dirState, lane) {
-        if (!join.slip) return lane === dirState.lanes[dirState.laneLayout.kerbSlots];
+        if (!join.slip) return lane === dirState.lanes[this._peelSlot(join, dirState.laneLayout)];
         return Boolean(join.gate) && this._isSlipLane(join.gate, dirState.lanes.indexOf(lane));
+    }
+
+    /**
+     * The lane a share peel-off leaves from: the kerb lane - a turn lane already open where it leaves when there is one
+     * (Lunnon's off-ramp out of Jan Shoba's left lane for Lynnwood), the mirror of a merge's _joinTargetSlot().
+     */
+    _peelSlot(join, laneLayout) {
+        const pocket = [...Array(laneLayout.kerbSlots).keys()].find((slot) => slotOpenAt(laneLayout, slot, join.fromAtM) && slotOpenAt(laneLayout, slot, join.fromAtM + 15));
+        return pocket ?? laneLayout.kerbSlots;
     }
 
     /**
@@ -4352,7 +4387,10 @@ export class SimulationEngine {
             if (!this._peelsFrom(join, dirState, lane)) continue;
             if (join.slip && !this._isSlipCar(join.gate, car)) continue;
             const tail = lastCarIn(join.to.lanes()[join.to.laneLayout.kerbSlots]);
-            if (tail) hold = nearestAhead(hold, { distanceM: join.fromAtM + tail.distanceM, speedMps: tail.speedMps, lengthM: tail.lengthM });
+            // Only while that tail is still ahead of it: a car that rolled past the peel point (it may still take it up to 15 m
+            // in) with the tail only just onto the peel-off road saw the hold behind itself and stood there for good - _peelOff()
+            // decides whether it fits, and it carries on if not (Lynnwood eastbound at the Duxbury slip, 650-2,300 s).
+            if (tail && join.fromAtM + tail.distanceM > car.distanceM) hold = nearestAhead(hold, { distanceM: join.fromAtM + tail.distanceM, speedMps: tail.speedMps, lengthM: tail.lengthM });
         }
         return hold;
     }
@@ -4895,8 +4933,20 @@ export class SimulationEngine {
      * plan's own fields alone, the stale entry of a car that turned into another lane held its lane for good.
      */
     _askToBeLetIn(car, road, laneIndex, exitDistanceM, heldPlan = null) {
+        const asking = this._letInAt(road, laneIndex, exitDistanceM);
+        const cooling = (this.letInCooldown.get(road)?.get(laneIndex) ?? []).some((c) => c.untilS > this.simTimeS && Math.abs(c.atM - exitDistanceM) < LET_IN_SPOT_M);
+        if (asking?.carId !== car.id && cooling) return;
         if (!this.letIn.has(road)) this.letIn.set(road, new Map());
-        this.letIn.get(road).set(laneIndex, { carId: car.id, heldPlan, exitDistanceM, lengthM: car.lengthM, untilS: this.simTimeS + LET_IN_HOLD_S });
+        const lanes = this.letIn.get(road);
+        // One car a spot: a newer asker there takes it over, as the lane's only let-in used to. Spent ones go.
+        const kept = (lanes.get(laneIndex) ?? []).filter((w) => w !== asking && w.carId !== car.id && this._letInActive(w));
+        kept.push({ carId: car.id, heldPlan, exitDistanceM, lengthM: car.lengthM, untilS: this.simTimeS + LET_IN_HOLD_S });
+        lanes.set(laneIndex, kept);
+    }
+
+    /** The let-in kept at `exitDistanceM`'s spot on lane `laneIndex` of `road` (within LET_IN_SPOT_M), if any - active or not. */
+    _letInAt(road, laneIndex, exitDistanceM) {
+        return (this.letIn.get(road)?.get(laneIndex) ?? []).find((w) => Math.abs(w.exitDistanceM - exitDistanceM) < LET_IN_SPOT_M) ?? null;
     }
 
     _letInActive(waiting) {
@@ -4907,7 +4957,12 @@ export class SimulationEngine {
     /** `car` has joined lane `laneIndex` of `road`: whoever was letting it in carries on. */
     _letInDone(car, road, laneIndex) {
         const lanes = this.letIn.get(road);
-        if (lanes?.get(laneIndex)?.carId === car.id) lanes.delete(laneIndex);
+        const done = lanes?.get(laneIndex)?.find((w) => w.carId === car.id);
+        if (!done) return;
+        lanes.set(laneIndex, lanes.get(laneIndex).filter((w) => w !== done));
+        if (!this.letInCooldown.has(road)) this.letInCooldown.set(road, new Map());
+        const cooldowns = this.letInCooldown.get(road);
+        cooldowns.set(laneIndex, [...(cooldowns.get(laneIndex) ?? []).filter((c) => c.untilS > this.simTimeS), { atM: done.exitDistanceM, untilS: this.simTimeS + LET_IN_COOLDOWN_S }]);
     }
 
     /**
@@ -4915,16 +4970,18 @@ export class SimulationEngine {
      * (_askToBeLetIn())? The lane holds back behind that room, but a car from the lane beside it would otherwise take it.
      */
     _inLetInGap(car, laneIndex) {
-        const waiting = this.letIn.get(car.road)?.get(laneIndex);
-        return Boolean(waiting && this._letInActive(waiting) && Math.abs(car.distanceM - waiting.exitDistanceM) < (car.lengthM + waiting.lengthM) / 2 + SPAWN_CLEARANCE_M);
+        return (this.letIn.get(car.road)?.get(laneIndex) ?? []).some((w) => this._letInActive(w) && Math.abs(car.distanceM - w.exitDistanceM) < (car.lengthM + w.lengthM) / 2 + SPAWN_CLEARANCE_M);
     }
 
     /** Where a car stops to let one in ahead of it (_askToBeLetIn()): short of the room that car needs - unless already into it. */
     _letInHold(car) {
-        const waiting = this.letIn.get(car.road)?.get(car.lane);
-        if (!waiting || !this._letInActive(waiting)) return null;
-        const stopM = waiting.exitDistanceM - (car.lengthM + waiting.lengthM) / 2 - SPAWN_CLEARANCE_M;
-        return car.distanceM < stopM ? { distanceM: stopM + car.lengthM / 2, speedMps: 0 } : null;
+        let stopM = Infinity;
+        for (const waiting of this.letIn.get(car.road)?.get(car.lane) ?? []) {
+            if (!this._letInActive(waiting)) continue;
+            const atM = waiting.exitDistanceM - (car.lengthM + waiting.lengthM) / 2 - SPAWN_CLEARANCE_M;
+            if (car.distanceM < atM) stopM = Math.min(stopM, atM);
+        }
+        return stopM < Infinity ? { distanceM: stopM + car.lengthM / 2, speedMps: 0 } : null;
     }
 
     /** Per roundabout, the cars going round it this tick with where they are - node id -> [{ car, angle }]. */
@@ -5519,6 +5576,14 @@ export class SimulationEngine {
 
         if (this.turningCars.some((c) => c.turnPath.key === key && c.distanceM < VEHICLE_TYPES.car.lengthM + SPAWN_CLEARANCE_M)) return false;
         const askerId = `driveway:${driveway.drivewayId}`;
+        // Turning out across the far side, it can only go once that side is clear too: until then it doesn't keep the
+        // near lane waiting for it. A driveway on Hilda south held the northbound lane (re-asking each time a car came up)
+        // while the southbound queue stood across its way out - neither side moved, and the block round it locked.
+        if (driveway.crossesOncoming && this._drivewayCrossBlocked(driveway)) {
+            const lanes = this.letIn.get(road);
+            if (lanes?.get(laneIndex)?.some((w) => w.carId === askerId)) lanes.set(laneIndex, lanes.get(laneIndex).filter((w) => w.carId !== askerId));
+            return false;
+        }
         const laneBlocked =
             this._turnExitBlocked(state.lanes, laneIndex, exitDistanceM, VEHICLE_TYPES.car.lengthM) ||
             state.lanes[laneIndex].cars.some((c) => c.distanceM < exitDistanceM && (exitDistanceM - c.distanceM) / Math.max(c.speedMps, 0.5) < DRIVEWAY_EXIT_GAP_S);
@@ -5526,13 +5591,12 @@ export class SimulationEngine {
             // Like any car merging off a side road: waited long enough, it asks the lane to let it in. A queue standing
             // past the driveway never opens a gap by itself, and the driveway's backlog grew for the whole run (JSH-1
             // beside Jan Shoba's northbound queue under fixed-time).
-            const asked = this.letIn.get(road)?.get(laneIndex);
+            const asked = this._letInAt(road, laneIndex, exitDistanceM);
             if (this.simTimeS - queuedAtS >= LET_IN_AFTER_S && (!asked || asked.carId === askerId || !this._letInActive(asked))) {
                 this._askToBeLetIn({ id: askerId, lengthM: VEHICLE_TYPES.car.lengthM }, road, laneIndex, exitDistanceM);
             }
             return false;
         }
-        if (driveway.crossesOncoming && this._drivewayCrossBlocked(driveway)) return false;
 
         const vehicleType = this._rollVehicleType();
         const exit = lanePoint(road, laneIndex, exitDistanceM);
@@ -5559,8 +5623,8 @@ export class SimulationEngine {
         });
         this.accounting.totalSpawned += 1;
         // The room the lane kept for it is now this car's: it ends once the car is in (_letInDone()).
-        const asked = this.letIn.get(road)?.get(laneIndex);
-        if (asked?.carId === askerId) asked.carId = car.id;
+        const asked = this.letIn.get(road)?.get(laneIndex)?.find((w) => w.carId === askerId);
+        if (asked) asked.carId = car.id;
         // The trip starts once it is on its way - waiting in the driveway isn't part of it.
         car.trip = trip && { ...trip, spawnS: this.simTimeS };
         const stats = this.routingStats;

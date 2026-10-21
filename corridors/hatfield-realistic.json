@@ -2020,7 +2020,7 @@
                     "southbound": {
                         "left": {
                             "laneUse": "left",
-                            "lengthM": 20
+                            "lengthM": 246
                         },
                         "right": {
                             "laneUse": "right",
@@ -2674,8 +2674,8 @@
             "name": "Lunnon",
             "curve": [
                 {
-                    "xM": 536.9,
-                    "yM": 1516
+                    "xM": 539.9,
+                    "yM": 1517.85
                 },
                 {
                     "xM": 533.4,
@@ -2723,8 +2723,8 @@
                     "yM": 1570.2
                 },
                 {
-                    "xM": 500.1,
-                    "yM": 1579.8
+                    "xM": 503.1,
+                    "yM": 1581.55
                 }
             ],
             "lanes": 1,
@@ -3342,6 +3342,7 @@
             "thetaPerS": 0.05,
             "variants": 64
         },
+        "assignment": {},
         "detourLimit": 2.5,
         "nodePenaltyS": {
             "signal": 20,
