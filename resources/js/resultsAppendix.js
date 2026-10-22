@@ -1,12 +1,12 @@
 /**
- * The results report's appendix: the dissertation's results figures and tables (Chapter 5 and Appendix B of
- * dissertation_output/ARTIS_Reference_Dissertation.md), recomputed from the batch shown - so after a new batch the
- * dissertation's numbers and figures are taken from here instead of re-running the analysis scripts by hand.
+ * The results report's appendix: detailed figures (A1-A9) and tables (A1-A10), recomputed from every run of the
+ * batch shown - so after a new batch its numbers and figures can be read straight off the report instead of
+ * re-running separate analysis scripts by hand.
  *
- * Every number follows dissertation_output/analysis/analyse.py and tables.py: one value per run, paired by seed;
+ * Every number: one value per run, paired by seed;
  * "Adaptive" / "Coordinated adaptive" without a sensor is the per-seed mean of the four sensors; ± is the 95% t
  * half-width; percentages are of the baseline's mean; wait recovery that never happened counts at the post-restore cap.
- * The figures keep the dissertation's own palette and layout (analysis/make_figs.py), so they drop into it unchanged.
+ * The figures use a fixed print palette and layout, independent of the app theme, so they can be reused as images.
  */
 import { POWER_LABELS } from './charts/theme.js';
 import { ci95, friedman, mean, median, paired } from './stats/pairedStats.js';
@@ -24,7 +24,7 @@ const SENSOR_NAME = { inductive_loop: 'Inductive loop', radar: 'Radar', camera: 
 const SENSOR_SHORT = { inductive_loop: 'loop', radar: 'radar', camera: 'camera', magnetometer: 'magnetometer' };
 const POWER_SHORT = { normal: 'N', load_shedding: 'TB', rolling_blackout: 'LS' };
 
-// The dissertation's palette (analysis/make_figs.py), not the app's - these figures go into it.
+// Fixed print palette, not the app's - these figures are meant to be lifted out as standalone images.
 const INK = '#0b0b0b';
 const INK2 = '#52514e';
 const GRID = '#e6e5e0';
@@ -36,7 +36,7 @@ const POWER_MARKER = { normal: 'circle', load_shedding: 'rect', rolling_blackout
 const CONTROLLER_MARKER = { fixed: 'circle', adaptive: 'rect', green_wave: 'triangle', coordinated_adaptive: 'rectRot' };
 const CONTROLLER_DASH = { fixed: [], adaptive: [6, 3], green_wave: [7, 3, 2, 3], coordinated_adaptive: [2, 3] };
 
-/** The main roads of Figure 5.2 - road_waits ids on the Hatfield network. */
+/** The main roads of Figure A2 - road_waits ids on the Hatfield network. */
 const MAIN_ROADS = [
     ['francisbaard', 'Francis Baard'],
     ['pretorius', 'Pretorius'],
@@ -46,7 +46,7 @@ const MAIN_ROADS = [
     ['conn_jan_shoba_sb', 'Jan Shoba (SB)'],
 ];
 
-/** Table rows with each sensor on its own, in the dissertation's order. */
+/** Table rows with each sensor on its own, in report order. */
 const VARIANT_ROWS = [
     ['fixed', null, 'Fixed-time'],
     ['green_wave', null, 'Green wave'],
@@ -267,7 +267,7 @@ function tableSensorVariants(d) {
     ]);
 }
 
-/** Total delay (diagnostics.delay, dissertation plan step 7.4) - only batches from after it was recorded carry it. */
+/** Total delay (diagnostics.delay) - only batches from after it was recorded carry it. */
 function tableDelay(d) {
     return CONTROLLER_ROWS.map(([c, s, label]) => [
         label,
@@ -522,7 +522,7 @@ async function compose(images, direction = 'row') {
 
 const point = (x, y) => ({ x, y });
 
-/** Figure 5.1: paired % change vs fixed-time, by scope (panels), controller (rows) and power state (markers). */
+/** Figure A1: paired % change vs fixed-time, by scope (panels), controller (rows) and power state (markers). */
 async function figurePctVsFixed(d, render) {
     const controllers = ['adaptive', 'green_wave', 'coordinated_adaptive'];
     const panels = [
@@ -566,7 +566,7 @@ async function figurePctVsFixed(d, render) {
     return compose([row.image, key], 'column');
 }
 
-/** Figure 5.2: paired % change on each main road vs fixed-time, normal power. */
+/** Figure A2: paired % change on each main road vs fixed-time, normal power. */
 function figureRoads(d, render) {
     const controllers = ['adaptive', 'green_wave', 'coordinated_adaptive'];
     const roads = MAIN_ROADS.filter(([id]) => finite(d.vec('fixed', null, 'normal', (run) => run.road_waits?.[id])).length);
@@ -600,7 +600,7 @@ function figureRoads(d, render) {
     return { image, aspect: 0.42 };
 }
 
-/** Figure 5.3: the ITS - fixed-time gap at each power state, in seconds and in % of fixed-time wait. */
+/** Figure A3: the ITS - fixed-time gap at each power state, in seconds and in % of fixed-time wait. */
 async function figureGap(d, render) {
     const controllers = ['adaptive', 'green_wave', 'coordinated_adaptive'];
     const offset = { adaptive: -0.08, green_wave: 0, coordinated_adaptive: 0.08 };
@@ -652,7 +652,7 @@ async function figureGap(d, render) {
     return compose([row.image, key], 'column');
 }
 
-/** Figure 5.4: network mean wait over the measured window, per controller, under each outage. */
+/** Figure A4: network mean wait over the measured window, per controller, under each outage. */
 async function figureTimeseries(data, timelineFor, render) {
     const panels = [];
     for (const p of OUTAGE_POWERS) {
@@ -715,7 +715,7 @@ function quantile(sorted, q) {
     return sorted[lo] + (sorted[Math.min(lo + 1, sorted.length - 1)] - sorted[lo]) * (at - lo);
 }
 
-/** Figure 5.5: wait-recovery times by controller and sensor - box plots with every seed as a point. */
+/** Figure A5: wait-recovery times by controller and sensor - box plots with every seed as a point. */
 async function figureRecovery(d, capFor, render) {
     const groups = [
         ['fixed', null, 'Fixed'],
@@ -772,7 +772,7 @@ async function figureRecovery(d, capFor, render) {
     return compose(panels);
 }
 
-/** Figure D.1: mean wait by controller and power state, with 95% intervals and value labels. */
+/** Figure A6: mean wait by controller and power state, with 95% intervals and value labels. */
 function figureWaitByController(d, render) {
     const datasets = CONTROLLERS.map((c) => {
         const values = POWERS.map((p) => meanOf(d.vec(c, sensorOf(c), p, 'avg_wait_time')));
@@ -824,7 +824,7 @@ function figureWaitByController(d, render) {
     return { image, aspect: 0.44 };
 }
 
-/** Figure D.2: segment means of total wait, by controller. */
+/** Figure A7: segment means of total wait, by controller. */
 async function figureSegments(d, render) {
     const panels = OUTAGE_POWERS.map((p) => {
         const columns = SEGMENT_COLUMNS.filter(([power, key]) => power === p || (p === 'rolling_blackout' && key === 'avg_wait_time_pre_outage'));
@@ -858,7 +858,7 @@ async function figureSegments(d, render) {
     return compose([row.image, key], 'column');
 }
 
-/** Figure D.3: mean wait by sensor within each adaptive controller and power state. */
+/** Figure A8: mean wait by sensor within each adaptive controller and power state. */
 async function figureSensors(d, render) {
     const panels = ['adaptive', 'coordinated_adaptive'].map((c, panel) => {
         const datasets = SENSORS.map((s, j) => {
@@ -895,7 +895,7 @@ async function figureSensors(d, render) {
     return compose([row.image, key], 'column');
 }
 
-/** Figure D.4: coordinated minus plain adaptive - arterial change against side-street change, by sensor and power state. */
+/** Figure A9: coordinated minus plain adaptive - arterial change against side-street change, by sensor and power state. */
 function figureCoordTradeoff(d, render) {
     const datasets = [];
     for (const s of SENSORS) {
@@ -947,7 +947,7 @@ function figureCoordTradeoff(d, render) {
  * Draws the appendix into `report` (resultsPdf.js's Report). `helpers`: renderChartImage, timelineFor and the page's
  * content width (mm) - passed in so this module needs nothing else from resultsPdf.js.
  */
-export async function drawDissertationAppendix(report, runs, data, { renderChartImage, timelineFor, contentWidthMm }) {
+export async function drawDetailedAppendix(report, runs, data, { renderChartImage, timelineFor, contentWidthMm }) {
     const d = indexRuns(runs);
     const capFor = (power) => data.batchStamp?.postRestoreWindowSByScope?.[power]?.total ?? FALLBACK_CAP_S[power];
     const table = (title, caption, head, body, note = null) => {
@@ -965,80 +965,80 @@ export async function drawDissertationAppendix(report, runs, data, { renderChart
 
     report.newPage();
     report.sectionTitle(
-        'Appendix: dissertation figures and tables',
-        `Chapter 5 and Appendix B of the dissertation, recomputed from this batch (${runs.length} runs, ${d.seeds.length} seeds)`
+        'Appendix: detailed figures and tables',
+        `Every figure and table below recomputed from this batch (${runs.length} runs, ${d.seeds.length} seeds)`
     );
     report.paragraph(
-        'Computed as the dissertation\'s analysis scripts do: one value per run, paired by seed; "Adaptive" and "Coordinated adaptive" without a sensor are the per-seed mean of the four sensors; ± is the 95% t confidence half-width; p values use the paired t test, or Wilcoxon where Shapiro-Wilk rejects normality of the differences. Numbers are the dissertation\'s table and figure numbers. The figures use the dissertation\'s colours so they can replace its images directly.'
+        'Method: one value per run, paired by seed; "Adaptive" and "Coordinated adaptive" without a sensor are the per-seed mean of the four sensors; ± is the 95% t confidence half-width; p values use the paired t test, or Wilcoxon where Shapiro-Wilk rejects normality of the differences. The figures use a fixed print palette so they can be reused as standalone images.'
     );
 
-    figure('Figure 5.1', 'Paired change in mean wait relative to fixed-time by scope and power state (95% confidence intervals of the per-seed differences).', await figurePctVsFixed(d, renderChartImage));
-    figure('Figure 5.2', 'Paired change in mean wait on each main road relative to fixed-time at normal power (road-level means over vehicles using the road; 95% confidence intervals).', figureRoads(d, renderChartImage));
-    figure('Figure 5.3', 'The ITS–fixed-time gap at normal power and under each outage, in seconds (left) and as a percentage of fixed-time wait (right). Error bars are 95% confidence intervals of the per-seed gap.', await figureGap(d, renderChartImage));
-    figure('Figure 5.4', 'Network mean wait over the measured window under the total blackout (top) and load shedding (bottom), averaged over the seeds (and over sensors for the adaptive controllers). Shaded bands mark the dark periods.', await figureTimeseries(data, timelineFor, renderChartImage));
-    figure('Figure 5.5', 'Distribution of wait-recovery times by controller and sensor (box: interquartile range; points: individual seeds; dashed line: cap).', await figureRecovery(d, capFor, renderChartImage));
-    figure('Figure D.1', 'Mean wait per vehicle by controller and power state (total scope; sensor means for the adaptive controllers; error bars are 95% confidence intervals). The chart form of Table 5.1.', figureWaitByController(d, renderChartImage));
-    figure('Figure D.2', 'Segment means of total wait before, during and after each outage, by controller. The chart form of Table 5.6.', await figureSegments(d, renderChartImage));
-    figure('Figure D.3', 'Mean wait per vehicle by sensor model within each adaptive controller and power state (95% confidence intervals). The chart form of Table 5.8.', await figureSensors(d, renderChartImage));
-    figure('Figure D.4', 'Coordinated minus plain adaptive control on the same seeds: change in arterial wait against change in side-street wait, by sensor (colour) and power state (marker); 95% confidence intervals. The chart form of Table 5.9.', figureCoordTradeoff(d, renderChartImage));
+    figure('Figure A1', 'Paired change in mean wait relative to fixed-time by scope and power state (95% confidence intervals of the per-seed differences).', await figurePctVsFixed(d, renderChartImage));
+    figure('Figure A2', 'Paired change in mean wait on each main road relative to fixed-time at normal power (road-level means over vehicles using the road; 95% confidence intervals).', figureRoads(d, renderChartImage));
+    figure('Figure A3', 'The ITS–fixed-time gap at normal power and under each outage, in seconds (left) and as a percentage of fixed-time wait (right). Error bars are 95% confidence intervals of the per-seed gap.', await figureGap(d, renderChartImage));
+    figure('Figure A4', 'Network mean wait over the measured window under the total blackout (top) and load shedding (bottom), averaged over the seeds (and over sensors for the adaptive controllers). Shaded bands mark the dark periods.', await figureTimeseries(data, timelineFor, renderChartImage));
+    figure('Figure A5', 'Distribution of wait-recovery times by controller and sensor (box: interquartile range; points: individual seeds; dashed line: cap).', await figureRecovery(d, capFor, renderChartImage));
+    figure('Figure A6', 'Mean wait per vehicle by controller and power state (total scope; sensor means for the adaptive controllers; error bars are 95% confidence intervals). The chart form of Table A1.', figureWaitByController(d, renderChartImage));
+    figure('Figure A7', 'Segment means of total wait before, during and after each outage, by controller. The chart form of Table A6.', await figureSegments(d, renderChartImage));
+    figure('Figure A8', 'Mean wait per vehicle by sensor model within each adaptive controller and power state (95% confidence intervals). The chart form of Table A8.', await figureSensors(d, renderChartImage));
+    figure('Figure A9', 'Coordinated minus plain adaptive control on the same seeds: change in arterial wait against change in side-street wait, by sensor (colour) and power state (marker); 95% confidence intervals. The chart form of Table A9.', figureCoordTradeoff(d, renderChartImage));
 
     report.newPage();
     table(
-        'Table 5.1',
+        'Table A1',
         `Mean wait per vehicle by controller, sensor and power state (total scope; ${d.seeds.length} runs per cell). Waits include the dark minutes of each outage run.`,
         ['Controller (sensor)', 'Normal wait (s)', 'Total blackout wait (s)', 'Load shedding wait (s)', 'Cleared w/o stop, normal (%)', 'Throughput, normal (veh/min)'],
         tableCondMeans(d)
     );
     table(
-        'Table 5.2',
+        'Table A2',
         'Paired difference in mean wait relative to fixed-time on the same seeds (seconds ± 95% CI, with the percentage of the fixed-time mean). Negative is better.',
         ['Power state', 'Controller', 'Total diff. s (%)', 'Arterial diff. s (%)', 'Side streets diff. s (%)', 'dz (total)'],
         tableVsFixed(d)
     );
     table(
-        'Table 5.3',
+        'Table A3',
         'Wait distribution by controller and power state (total scope; seconds, means over runs). N = normal, TB = total blackout, LS = load shedding.',
         ['Controller', ...['Median', 'P95', 'Run max'].flatMap((m) => POWERS.map((p) => `${m} ${POWER_SHORT[p]}`))],
         tableTails(d)
     );
     table(
-        'Table 5.4',
+        'Table A4',
         'Degradation: increase in mean wait from normal power to each outage on the same seeds.',
         ['Controller', 'Normal (s)', 'Total blackout increase (s)', 'Load shedding increase (s)'],
         tableDegradation(d)
     );
     table(
-        'Table 5.5',
+        'Table A5',
         'RQ1 difference-in-differences: change in the ITS–fixed-time gap from normal power to outage (paired by seed). Relative gaps are means of per-seed percentages.',
         ['Controller', 'Outage', 'Gap normal (s)', 'Gap outage (s)', 'Change in absolute gap (s)', 'p', 'Gap normal (%)', 'Gap outage (%)', 'Change in relative gap (pp)', 'p'],
         tableDiD(d)
     );
     table(
-        'Table 5.6',
+        'Table A6',
         'Segment means of total wait (s): before, during and after each outage. Each vehicle is counted in the segment in which it cleared.',
         ['Controller', ...SEGMENT_COLUMNS.map(([, , label]) => label)],
         tableSegments(d)
     );
     table(
-        'Table 5.7',
+        'Table A7',
         `Wait recovery after power is restored: share of runs that recovered, and capped mean and median recovery time. Runs that did not recover count at the cap (${Math.round(capFor('load_shedding'))} s total blackout, ${Math.round(capFor('rolling_blackout'))} s load shedding), so capped means are lower bounds.`,
         ['Controller (sensor)', 'TB recovered', 'TB capped mean (s)', 'TB median (s)', 'LS recovered', 'LS capped mean (s)', 'LS median (s)'],
         tableRecovery(d, capFor)
     );
     table(
-        'Table 5.8',
+        'Table A8',
         'Mean wait (s) by sensor model within each adaptive controller, with Friedman tests across the four sensors.',
         ['Controller', 'Power', 'Loop', 'Radar', 'Camera', 'Magnetometer', 'Range (s)', 'Friedman chi-sq. (p)', 'Kendall W'],
         tableSensors(d)
     );
     table(
-        'Table 5.9',
+        'Table A9',
         'Coordinated adaptive minus plain adaptive control on the same seeds (sensor means; ± 95% CI, p in brackets).',
         ['Power', 'Total diff. (s)', 'Arterial diff. (s)', 'Side streets diff. (s)', 'Cleared w/o stop diff. (pp)'],
         tableCoordination(d)
     );
     table(
-        'Table B.1',
+        'Table A10',
         'Each sensor variant against fixed-time, total scope (paired by seed; seconds ± 95% CI, percentage of the fixed-time mean, dz).',
         ['Variant', 'Normal', 'Total blackout', 'Load shedding'],
         tableSensorVariants(d)
