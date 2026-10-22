@@ -409,6 +409,12 @@ let batchRunning = false;
 
 batchButton?.addEventListener('click', () => openBatchModal());
 
+// The run count follows experimentalMatrix.js, not the Blade placeholder text.
+const batchRunCount = buildExperimentalMatrix().length * REPS_PER_CONDITION;
+if (batchButton) batchButton.textContent = `Generate dataset (${batchRunCount} runs)`;
+const batchConfirmButton = document.getElementById('batch-modal-confirm');
+if (batchConfirmButton) batchConfirmButton.textContent = `Run batch (${batchRunCount} runs)`;
+
 /**
  * Runs the full batch (unchanged from before the modal existed - only the
  * corridorConfig passed in can now carry per-street demand overrides from the

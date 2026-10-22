@@ -47,7 +47,7 @@
 
                 <button type="button" id="batch-run-button"
                         class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Generate dataset (900 runs)
+                    Generate dataset (1080 runs)
                 </button>
             </div>
         </div>
@@ -98,7 +98,7 @@
                     Cancel
                 </button>
                 <button type="button" id="batch-modal-confirm" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Run batch (900 runs)
+                    Run batch (1080 runs)
                 </button>
             </div>
         </div>
@@ -106,8 +106,8 @@
 
     <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
         <strong class="font-semibold">Nothing below is measured yet.</strong>
-        Click <strong>Generate dataset</strong> to run the full 30-condition x 30-rep experimental matrix
-        (900 headless runs) in this browser tab and populate
+        Click <strong>Generate dataset</strong> to run the full 36-condition x 30-rep experimental matrix
+        (1080 headless runs) in this browser tab and populate
         <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
         while it runs - the tab is not frozen, just busy.
     </div>
