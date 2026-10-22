@@ -67,3 +67,31 @@ export function legacyCallSufficient({ state, currentPhase, frames, readCount, o
     const meanQueue = samples.reduce((sum, s) => sum + s.queue, 0) / samples.length;
     return windowCovered && hasSufficientCall(Math.round(meanQueue), params);
 }
+
+/**
+ * The capability-aware rule (controller mode 'adaptive_rich', 2026-10-22 - RQ2's richness test): the shared presence
+ * rule above, plus an early call from whatever richer output the sensor really has - a queue standing over an advance
+ * zone (magnetometer), or `minCallToSwitch` vehicles counted (radar after its count filter, camera). It can only make
+ * a call earlier than the shared rule, never later, so a presence-only sensor (the loop) behaves exactly as under it.
+ *
+ * @param readCount frame -> reported count (draws the frame's count noise)
+ * @param outputs   the sensor spec's `outputs`
+ */
+export function richCallSufficient({ state, currentPhase, frames, readCount, outputs, params, dt, simTimeS }) {
+    const otherPhase = 1 - currentPhase;
+    if (isOtherCallSufficient({ state, currentPhase, frames, params, dt })) return true;
+    if (outputs.queueExtent && frames.some((f) => f.queueExtent)) return true;
+    if (!outputs.count) return false;
+
+    const queue = frames.reduce((sum, f) => sum + readCount(f), 0);
+    const filter = outputs.count.filter;
+    if (!filter) return hasSufficientCall(queue, params);
+    if (filter.type !== 'moving_average') throw new Error(`Unknown count filter "${filter.type}"`);
+
+    const samples = state.countSamples[otherPhase];
+    state.countSamples[currentPhase] = [];
+    if (state.callPersistenceS[otherPhase] === 0) samples.length = 0; // a new call - don't average in the last one's counts
+    samples.push({ tS: simTimeS, queue });
+    while (samples.length && samples[0].tS <= simTimeS - filter.windowS) samples.shift();
+    return hasSufficientCall(Math.round(samples.reduce((sum, s) => sum + s.queue, 0) / samples.length), params);
+}

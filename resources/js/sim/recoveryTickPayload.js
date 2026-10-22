@@ -75,7 +75,7 @@ export function finalizeRecoveryTickPayload(
     return {
         controller_mode: controllerMode,
         // fixed-time and green-wave never vary by sensor (matches simulation_runs' own column).
-        sensor_mode: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive' ? sensorMode : null,
+        sensor_mode: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive' || controllerMode === 'adaptive_rich' ? sensorMode : null,
         corridor_config: corridorId,
         routing_mode: routingMode,
         // A rolling blackout's curve is a separate row: its first cut and FINAL restore, plus each zone's own window.

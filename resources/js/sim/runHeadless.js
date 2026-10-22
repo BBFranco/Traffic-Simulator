@@ -23,9 +23,13 @@ import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelay
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
 const ARTERIAL_CONNECTORS_ID = 'arterial_connectors';
 
+/** The actuated modes - the ones whose runs read a sensor. */
+const readsSensors = (controllerMode) => controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive' || controllerMode === 'adaptive_rich';
+
 /**
  * @param seed                 integer PRNG seed
- * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' | 'coordinated_adaptive' - applied to every arterial in the corridor
+ * @param controllerMode       'fixed' | 'adaptive' | 'green_wave' | 'coordinated_adaptive' | 'adaptive_rich' - applied to every arterial in the corridor;
+ *                             'adaptive_rich' is the adaptive controller under demandEstimator.js's richCallSufficient() (RQ2's richness test)
  * @param sensorMode           'none' | 'inductive_loop' | 'radar' | 'camera' | 'magnetometer'
  * @param warmupTicks          ticks run BEFORE anything is measured, discarded from every stat - the
  *                             standard traffic-sim warm-up: long enough for queue lengths/wait times to
@@ -81,7 +85,7 @@ export function runHeadless({
     const arterialModes = {};
     const demand = {};
     for (const arterial of layout.arterials) {
-        arterialModes[arterial.id] = controllerMode;
+        arterialModes[arterial.id] = controllerMode === 'adaptive_rich' ? 'adaptive' : controllerMode;
         demand[arterial.id] = arterial.demand.spawnRatePerLanePerMin;
     }
     for (const connector of layout.connectors) {
@@ -100,6 +104,7 @@ export function runHeadless({
         coordination,
         sensorSpecSet,
         sensorErrors,
+        ...(controllerMode === 'adaptive_rich' ? { callRule: 'rich' } : {}),
     });
 
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
@@ -133,7 +138,7 @@ export function runHeadless({
             statsReset = true;
             accountingAtMeasureStart = { ...engine.accounting };
             arrivalsLostSoFar = engine.accounting.arrivalsLost;
-            if (controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive') engine.signalDiagnostics = new SignalDiagnostics();
+            if (readsSensors(controllerMode)) engine.signalDiagnostics = new SignalDiagnostics();
             engine.zoneFlow = new ZoneFlow(engine.simTimeS);
             if (controllerMode === 'fixed') websterAtStart = websterPlans(engine);
         }
@@ -526,7 +531,7 @@ function buildSummary({
         powerState: schedule?.powerState ?? 'normal',
         sensorMode: controllerMode === 'fixed' ? null : sensorMode, // fixed-time never reads sensors (spec's DB schema note)
         /** Which sensor configuration produced the run (sensorSpecs.js) - null for the controllers that read no sensors. */
-        sensorSpec: controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive'
+        sensorSpec: readsSensors(controllerMode)
             ? { set: engine.sensorSpecSet, hash: sensorSpecHash(engine.sensorSpec, engine.sensorErrorsOn), errorsOn: engine.sensorErrorsOn }
             : null,
         corridorConfig: corridorConfig.id,
@@ -595,6 +600,7 @@ function buildSummary({
             sensorMode,
             sensorSpecSet: engine.sensorSpecSet,
             sensorErrors: engine.sensorErrors,
+            ...(engine.callRule !== 'presence' ? { callRule: engine.callRule } : {}),
             warmupTicks,
             powerOutageStartTick: outageStartArg,
             powerOutageEndTick: outageEndArg,

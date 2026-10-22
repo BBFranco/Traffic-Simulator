@@ -53,7 +53,7 @@ import {
 import { carShapeFor } from './carShapes.js';
 import { observeDetector, emptyFrame, applyErrors, countWithNoise, sensorAvailable } from './sensors.js';
 import { sensorSpecFor, latencyTicks, DEFAULT_SENSOR_SPEC_SET } from './sensorSpecs.js';
-import { isOtherCallSufficient, legacyCallSufficient } from './demandEstimator.js';
+import { isOtherCallSufficient, legacyCallSufficient, richCallSufficient } from './demandEstimator.js';
 import { roadPointAt, TURN_LANE_TAPER_M, crossArms, leftNormal, isTurnOnlyLane, compassDirection, roundaboutRimPoint } from './corridor.js';
 import { DRIVEWAY_DEPTH_M } from './routing/driveways.js';
 import { buildRoutingModel } from './routing/model.js';
@@ -1293,7 +1293,7 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
         /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
         this.websterTurnWeight = websterTurnWeight;
         /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
@@ -1321,6 +1321,8 @@ export class SimulationEngine {
         this.sensorSpecSet = sensorSpecSet;
         /** Sensitivity runs only: switch on the specs' miss / false-call / crosstalk / count-noise models. */
         this.sensorErrors = sensorErrors;
+        /** Adaptive call rule on the field set: 'presence' (the shared rule) or 'rich' (controller mode 'adaptive_rich' - demandEstimator.js's richCallSufficient()). */
+        this.callRule = callRule;
         this.setSensorMode(sensorMode);
         this.batteryBackedSensors = batteryBackedSensors;
         this.truckRatio = truckRatio;
@@ -5169,12 +5171,12 @@ export class SimulationEngine {
         return frames.turn[phase].some((f) => f.actuated);
     }
 
-    /** The shared call rule (demandEstimator.js) on the waiting phase's frames - the legacy set keeps the pre-overhaul rule. */
+    /** The shared call rule (demandEstimator.js) on the waiting phase's frames - the legacy set keeps the pre-overhaul rule, 'rich' adds richCallSufficient()'s early calls. */
     _isOtherCallSufficient(info, frames, currentPhase, dt) {
-        if (this.sensorSpecSet !== 'legacy') {
+        if (this.sensorSpecSet !== 'legacy' && this.callRule !== 'rich') {
             return isOtherCallSufficient({ state: info, currentPhase, frames: frames.phase[1 - currentPhase], params: info.controller.params, dt });
         }
-        return legacyCallSufficient({
+        return (this.sensorSpecSet === 'legacy' ? legacyCallSufficient : richCallSufficient)({
             state: info,
             currentPhase,
             frames: frames.phase[1 - currentPhase],

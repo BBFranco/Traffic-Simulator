@@ -75,6 +75,7 @@ export const MODE_COLOURS = {
     adaptive: '#8b5cf6',
     green_wave: '#059669',
     coordinated_adaptive: '#f43f5e',
+    adaptive_rich: '#0891b2',
 };
 
 export const MODE_LABELS = {
@@ -82,6 +83,7 @@ export const MODE_LABELS = {
     adaptive: 'Adaptive',
     green_wave: 'Green wave',
     coordinated_adaptive: 'Coordinated adaptive',
+    adaptive_rich: 'Adaptive (rich call)',
 };
 
 export const POWER_LABELS = {

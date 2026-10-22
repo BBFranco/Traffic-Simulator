@@ -6,12 +6,12 @@
  * at a time, the report spells out every combination the payload already carries, in fixed
  * sections (SECTION): a headline, 1 Total blackout and 2 Rolling blackout (each scope beside the
  * normal-power baseline - Total / Main arterial / Side streets, plus the three zones under the
- * rolling blackout), 3 Coordination and 4 Method notes - with every controller variant side by
+ * rolling blackout), 3 Coordination, 4 Sensor richness (only when the batch ran adaptive_rich) and then Method notes - with every controller variant side by
  * side: fixed-time, the blended adaptive average, each adaptive sensor on its own, and green wave.
  * An unnumbered appendix then repeats the detailed results figures and tables, recomputed from every run of the
  * batch (resultsAppendix.js), so they can be reused after a new batch.
  * Nothing is recomputed here except the blended adaptive recovery curve (same point-wise
- * average results.js draws); the paired deltas come straight from
+ * average results.js draws) and Sensor richness (paired from the appendix's per-run rows); the other paired deltas come straight from
  * ResultsController::pairedComparisons().
  *
  * Charts are drawn offscreen with the same Chart.js theme as the page, forced to light ink
@@ -42,6 +42,7 @@ import { SENSOR_SPEC_SETS, latencyTicks } from './sim/sensorSpecs.js';
 import { seedForRep } from './sim/experimentalMatrix.js';
 import { LayoutRenderer, ZONE_TINTS, setRendererTheme } from './sim/renderer.js';
 import { drawDetailedAppendix } from './resultsAppendix.js';
+import { paired } from './stats/pairedStats.js';
 
 /** Zone wait is charged by junction (zoneAccounting by-junction-v1), so every zone caption says what that pulls in. */
 const zoneDescription = (zone) =>
@@ -1562,7 +1563,7 @@ function thresholdNotes(data) {
     const a = ADAPTIVE_DEFAULTS;
     const on = (flag) => (flag ? 'on' : 'off');
     return [
-        `Adaptive actuation (every sensor, plain and coordinated): a green gaps out after ${a.gapOutS} s without a detection, never shorter than ${a.minGreen} s, capped at ${a.maxGreen} s; the other phase is served once its call has persisted ${a.callDebounceS} s - one call rule for every sensor (2026-10-16); counts and queue extent are observed but never decide the switch.`,
+        `Adaptive actuation (every sensor, plain and coordinated): a green gaps out after ${a.gapOutS} s without a detection, never shorter than ${a.minGreen} s, capped at ${a.maxGreen} s; the other phase is served once its call has persisted ${a.callDebounceS} s - one call rule for every sensor (2026-10-16); counts and queue extent are observed but never decide the switch - except under Adaptive (rich call), the sensor richness test, where they can call early.`,
         `Coordinated adaptive gates: a link marries when the busiest-lane arterial flow at its two ends averages at least ${c.marryFlowPerLaneMin} veh/min per lane and a platoon crosses it within ${c.marryMaxTravelS} s, and divorces below ${Math.round(c.divorceRatio * 100)}% of that; selective marriage ${on(c.selective)}, connector routes (Jan Shoba) ${on(c.connectorRoutes)}, forced route marriage ${on(c.forceRoutes)}. Platoon messages ${on(c.platoonMessages)}: a platoon of ${c.platoonMinCars}+ vehicles holds the arterial green up to ${c.platoonExtendMaxS} s past its yield point when due within ${c.platoonLookaheadS} s, and a thinned-out cross green (${c.earlyStartGapS} s without detection) ends early for a platoon due within amber + all-red + ${c.earlyStartLeadS} s. Self-tuning ${on(c.selfTuning)}: re-plan every ${c.retuneEveryCycles} common cycles, flow smoothing ${c.retuneSmoothing}, common cycle moves at most ${c.retuneMaxStepS} s per update, saturated stages boosted ${Math.round(c.saturatedBoost * 100)}%${c.freezeAfterWarmup ? '; FROZEN after warm-up (ablation)' : ''}.`,
         `Coordinated adaptive levers: re-service of a cross call within its own window ${on(c.reservice)}; side-street max-wait cap ${on(c.sideWaitCap)} (${c.sideMaxWaitS} s); resync hold after power returns ${on(c.recoveryHold)} (${c.recoveryHoldS} s on plain adaptive before marrying back), restored junctions restart ${restartsOnArterialGreen(coordination) ? 'on the arterial green' : 'mid-plan (legacy)'}.`,
     ];
@@ -1630,6 +1631,87 @@ function seedNote(data) {
         offset(power) === 0 ? `the ${powerLabel(power).toLowerCase()} runs on the normal-power seeds (base + rep)` : `the ${powerLabel(power).toLowerCase()} on its own set, offset by +${offset(power)} (base + ${offset(power)} + rep)`
     );
     return `Seeds: ${parts.join('; ')}. Comparisons are always paired within one power state, so the offset never mixes seeds inside a delta.${range}`;
+}
+
+/** The sensors whose rich-call runs (controller mode adaptive_rich) can differ from plain adaptive - see experimentalMatrix.js. */
+const RICH_SENSORS = ['radar', 'camera', 'magnetometer'];
+
+/** Holm-adjusted p-values, in the input's order (NaN entries stay NaN and don't count towards m). */
+function holm(ps) {
+    const tested = ps.map((p, i) => ({ p, i })).filter(({ p }) => Number.isFinite(p)).sort((a, b) => a.p - b.p);
+    const adjusted = ps.map(() => NaN);
+    let running = 0;
+    tested.forEach(({ p, i }, rank) => {
+        running = Math.max(running, Math.min(1, (tested.length - rank) * p));
+        adjusted[i] = running;
+    });
+    return adjusted;
+}
+
+/**
+ * RQ2's richness test: adaptive_rich (the adaptive controller, plus an early call from a sensor's count or advance-zone
+ * queue) against plain adaptive with the same sensor, paired by seed - from the appendix's per-run rows. Drawn only
+ * when the batch has adaptive_rich runs; returns whether it was.
+ */
+function drawRichness(report, runs, data, number) {
+    const bySeed = (mode, sensor, power) => new Map(runs.filter((r) => r.controller_mode === mode && r.sensor_mode === sensor && r.power_state === power).map((r) => [r.seed, r]));
+    const capS = data.batchStamp?.postRestoreWindowS ?? 3600;
+    const recovery = (run) => run.time_to_recovery_wait_seconds ?? capS;
+    const metrics = [
+        { header: 'Wait, total', value: (r) => r.avg_wait_time, lowerBetter: true },
+        { header: 'Wait, arterial', value: (r) => r.avg_wait_time_arterial, lowerBetter: true },
+        { header: 'Wait, side streets', value: (r) => r.avg_wait_time_side_street, lowerBetter: true },
+        { header: 'P95, total', value: (r) => r.p95_wait_time, lowerBetter: true },
+        { header: 'Throughput', value: (r) => r.throughput_per_min, lowerBetter: false },
+        { header: 'Wait recovery (capped)', value: recovery, lowerBetter: true, outageOnly: true },
+    ];
+
+    const rows = POWER_ORDER.flatMap((power) =>
+        RICH_SENSORS.map((sensor) => {
+            const rich = bySeed('adaptive_rich', sensor, power);
+            const plain = bySeed('adaptive', sensor, power);
+            const pairs = [...rich.keys()].filter((seed) => plain.has(seed)).sort((a, b) => a - b).map((seed) => [rich.get(seed), plain.get(seed)]);
+            if (pairs.length < 2) return null;
+            const identical = pairs.filter(([a, b]) => metrics.every((m) => m.outageOnly || m.value(a) === m.value(b))).length;
+            const cells = metrics.map((m) => {
+                if (m.outageOnly && power === 'normal') return null;
+                const a = pairs.map(([r]) => m.value(r));
+                const b = pairs.map(([, r]) => m.value(r));
+                return a.every((v, i) => v === b[i]) ? { identical: true } : { ...paired(a, b), lowerBetter: m.lowerBetter };
+            });
+            return { power, sensor, n: pairs.length, identical, cells };
+        })
+    ).filter(Boolean);
+    if (!rows.length) return false;
+
+    const waitP = holm(rows.map((row) => (row.cells[0].identical ? NaN : row.cells[0].p)));
+    report.sectionTitle('Sensor richness', null, number);
+    report.heading(
+        'Rich call vs adaptive',
+        'Does the controller gain from what a richer sensor reports? Adaptive (rich call) is the same adaptive controller and the same sensor, but the waiting road is also served early once the sensor counts 5+ vehicles there (radar after its 3 s count smoothing, camera) or sees the queue reach its advance zone (magnetometer); otherwise the shared 3 s presence rule applies, so it can only call earlier, never later. The loop reports presence only, so under this rule it is plain adaptive by construction and is not run. Paired against plain adaptive with the same sensor on the same seeds; % change ± the 95% CI on the per-seed differences. Wait, P95 and recovery: negative is better; throughput: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI. "Identical" = every seed gave the same result in both modes. Identical runs = seeds where every metric matched exactly. p = total wait, paired t or Wilcoxon by the Shapiro-Wilk check on the differences, Holm-adjusted across the rows.'
+    );
+    const cellText = (cell) => (cell === null ? '—' : cell.identical ? 'identical' : fmtPaired(cell.pct, cell.pctCi, '%'));
+    const columns = [
+        { header: 'Sensor', value: (row) => SENSOR_LABELS[row.sensor] ?? row.sensor },
+        { header: 'Power', value: (row) => powerLabel(row.power) },
+        { header: 'Identical runs', value: (row) => `${row.identical}/${row.n}` },
+        ...metrics.map((m, k) => ({ header: m.header, value: (row) => cellText(row.cells[k]), metric: k })),
+        { header: 'p, total wait', value: (row, i) => (Number.isFinite(waitP[i]) ? `${waitP[i] < 0.001 ? '<0.001' : waitP[i].toFixed(3)}\n${row.cells[0].test}` : '—') },
+    ];
+    report.table({
+        head: [columns.map((column) => column.header)],
+        body: rows.map((row, i) => columns.map((column) => column.value(row, i))),
+        columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i < 2 ? 'left' : 'right' }])),
+        didParseCell: (hook) => {
+            if (hook.section !== 'body') return;
+            const k = columns[hook.column.index].metric;
+            const cell = k === undefined ? null : rows[hook.row.index].cells[k];
+            if (!cell || cell.identical) return;
+            const better = lowerIsBetter(cell.pct, cell.pctCi);
+            toneCell(hook.cell, better === null ? null : cell.lowerBetter ? better : !better);
+        },
+    });
+    return true;
 }
 
 function drawMethodNotes(report, data, number) {
@@ -1711,7 +1793,10 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         report.newPage();
         drawCoordination(report, data, data.coordinationMetrics, SECTION.coordination);
         report.newPage();
-        drawMethodNotes(report, data, SECTION.methodNotes);
+        // Sensor richness only when the batch ran adaptive_rich - the method notes then move down one number.
+        const hasRichness = appendixRuns?.length ? drawRichness(report, appendixRuns, data, SECTION.methodNotes) : false;
+        if (hasRichness) report.newPage();
+        drawMethodNotes(report, data, SECTION.methodNotes + (hasRichness ? 1 : 0));
         if (appendixRuns?.length) await drawDetailedAppendix(report, appendixRuns, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH });
 
         report.stampPages();

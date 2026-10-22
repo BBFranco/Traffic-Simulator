@@ -376,7 +376,7 @@ onThemeChange((theme) => {
 
 /**
  * Build steps 17-18: runs the full 30-condition x 30-rep experimental matrix
- * (900 headless runs - 30 conditions x 30 reps) in this tab and populates `simulation_runs`.
+ * (1080 headless runs - 36 conditions x 30 reps, experimentalMatrix.js) in this tab and populates `simulation_runs`.
  *
  * `runHeadless()` here is the exact same function batch/runBatch.mjs calls
  * from the CLI - only the driver differs (a browser button instead of a
@@ -410,7 +410,7 @@ let batchRunning = false;
 batchButton?.addEventListener('click', () => openBatchModal());
 
 /**
- * Runs the 900-run batch (unchanged from before the modal existed - only the
+ * Runs the full batch (unchanged from before the modal existed - only the
  * corridorConfig passed in can now carry per-street demand overrides from the
  * modal, see runBatchModal.js's docblock at the top of this section).
  *
@@ -1051,7 +1051,7 @@ const batchMonitor = {
 
         const label = document.createElement('span');
         label.className = 'truncate';
-        const sensor = condition.controllerMode === 'adaptive' || condition.controllerMode === 'coordinated_adaptive' ? ` · ${SENSOR_SHORT[condition.sensorMode] ?? condition.sensorMode}` : '';
+        const sensor = condition.controllerMode !== 'fixed' && condition.controllerMode !== 'green_wave' ? ` · ${SENSOR_SHORT[condition.sensorMode] ?? condition.sensorMode}` : '';
         label.textContent = `${MODE_LABELS[condition.controllerMode] ?? condition.controllerMode}${sensor}`;
         label.title = condition.key;
 
