@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\BatchKind;
 use App\Enums\ControllerMode;
 use App\Enums\PowerState;
 use App\Enums\RoutingMode;
@@ -12,6 +11,7 @@ use App\Models\TrafficCount;
 use App\Support\ConfidenceInterval;
 use App\Support\CoordinationMetrics;
 use App\Support\CorridorRepository;
+use App\Support\LatestBatchIds;
 use App\Support\RoadWaitMetrics;
 use App\Support\RoutingMetrics;
 use App\Support\SeedPairedDeltas;
@@ -19,9 +19,9 @@ use App\Support\ZoneScopes;
 use BackedEnum;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 /**
@@ -111,6 +111,7 @@ class ResultsController extends Controller
         private readonly CoordinationMetrics $coordinationMetrics,
         private readonly RoadWaitMetrics $roadWaitMetrics,
         private readonly ZoneScopes $zoneScopes,
+        private readonly LatestBatchIds $latestBatchIds,
     ) {}
 
     public function index(): View
@@ -154,6 +155,7 @@ class ResultsController extends Controller
                 'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'latestBatchProgressUrl' => route('results.latest-batch-progress'),
+                'appendixRunsUrl' => route('results.appendix-runs'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,
             ],
@@ -667,7 +669,7 @@ class ResultsController extends Controller
 
     private function computePayload(?string $corridorFilter, RoutingMode $routingMode): array
     {
-        $batchIds = $this->latestBatchIds($corridorFilter, $routingMode);
+        $batchIds = $this->latestBatchIds->for($corridorFilter, $routingMode);
         $query = SimulationRun::query()->whereIn('batch_id', $batchIds);
 
         $aggregates = $this->aggregates((clone $query));
@@ -1056,24 +1058,6 @@ class ResultsController extends Controller
         return $utcTimestamp === null
             ? null
             : Carbon::parse($utcTimestamp, 'UTC')->setTimezone(config('app.display_timezone'))->format('j M Y, H:i');
-    }
-
-    /**
-     * Each corridor's most recent batch - older batches were produced by earlier engine
-     * versions, so pooling them would blend incomparable runs. They stay in the table.
-     *
-     * @return Collection<int, string>
-     */
-    private function latestBatchIds(?string $corridorFilter, RoutingMode $routingMode): Collection
-    {
-        $latestRunIds = SimulationRun::query()
-            ->where('routing_mode', $routingMode->value)
-            ->where('batch_kind', BatchKind::Main->value)
-            ->when($corridorFilter, fn (Builder $query) => $query->where('corridor_config', $corridorFilter))
-            ->selectRaw('max(id)')
-            ->groupBy('corridor_config');
-
-        return SimulationRun::query()->whereIn('id', $latestRunIds)->pluck('batch_id');
     }
 
     /**

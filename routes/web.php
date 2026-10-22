@@ -9,6 +9,7 @@ use App\Http\Controllers\CorridorTemplatePublishController;
 use App\Http\Controllers\LatestBatchProgressController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
+use App\Http\Controllers\ResultsAppendixRunsController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\RoadEditorController;
 use App\Http\Controllers\SimulationRunController;
@@ -82,6 +83,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/results/data', [ResultsController::class, 'data'])->name('results.data');
     // What the latest batch stored before it stopped - the Resume button carries on from there.
     Route::get('/results/latest-batch-progress', LatestBatchProgressController::class)->name('results.latest-batch-progress');
+    // Every run of the batches shown, for the report's appendix (the dissertation's figures and tables).
+    Route::get('/results/appendix-runs', ResultsAppendixRunsController::class)->name('results.appendix-runs');
 
     // One intersection at a time with test traffic - click the lane arrows, save them into the corridor file.
     Route::get('/road-editor', [RoadEditorController::class, 'index'])->name('road-editor');

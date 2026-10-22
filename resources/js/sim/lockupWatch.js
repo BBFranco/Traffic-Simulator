@@ -136,29 +136,39 @@ export class LockupWatch {
     _liveCars() {
         const { engine } = this;
         const result = [];
-        const addLane = (lane) => {
+        const gatesOf = new Map();
+        const addLane = (gates) => (lane) => {
             const sorted = [...lane.cars].sort((a, b) => b.distanceM - a.distanceM);
             sorted.forEach((car, i) => {
                 const ahead = sorted[i - 1];
                 const close = ahead && ahead.distanceM - car.distanceM - (ahead.lengthM + car.lengthM) / 2 < LANE_FOLLOW_GAP_M;
                 result.push({ car, waitsOn: close ? ahead : null });
+                gatesOf.set(car, gates);
             });
         };
-        for (const state of engine.carriagewayState.values()) state.lanes.forEach(addLane);
-        for (const state of engine.connectorState.values()) {
-            state.fwd.lanes.forEach(addLane);
-            state.rev.lanes.forEach(addLane);
+        for (const [id, state] of engine.carriagewayState) state.lanes.forEach(addLane(engine.carriagewaysById.get(id)?.gates));
+        for (const [id, state] of engine.connectorState) {
+            const dirs = engine.connectorDirs.get(id);
+            state.fwd.lanes.forEach(addLane(dirs?.fwd?.gates));
+            state.rev.lanes.forEach(addLane(dirs?.rev?.gates));
         }
         for (const car of engine.turningCars) result.push({ car, waitsOn: this._turningWaitsOn(car) });
         this._addRoundaboutExitWaits(result);
-        for (const entry of result) if (!entry.waitsOn && !entry.car.turnPath) entry.waitsOn = this._frontCarWaitsOn(entry.car);
+        for (const entry of result) if (!entry.waitsOn && !entry.car.turnPath) entry.waitsOn = this._frontCarWaitsOn(entry.car, gatesOf.get(entry.car));
         return result;
     }
 
-    /** A front-of-queue car held for a blocked turn waits on the car where it would land; one at the end of its road, on the lane it joins. */
-    _frontCarWaitsOn(car) {
+    /**
+     * A front-of-queue car held for a blocked turn waits on the car where it would land; one at the end of its road, on the
+     * lane it joins. Unless its signal is red: a turn once blocked stays marked so until it goes, and with that mark a
+     * right-turner waiting out the cross street's green and the cross street's left-turner waiting out its own red read
+     * as waiting on each other's landing lanes - a 61 s "cycle" that was two reds (Lynnwood & Jan Shoba, batch 87a502b4).
+     */
+    _frontCarWaitsOn(car, gates) {
         const { engine } = this;
         const option = car.turnPlan?.blockedSinceS != null ? car.turnPlan.option : null;
+        const gate = option && gates?.find((g) => g.node.id === car.turnPlan.nodeId);
+        if (gate && engine._signalHolds(gate, car)) return null;
         if (option) {
             const lanes = option.carriagewayId
                 ? engine.carriagewayState.get(option.carriagewayId)?.lanes

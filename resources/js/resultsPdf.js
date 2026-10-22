@@ -8,6 +8,8 @@
  * normal-power baseline - Total / Main arterial / Side streets, plus the three zones under the
  * rolling blackout), 3 Coordination and 4 Method notes - with every controller variant side by
  * side: fixed-time, the blended adaptive average, each adaptive sensor on its own, and green wave.
+ * An unnumbered appendix then repeats the dissertation's results figures and tables, recomputed from every run of the
+ * batch (resultsAppendix.js), so the dissertation can take them straight from here after a new batch.
  * Nothing is recomputed here except the blended adaptive recovery curve (same point-wise
  * average results.js draws); the paired deltas come straight from
  * ResultsController::pairedComparisons().
@@ -39,6 +41,7 @@ import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS } from './sim/equations.js';
 import { SENSOR_SPEC_SETS, latencyTicks } from './sim/sensorSpecs.js';
 import { seedForRep } from './sim/experimentalMatrix.js';
 import { LayoutRenderer, ZONE_TINTS, setRendererTheme } from './sim/renderer.js';
+import { drawDissertationAppendix } from './resultsAppendix.js';
 
 /** Zone wait is charged by junction (zoneAccounting by-junction-v1), so every zone caption says what that pulls in. */
 const zoneDescription = (zone) =>
@@ -1680,9 +1683,16 @@ function drawMethodNotes(report, data, number) {
  * @param {{corridorId: string, corridorName: string, corridorUrl: ?string}} corridor
  *   `corridorUrl` is null for "All corridors" - no single layout to draw then.
  */
-export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl }) {
+async function fetchAppendixRuns(url) {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    return response.ok ? response.json() : null;
+}
+
+export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl, appendixRunsUrl }) {
     // A layout that fails to load or draw just leaves the cover without it.
     const corridorLayout = corridorUrl ? await corridorLayoutImage(corridorUrl).catch(() => null) : null;
+    // Every run of the batch, for the dissertation appendix - left out when it can't be fetched.
+    const appendixRuns = appendixRunsUrl ? await fetchAppendixRuns(appendixRunsUrl).catch(() => null) : null;
 
     const pageTheme = currentTheme();
     applyChartTheme('light');
@@ -1702,6 +1712,7 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         drawCoordination(report, data, data.coordinationMetrics, SECTION.coordination);
         report.newPage();
         drawMethodNotes(report, data, SECTION.methodNotes);
+        if (appendixRuns?.length) await drawDissertationAppendix(report, appendixRuns, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH });
 
         report.stampPages();
         report.doc.save(reportFileName(corridorId, data.batchStamp, now, 'pdf'));

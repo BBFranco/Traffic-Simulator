@@ -14,8 +14,10 @@
  */
 import { buildLayout } from './corridor.js';
 import { SimulationEngine, WAIT_ACCOUNTING, ZONE_ACCOUNTING } from './engine.js';
-import { controllerConfigFor } from './controllers/phasePlan.js';
+import { buildStages, controllerConfigFor, fixedTimeGreens, stageRatios } from './controllers/phasePlan.js';
 import { sensorSpecHash } from './sensorSpecs.js';
+import { SignalDiagnostics } from './metrics/signalDiagnostics.js';
+import { ZoneFlow } from './metrics/zoneFlow.js';
 import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
@@ -114,17 +116,26 @@ export function runHeadless({
     const roadWaitMarks = new Map();
     let outageStarted = false;
     let outageEnded = false;
-    let statsReset = warmupTicks <= 0;
+    let statsReset = false;
     let accountingAtMeasureStart = { ...engine.accounting };
+    /** Fixed-time runs: each signal's Webster plan as the measured window opens (diagnostics.webster). */
+    let websterAtStart = null;
+    /** Arrivals turned away at full entries, each charged the time left to the window's end (diagnostics.delay). */
+    let lostArrivalDelayS = 0;
+    let arrivalsLostSoFar = 0;
 
     const totalTicks = warmupTicks + durationTicks;
     for (let tick = 0; tick < totalTicks; tick += 1) {
         const measuredTick = tick - warmupTicks;
 
         if (!statsReset && measuredTick >= 0) {
-            engine.resetStats();
+            if (warmupTicks > 0) engine.resetStats();
             statsReset = true;
             accountingAtMeasureStart = { ...engine.accounting };
+            arrivalsLostSoFar = engine.accounting.arrivalsLost;
+            if (controllerMode === 'adaptive' || controllerMode === 'coordinated_adaptive') engine.signalDiagnostics = new SignalDiagnostics();
+            engine.zoneFlow = new ZoneFlow(engine.simTimeS);
+            if (controllerMode === 'fixed') websterAtStart = websterPlans(engine);
         }
 
         if (powerOutageStartTick != null && !outageStarted && measuredTick >= powerOutageStartTick) {
@@ -139,6 +150,7 @@ export function runHeadless({
         const stageNow = measuredTick >= 0 ? schedule?.stageAt(measuredTick) ?? null : null;
         if (stageNow !== stage) {
             engine.coordinationStats.setStage(stageNow);
+            engine.signalDiagnostics?.setStage(stageNow);
             if (stageNow) roadWaitMarks.set(stageNow, copyRoadWaits(engine.roadWaits));
             stage = stageNow;
         }
@@ -152,6 +164,11 @@ export function runHeadless({
         }
 
         engine.tick(dt);
+
+        if (measuredTick >= 0 && engine.accounting.arrivalsLost !== arrivalsLostSoFar) {
+            lostArrivalDelayS += (engine.accounting.arrivalsLost - arrivalsLostSoFar) * (durationTicks - measuredTick - 1) * dt;
+            arrivalsLostSoFar = engine.accounting.arrivalsLost;
+        }
 
         if (measuredTick >= 0 && measuredTick % sampleEveryTicks === 0) {
             const snap = engine.snapshot();
@@ -257,6 +274,8 @@ export function runHeadless({
         accounting,
         accountingAtMeasureStart,
         roadWaitMarks,
+        websterAtStart,
+        lostArrivalDelayS,
     });
 
     return { rows, sideStreetRows, totalRows, arterialScopeRows, zoneRows, summary };
@@ -359,6 +378,8 @@ function buildSummary({
     accounting,
     accountingAtMeasureStart,
     roadWaitMarks,
+    websterAtStart,
+    lostArrivalDelayS,
 }) {
     // A rolling blackout's outage runs from its first window's start to its final restore - every scope below that
     // isn't a zone is measured on that span, exactly as a total blackout's.
@@ -494,6 +515,10 @@ function buildSummary({
         routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures, engine.simTimeS) : null,
         diagnostics: {
             ...measuredDiagnostics(engine, accountingAtMeasureStart),
+            delay: delaySummary(engine, accountingAtMeasureStart, accounting, lostArrivalDelayS),
+            signals: engine.signalDiagnostics?.report() ?? null,
+            zoneFlow: engine.zoneFlow?.report() ?? null,
+            webster: websterAtStart,
             // Threshold-sensitivity data for wait recovery (dissertation plan step 2) - stored in the diagnostics column.
             recoveryWait: recoveryWaitSweep({ total: totalWaitByTick, arterial: arterialWaitByTick, sideStreet: sideStreetWaitByTick }, powerOutageStartTick, powerOutageEndTick, durationTicks, dt),
             waitSeries: binnedWaitSeries({ total: totalWaitByTick, arterial: arterialWaitByTick, sideStreet: sideStreetWaitByTick }, dt),
@@ -676,6 +701,56 @@ function measuredDiagnostics(engine, atMeasureStart) {
         roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
         lockup: engine.lockupWatch.report(),
     };
+}
+
+/**
+ * Total delay over the measured window in vehicle-hours (dissertation plan step 7.4): every second any vehicle stood
+ * (engine.js's _addWait(), the same stop rule as the wait metric) - those still in the network at the end included,
+ * where the mean wait counts only vehicles that cleared - plus each arrival turned away at a full entry, charged from
+ * when it was turned away to the window's end (a lower bound: it would have queued on past it).
+ */
+function delaySummary(engine, atMeasureStart, accounting, lostArrivalDelayS) {
+    const waitH = (engine.accounting.waitAccruedS - atMeasureStart.waitAccruedS) / 3600;
+    const lostH = lostArrivalDelayS / 3600;
+    return {
+        totalVehH: round(waitH + lostH, 2),
+        onNetworkVehH: round(waitH, 2),
+        lostArrivalsVehH: round(lostH, 2),
+        inNetworkAtEnd: accounting.onRoadNetwork,
+    };
+}
+
+/**
+ * Each fixed-time signal's Webster plan as run (phasePlan.js's fixedTimeGreens() on the same inputs): Y (the stages'
+ * summed flow ratios), the cycle, and per stage y, green and the degree of saturation x = yC/g - the demand
+ * plausibility check (dissertation plan step 5). `oversaturated` where Y >= 1 and the fallback plan ran.
+ */
+function websterPlans(engine) {
+    const plans = [];
+    for (const info of engine.nodesInfo.values()) {
+        if (info.controllerType !== 'fixed') continue;
+        const arterialDemand = engine._arterialDemandAt(info.node);
+        const crossDemand = engine._crossDemandFor(info.node);
+        const turn = engine._turnStagesAt(info);
+        const stages = buildStages(turn);
+        const ratios = stageRatios(stages, arterialDemand, crossDemand, turn);
+        const { greens, cycleLengthS } = fixedTimeGreens(stages, arterialDemand, crossDemand, turn);
+        const Y = ratios.reduce((sum, y) => sum + y, 0);
+        plans.push({
+            nodeId: info.node.id,
+            Y: round(Y, 3),
+            cycleS: round(cycleLengthS, 1),
+            oversaturated: Y >= 1,
+            stages: stages.map((stage, i) => ({
+                phase: stage.phase,
+                turn: stage.turn,
+                y: round(ratios[i], 3),
+                greenS: round(greens[i], 1),
+                x: greens[i] > 0 ? round((ratios[i] * cycleLengthS) / greens[i], 3) : null,
+            })),
+        });
+    }
+    return plans;
 }
 
 /** Wait-recovery tolerances the sweep reports, as multiples of the pre-outage baseline - 1.25 is the summary's own. */

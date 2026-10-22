@@ -836,8 +836,11 @@ export class SimulationEngine {
         /** Random-events mode - see EVENT_SEED_SALT above and setRandomEvents(). */
         this.randomEvents = false;
         this.eventRng = new SeededRandom(1);
-        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0 };
+        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0 };
         this.lockupWatch = new LockupWatch(this);
+        /** Batch runs' measured window only (runHeadless.js): metrics/signalDiagnostics.js and metrics/zoneFlow.js - recording, never read back. */
+        this.signalDiagnostics = null;
+        this.zoneFlow = null;
         /** Per-junction wait/throughput for the Simulator's hover tooltip - off in batch runs (setNodeStatsTracking()). */
         this.trackNodeStats = false;
         /** The live statistics panel's collector (metrics/liveMetrics.js) - null in batch runs (setLiveMetrics()). */
@@ -1334,7 +1337,7 @@ export class SimulationEngine {
         this.powerState = powerNow.state;
         this.darkZones = powerNow.zones;
         this._setDark(this._darkArterialsFor(powerNow));
-        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0 };
+        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0 };
         this.lockupWatch = new LockupWatch(this);
         /** Cars currently driving their turn through a junction - on neither the arterial nor the cross street yet (see _stepTurningCars()). */
         this.turningCars = [];
@@ -1632,6 +1635,7 @@ export class SimulationEngine {
                 const detected = controller.inTurn ? this._turnLaneDetected(frames, controller.phase) : this._vehicleDetected(frames, controller.phase);
                 const otherCallSufficient = this._isOtherCallSufficient(info, frames, controller.phase, dt);
                 controller.tick(dt, detected, otherCallSufficient, [this._turnLaneCalled(frames, 0), this._turnLaneCalled(frames, 1)]);
+                this.signalDiagnostics?.observe(controller, frames.phase, this.simTimeS);
             } else if (info.controllerType === 'coordinatedAdaptive') {
                 const { controller } = info;
                 const frames = this._sampleDetectors(info, dt);
@@ -1639,6 +1643,7 @@ export class SimulationEngine {
                 const otherCallSufficient = this._isOtherCallSufficient(info, frames, controller.phase, dt);
                 const turnCalls = [this._turnLaneCalled(frames, 0), this._turnLaneCalled(frames, 1)];
                 controller.tick(dt, this.simTimeS, detected, otherCallSufficient, turnCalls, info.platoonView, info.callPersistenceS[1 - controller.layout.coordinatedPhase]);
+                this.signalDiagnostics?.observe(controller, frames.phase, this.simTimeS);
             } else if (info.controllerType === 'greenWave') {
                 info.controller.tick(dt, this.simTimeS);
             } else {
@@ -4510,6 +4515,11 @@ export class SimulationEngine {
         return this._turnArrowFor(gate, car);
     }
 
+    /** Is `car` stopped at `gate` by a signal - no green, and no arrow for it. Read by lockupWatch.js: a car at a red waits on the light. */
+    _signalHolds(gate, car) {
+        return !entersByReleaseAt(gate.controllerType, gate.phase) && !this._mayProceed(gate, car);
+    }
+
     /**
      * Is `car` in the left-turn lane of `gate` that leaves as a slip road - it never meets the stop line, so no signal holds it.
      * A kerb turn lane that also goes straight on only sends its left turners down the slip road.
@@ -6120,9 +6130,14 @@ export class SimulationEngine {
         if (roadSoFarS === undefined) waitByRoad.set(roadId, 0);
         const waitByZone = zone == null ? null : (car.waitByZone ??= new Map());
         const zoneSoFarS = waitByZone?.get(zone);
-        if (waitByZone && zoneSoFarS === undefined) waitByZone.set(zone, 0);
+        if (waitByZone && zoneSoFarS === undefined) {
+            waitByZone.set(zone, 0);
+            this.zoneFlow?.enter(zone, this.simTimeS);
+        }
         const deltaS = car.totalWaitS - (car.waitSeenS ?? 0);
         if (deltaS <= 0) return;
+        this.accounting.waitAccruedS += deltaS;
+        if (waitByZone) this.zoneFlow?.wait(zone, deltaS, this.simTimeS);
         waitByKey.set(key, (soFarS ?? 0) + deltaS);
         waitByRoad.set(roadId, (roadSoFarS ?? 0) + deltaS);
         if (waitByZone) {

@@ -1421,6 +1421,7 @@ exportPdfButton?.addEventListener('click', async () => {
             corridorId,
             corridorName: corridorSelect?.selectedOptions[0]?.textContent.trim() || 'All corridors',
             corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
+            appendixRunsUrl: `${data.appendixRunsUrl}?${currentFilterParams()}`,
         });
     } catch (error) {
         // eslint-disable-next-line no-alert
