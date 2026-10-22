@@ -448,8 +448,9 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         const build = resume?.build ?? (await currentBuildStamp(__BUILD_STAMP__));
         batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
 
-        if (!resume) batchMonitor.phase('Warm-up probe');
-        const warmup = resume?.warmup ?? (await probeWarmup(pool, corridorConfig, routingMode));
+        const handPicked = handPickedWarmup();
+        if (!resume && !handPicked) batchMonitor.phase('Warm-up probe');
+        const warmup = resume?.warmup ?? handPicked ?? (await probeWarmup(pool, corridorConfig, routingMode));
         batchMonitor.setWarmup(warmup);
         const stored = new Set((resume?.runs ?? []).map((run) => storedRunKey(run.controllerMode, run.sensorMode, run.powerState, run.seed)));
 
@@ -693,6 +694,17 @@ function createBatchWorker() {
  * controller's runs averaged in seed order and the slowest levelling-off point
  * plus margin taken. Logged to the console so the choice can be checked.
  */
+/**
+ * `/results?warmup=60` runs the batch on a hand-picked warm-up (minutes) instead of probing - for when the probe's
+ * 3-seed verdict is known to be noise (2026-10-22: a false "drifting" on fixed-time side streets capped it at 90 min,
+ * while 6 seeds from empty were level from 40 min). Stored as runBatch.mjs's --warmup-ticks is: stationary null.
+ */
+function handPickedWarmup() {
+    const minutes = Number(new URLSearchParams(window.location.search).get('warmup'));
+    if (!Number.isFinite(minutes) || minutes <= 0) return null;
+    return { warmupTicks: Math.round((minutes * 60) / DT), stationary: null, drifting: null, settle: null };
+}
+
 async function probeWarmup(pool, corridorConfig, routingMode) {
     const conditions = probeConditions();
     const seeds = Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(BASE_SEED, 'normal', rep));
@@ -989,7 +1001,7 @@ const batchMonitor = {
             ['Code', code, [s.build?.source, s.build?.sim && `sim ${s.build.sim}`].filter(Boolean).join(' · ')],
             ['Started', s.batchStartedAt ? new Date(s.batchStartedAt).toLocaleString() : '-'],
             ['Phase', s.phase],
-            ['Warm-up', s.warmup ? `${warmupMin} min (${s.warmup.warmupTicks} ticks)${s.warmup.stationary === false ? ' · not stationary' : ''}` : 'probing...'],
+            ['Warm-up', s.warmup ? `${warmupMin} min (${s.warmup.warmupTicks} ticks)${s.warmup.stationary === false ? ' · not stationary' : s.warmup.stationary === null ? ' · set by hand' : ''}` : 'probing...'],
             ['Workers', `${s.poolSize} runs at a time`],
             ['Runs this session', `${s.runsDone} / ${s.runsTotal}`],
             ['Posted', `${s.posted} runs`],

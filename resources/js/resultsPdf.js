@@ -1632,10 +1632,12 @@ function seedNote(data) {
 function drawMethodNotes(report, data, number) {
     const minRecoveredRuns = data.minRecoveredRuns ?? 10;
     const stamp = data.batchStamp;
-    // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
-    const warmup = data.batchWarmupLabel
-        ? `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`
-        : 'a warm-up (not recorded for this batch)';
+    // The warm-up is measured per batch by the probe (sim/warmupProbe.js), or set by hand, and stored on each run.
+    const warmup = !data.batchWarmupLabel
+        ? 'a warm-up (not recorded for this batch)'
+        : stamp?.warmupHandPicked
+          ? `a ${data.batchWarmupLabel} warm-up, set by hand for this batch rather than by the warm-up probe,`
+          : `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`;
     const measured = stamp?.measuredMinutes ?? 90;
     // Post-restore windows (= wait-recovery caps) per state and scope, from the stamp where it has them.
     const capMin = (power, scopeKey, fallbackS) => {

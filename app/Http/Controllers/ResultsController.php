@@ -1009,6 +1009,8 @@ class ResultsController extends Controller
             'routingMode' => $latest->routing_mode,
             'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
             'warmupSettleMinutes' => $this->warmupSettleMinutes($config),
+            // No probe verdict: the warm-up was chosen by hand (runBatch.mjs --warmup-ticks, /results?warmup=).
+            'warmupHandPicked' => isset($config['warmupTicks']) && $latest->warmup_stationary === null,
             'measuredMinutes' => $minutes($config['durationTicks'] ?? null),
             'outageStartMinutes' => $minutes($outageConfig['powerOutageStartTick'] ?? null),
             'outageEndMinutes' => $minutes($outageEndTicks),
