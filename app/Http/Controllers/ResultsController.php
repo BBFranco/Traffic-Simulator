@@ -101,7 +101,7 @@ class ResultsController extends Controller
     /** Fewest recovered runs a side needs before its mean recovery time is compared as a delta. */
     private const MIN_RECOVERED_RUNS = 10;
 
-    /** Both sides recover within this - a % change on a few seconds reads as a big effect, so it's shown in seconds. */
+    /** Fixed-time recovers within this - a % change on a few seconds reads as a big effect (70 s vs 4.3 s = +1528%), so it's shown in seconds. */
     private const SHORT_RECOVERY_S = 30;
 
     public function __construct(
@@ -1461,7 +1461,7 @@ class ResultsController extends Controller
         $throughputDelta = $paired[$throughputKey]['delta'] ?? ($throughputKnown ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey]) : null);
         $clearedDelta = $paired[$clearedKey]['delta'] ?? ($clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null);
         $waitImproves = $this->improvesBeyondNoise($waitDelta, $paired[$waitKey] ?? null, isLowerBetter: true);
-        $isShortRecovery = $recoveryKnown && max($subject[$recoveryKey], $baseline[$recoveryKey]) < self::SHORT_RECOVERY_S;
+        $isShortRecovery = $recoveryKnown && $baseline[$recoveryKey] < self::SHORT_RECOVERY_S;
 
         return [
             'mode' => $mode,

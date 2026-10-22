@@ -2008,8 +2008,18 @@ export class SimulationEngine {
         const covered = gate.approach?.coveredLanes?.map((j) => road.kerbSlots + j);
         if (!gate.slotLaneUse) return 1 / (covered?.length ?? road.lanes);
 
-        const slots = gate.slotLaneUse.map((_, slot) => slot).filter((slot) => gate.slotLaneUse[slot].length && (!covered || !mainSlots.includes(slot) || covered.includes(slot)));
-        const { straight, left, right } = this._movementShares(gate);
+        // A protected turn's own lanes and cars are its turn stage's q (_turnLaneFlow()) - counted here too, a busy turn
+        // lane would size the through stage as well and get two stages' green (Duxbury at Lynnwood, 2026-10-22).
+        const protectedTurn = gate.turnPhase?.movement;
+        const slots = gate.slotLaneUse
+            .map((_, slot) => slot)
+            .filter((slot) => gate.slotLaneUse[slot].length && (!covered || !mainSlots.includes(slot) || covered.includes(slot)))
+            .filter((slot) => !protectedTurn || !isTurnOnlyLane(gate.slotLaneUse[slot], protectedTurn));
+        if (!slots.length) return 0;
+        const shares = { ...this._movementShares(gate) };
+        // Unless a shared lane left here also makes the turn - then its turners stay in this stage's count.
+        if (protectedTurn && !slots.some((slot) => gate.slotLaneUse[slot].includes(protectedTurn))) shares[protectedTurn] = 0;
+        const { straight, left, right } = shares;
         // In straight-car units, so the busiest lane is the one with the most green time's worth of cars (TURN_PCU).
         return criticalLaneShare(gate.slotLaneUse, slots, { straight, left: left * TURN_PCU, right: right * TURN_PCU });
     }
