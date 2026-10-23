@@ -19,7 +19,7 @@
  * common cycle then follows the critical MARRIED junction - a divorced one runs adaptive and has no cycle.
  */
 import { COORDINATED_DEFAULTS } from '../equations.js';
-import { FALLBACK_CYCLE_S, lostTimeS, minGreenOf } from './phasePlan.js';
+import { FALLBACK_CYCLE_S, MIN_CYCLE_S, lostTimeS, minGreenOf } from './phasePlan.js';
 import { planCoordination } from './greenWave.js';
 
 /**
@@ -80,8 +80,8 @@ export class SelfTuner {
         this.commonCycleS = plan.commonCycleS;
         this.anchorS = 0;
         this.maxCycleS = Math.max(FALLBACK_CYCLE_S, plan.commonCycleS);
-        // No common cycle shorter than the one every junction's minimum greens fit into.
-        this.minCycleS = Math.max(...[...plan.nodes.values()].map((p) => p.stages.reduce((sum, s) => sum + minGreenOf(s), 0) + lostTimeS(p.stages)));
+        // No common cycle shorter than the one every junction's minimum greens fit into, nor than SARTSM's 30 s floor.
+        this.minCycleS = Math.max(MIN_CYCLE_S, ...[...plan.nodes.values()].map((p) => p.stages.reduce((sum, s) => sum + minGreenOf(s), 0) + lostTimeS(p.stages)));
 
         /** Per node: the planned demand objects (saturation flow kept) and the running q estimate per stage key. */
         this.estimates = new Map();

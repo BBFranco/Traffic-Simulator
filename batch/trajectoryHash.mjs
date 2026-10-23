@@ -37,7 +37,7 @@ export const HASH_ROLLING_WINDOWS = [
 /**
  * Builds and resets an engine the same way fingerprint.mjs always has.
  */
-export function startEngine({ config, seed, controllerMode, loadShedding = false, rolling = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined }) {
+export function startEngine({ config, seed, controllerMode, loadShedding = false, rolling = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined, demandMultiplier = 1 }) {
     const layout = buildLayout(config);
     const engine = new SimulationEngine(layout);
     const arterialModes = {};
@@ -57,6 +57,7 @@ export function startEngine({ config, seed, controllerMode, loadShedding = false
         power: { loadShedding, scheduledOutages: false, offMinutes: 2, periodMinutes: 8, ...(rolling ? { zoneSchedule: HASH_ROLLING_WINDOWS } : {}) },
         routingMode,
     });
+    engine.demandMultiplier = demandMultiplier;
     return { layout, engine };
 }
 
@@ -64,8 +65,8 @@ export function startEngine({ config, seed, controllerMode, loadShedding = false
  * Runs `ticks` ticks and returns the 16-hex trajectory hash. `onTick(engine, tick, cars)` lets
  * callers observe each tick (fingerprint.mjs's stuck-car check, the live-metrics collector).
  */
-export function hashRun({ config, seed, controllerMode, loadShedding = false, rolling = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined, ticks = 6000, dt = 0.1, onStart = null, onTick = null }) {
-    const { layout, engine } = startEngine({ config, seed, controllerMode, loadShedding, rolling, routingMode, sensorMode, sensorSpecSet });
+export function hashRun({ config, seed, controllerMode, loadShedding = false, rolling = false, routingMode = null, sensorMode = 'inductive_loop', sensorSpecSet = undefined, demandMultiplier = 1, ticks = 6000, dt = 0.1, onStart = null, onTick = null }) {
+    const { layout, engine } = startEngine({ config, seed, controllerMode, loadShedding, rolling, routingMode, sensorMode, sensorSpecSet, demandMultiplier });
     onStart?.(engine, layout);
     const hash = createHash('sha1');
     for (let tick = 0; tick < ticks; tick += 1) {

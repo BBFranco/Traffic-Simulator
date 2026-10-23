@@ -445,6 +445,23 @@ function showBatchPauseState() {
 
 batchPauseButton?.addEventListener('click', () => setBatchPaused(!batchPause.paused));
 
+const batchWorkersSelect = document.getElementById('batch-workers-select');
+
+/** Fills the selector 1..max (the machine's cap) with the pool's current limit selected. */
+function showBatchWorkerChoices(pool) {
+    if (!batchWorkersSelect) return;
+    batchWorkersSelect.replaceChildren(
+        ...Array.from({ length: pool.maxSize }, (_, i) => new Option(`${i + 1} at a time`, String(i + 1), false, i + 1 === pool.limit))
+    );
+}
+
+batchWorkersSelect?.addEventListener('change', () => {
+    const pool = batchPause.pool;
+    if (!pool) return;
+    pool.setLimit(Number(batchWorkersSelect.value));
+    batchMonitor.setPoolSize?.(pool.limit);
+});
+
 batchButton?.addEventListener('click', () => openBatchModal());
 
 // The run count follows experimentalMatrix.js, not the Blade placeholder text.
@@ -486,6 +503,8 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         pool.onSettle = showBatchPauseState;
         Object.assign(batchPause, { pool, paused: false, sinceMs: 0, totalMs: 0, phaseBefore: null });
         batchPauseButton?.classList.remove('hidden');
+        showBatchWorkerChoices(pool);
+        batchWorkersSelect?.classList.remove('hidden');
         const corridorId = resume?.corridorConfig ?? (document.getElementById('filter-corridor')?.value || data.defaultCorridorId);
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
@@ -549,10 +568,9 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                 },
             }))
         );
-        const runAhead = pool.size * 3;
         let started = 0;
         const topUp = (takenIndex) => {
-            while (started < jobs.length && started < takenIndex + runAhead) {
+            while (started < jobs.length && started < takenIndex + pool.size * 3) {
                 const job = jobs[started];
                 batchMonitor.jobStarted(job.condition.key);
                 job.result = pool.run('run', job.options).then((result) => {
@@ -619,6 +637,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         }
 
         batchPauseButton?.classList.add('hidden');
+        batchWorkersSelect?.classList.add('hidden');
         if (batchProgressLabel) batchProgressLabel.textContent = 'Saving results...';
         if (pending.length) await post(pending);
 
@@ -646,6 +665,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         setBatchPaused(false);
         batchPause.pool = null;
         batchPauseButton?.classList.add('hidden');
+        batchWorkersSelect?.classList.add('hidden');
         batchMonitor.end();
         batchRunning = false;
         batchButton.disabled = false;
@@ -802,13 +822,35 @@ function batchWorkerCount() {
  * when, never changes the result.
  */
 class BatchWorkerPool {
-    constructor(size) {
-        this.size = size;
+    constructor(maxSize) {
+        this.maxSize = maxSize;
+        /** Runs allowed at once - changeable mid-batch via setLimit(); workers are created on demand up to this. */
+        this.limit = maxSize;
         this.queue = [];
-        this.idle = Array.from({ length: size }, () => createBatchWorker());
-        this.all = [...this.idle];
+        this.idle = [];
+        this.all = [];
         this.nextId = 0;
         this.paused = false;
+    }
+
+    get size() {
+        return this.limit;
+    }
+
+    /** Raising it starts queued runs at once; lowering it lets runs in progress finish, then retires the surplus workers. */
+    setLimit(limit) {
+        this.limit = Math.max(1, Math.min(this.maxSize, limit));
+        this._trim();
+        this._dispatch();
+        this.onSettle?.();
+    }
+
+    _trim() {
+        while (this.idle.length && this.all.length > this.limit) {
+            const worker = this.idle.pop();
+            this.all.splice(this.all.indexOf(worker), 1);
+            worker.terminate();
+        }
     }
 
     run(task, options) {
@@ -830,14 +872,19 @@ class BatchWorkerPool {
     }
 
     _dispatch() {
-        while (!this.paused && this.idle.length && this.queue.length) {
-            const worker = this.idle.pop();
+        while (!this.paused && this.queue.length && this.busy < this.limit) {
+            let worker = this.idle.pop();
+            if (!worker) {
+                worker = createBatchWorker();
+                this.all.push(worker);
+            }
             const { task, options, resolve, reject } = this.queue.shift();
             const id = ++this.nextId;
             const cleanUp = () => {
                 worker.removeEventListener('message', onMessage);
                 worker.removeEventListener('error', onError);
                 this.idle.push(worker);
+                this._trim();
                 this._dispatch();
                 this.onSettle?.();
             };
@@ -971,6 +1018,12 @@ const batchMonitor = {
 
     setWarmup(warmup) {
         this.state.warmup = warmup;
+        this.render();
+    },
+
+    setPoolSize(poolSize) {
+        if (!this.state) return;
+        this.state.poolSize = poolSize;
         this.render();
     },
 

@@ -18,6 +18,7 @@ import { buildStages, controllerConfigFor, fixedTimeGreens, stageRatios } from '
 import { sensorSpecHash } from './sensorSpecs.js';
 import { SignalDiagnostics } from './metrics/signalDiagnostics.js';
 import { ZoneFlow } from './metrics/zoneFlow.js';
+import { profileMultiplier } from './demandProfile.js';
 import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
@@ -58,6 +59,9 @@ const readsSensors = (controllerMode) => controllerMode === 'adaptive' || contro
  *                             { platoonMessages: false, selfTuning: false } for the layer ablation
  * @param sensorSpecSet        sensorSpecs.js set: 'field' (the hardware models, default) or 'legacy' (the pre-overhaul sensors)
  * @param sensorErrors         sensitivity runs only: switch on the specs' miss / false-call / crosstalk / count-noise models
+ * @param demandProfile        the long-outage protocol's time-of-day demand: { profile, startClockS } - demandProfile.js's
+ *                             profile, and the clock time (s after midnight) at measured tick 0. The clock runs through
+ *                             warm-up too, so warm-up ends at startClockS on the profile's demand. Null: flat demand
  * @returns { rows: object[], sideStreetRows: object[], totalRows: object[], summary: object } - `totalRows` is the
  *          total scope (every vehicle once); since a trip can use several scopes it isn't rows + sideStreetRows
  */
@@ -78,6 +82,7 @@ export function runHeadless({
     coordination = {},
     sensorSpecSet = undefined,
     sensorErrors = false,
+    demandProfile = null,
 }) {
     const layout = buildLayout(corridorConfig);
     const engine = new SimulationEngine(layout);
@@ -125,19 +130,21 @@ export function runHeadless({
     let accountingAtMeasureStart = { ...engine.accounting };
     /** Fixed-time runs: each signal's Webster plan as the measured window opens (diagnostics.webster). */
     let websterAtStart = null;
-    /** Arrivals turned away at full entries, each charged the time left to the window's end (diagnostics.delay). */
-    let lostArrivalDelayS = 0;
-    let arrivalsLostSoFar = 0;
+    /** stage -> the delay counters as that stage opened, so the vehicle-hours split by stage (diagnostics.delay.byStage). */
+    const delayMarks = new Map();
+    const ticksPerSecond = Math.max(1, Math.round(1 / dt));
 
     const totalTicks = warmupTicks + durationTicks;
     for (let tick = 0; tick < totalTicks; tick += 1) {
         const measuredTick = tick - warmupTicks;
+        if (demandProfile && tick % ticksPerSecond === 0) {
+            engine.demandMultiplier = profileMultiplier(demandProfile.profile, demandProfile.startClockS + measuredTick * dt);
+        }
 
         if (!statsReset && measuredTick >= 0) {
             if (warmupTicks > 0) engine.resetStats();
             statsReset = true;
             accountingAtMeasureStart = { ...engine.accounting };
-            arrivalsLostSoFar = engine.accounting.arrivalsLost;
             if (readsSensors(controllerMode)) engine.signalDiagnostics = new SignalDiagnostics();
             engine.zoneFlow = new ZoneFlow(engine.simTimeS);
             if (controllerMode === 'fixed') websterAtStart = websterPlans(engine);
@@ -156,7 +163,10 @@ export function runHeadless({
         if (stageNow !== stage) {
             engine.coordinationStats.setStage(stageNow);
             engine.signalDiagnostics?.setStage(stageNow);
-            if (stageNow) roadWaitMarks.set(stageNow, copyRoadWaits(engine.roadWaits));
+            if (stageNow) {
+                roadWaitMarks.set(stageNow, copyRoadWaits(engine.roadWaits));
+                delayMarks.set(stageNow, delayCounters(engine));
+            }
             stage = stageNow;
         }
         if (rollingSchedule && measuredTick >= 0) {
@@ -169,11 +179,6 @@ export function runHeadless({
         }
 
         engine.tick(dt);
-
-        if (measuredTick >= 0 && engine.accounting.arrivalsLost !== arrivalsLostSoFar) {
-            lostArrivalDelayS += (engine.accounting.arrivalsLost - arrivalsLostSoFar) * (durationTicks - measuredTick - 1) * dt;
-            arrivalsLostSoFar = engine.accounting.arrivalsLost;
-        }
 
         if (measuredTick >= 0 && measuredTick % sampleEveryTicks === 0) {
             const snap = engine.snapshot();
@@ -280,7 +285,8 @@ export function runHeadless({
         accountingAtMeasureStart,
         roadWaitMarks,
         websterAtStart,
-        lostArrivalDelayS,
+        delayMarks,
+        demandProfile,
     });
 
     return { rows, sideStreetRows, totalRows, arterialScopeRows, zoneRows, summary };
@@ -384,7 +390,8 @@ function buildSummary({
     accountingAtMeasureStart,
     roadWaitMarks,
     websterAtStart,
-    lostArrivalDelayS,
+    delayMarks,
+    demandProfile,
 }) {
     // A rolling blackout's outage runs from its first window's start to its final restore - every scope below that
     // isn't a zone is measured on that span, exactly as a total blackout's.
@@ -520,7 +527,7 @@ function buildSummary({
         routing: engine.routingActive ? routingSummary(engine.routingStats, engine.departures, engine.simTimeS) : null,
         diagnostics: {
             ...measuredDiagnostics(engine, accountingAtMeasureStart),
-            delay: delaySummary(engine, accountingAtMeasureStart, accounting, lostArrivalDelayS),
+            delay: delaySummary(engine, accountingAtMeasureStart, accounting, delayMarks),
             signals: engine.signalDiagnostics?.report() ?? null,
             zoneFlow: engine.zoneFlow?.report() ?? null,
             webster: websterAtStart,
@@ -622,6 +629,8 @@ function buildSummary({
             /** Sensitivity-sweep settings (batch/runBatch.mjs) - 1 and null on an ordinary batch. */
             demandScale: corridorConfig.demandScale ?? 1,
             endToEndShare: layout.routing?.endToEndShare ?? null,
+            /** The long-outage protocol's time-of-day demand (demandProfile.js) - absent on a flat-demand run. */
+            ...(demandProfile ? { demandProfile: { id: demandProfile.profile.id, startClockS: demandProfile.startClockS, peakPct: demandProfile.profile.peakPct, hourPct: demandProfile.profile.hourPct } } : {}),
         },
     };
 }
@@ -697,33 +706,66 @@ function tiersHash(routing) {
 }
 
 /**
- * Over the measured window: demand lost at map-edge entries with no room for it (expected arrivals - a blocked entry lets
- * one car in once it clears, the rest never arrive), and cars that left the network while a roundabout still counted them
- * as on its ring (the overrun _updateRoundaboutReleases() prevents - should stay 0).
+ * Over the measured window: arrivals that found their map-edge entry full and queued outside it first (the entry backlog,
+ * engine.js's _admitArrival() - `arrivalsLost`, the demand dropped before it existed, stays 0 since), and cars that left
+ * the network while a roundabout still counted them as on its ring (the overrun _updateRoundaboutReleases() prevents -
+ * should stay 0).
  */
 function measuredDiagnostics(engine, atMeasureStart) {
     return {
         arrivalsLost: Math.round(engine.accounting.arrivalsLost - atMeasureStart.arrivalsLost),
+        arrivalsQueued: engine.accounting.arrivalsQueued - atMeasureStart.arrivalsQueued,
         roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
         lockup: engine.lockupWatch.report(),
     };
 }
 
+/** The engine's running delay counters - what diagnostics.delay and its stage split are differences of. */
+function delayCounters(engine) {
+    const { waitAccruedS, backlogWaitS, arrivalsQueued } = engine.accounting;
+    return { waitAccruedS, backlogWaitS, arrivalsQueued };
+}
+
 /**
  * Total delay over the measured window in vehicle-hours (dissertation plan step 7.4): every second any vehicle stood
  * (engine.js's _addWait(), the same stop rule as the wait metric) - those still in the network at the end included,
- * where the mean wait counts only vehicles that cleared - plus each arrival turned away at a full entry, charged from
- * when it was turned away to the window's end (a lower bound: it would have queued on past it).
+ * where the mean wait counts only vehicles that cleared - plus every second an arrival queued outside a full entry
+ * (the entry backlog), those still outside at the end included.
  */
-function delaySummary(engine, atMeasureStart, accounting, lostArrivalDelayS) {
+function delaySummary(engine, atMeasureStart, accounting, delayMarks = new Map()) {
     const waitH = (engine.accounting.waitAccruedS - atMeasureStart.waitAccruedS) / 3600;
-    const lostH = lostArrivalDelayS / 3600;
+    const backlogH = (engine.accounting.backlogWaitS - atMeasureStart.backlogWaitS) / 3600;
     return {
-        totalVehH: round(waitH + lostH, 2),
+        totalVehH: round(waitH + backlogH, 2),
         onNetworkVehH: round(waitH, 2),
-        lostArrivalsVehH: round(lostH, 2),
+        entryBacklogVehH: round(backlogH, 2),
         inNetworkAtEnd: accounting.onRoadNetwork,
+        inEntryBacklogAtEnd: engine.entryBacklogCount(),
+        ...(delayMarks.size ? { byStage: delayByStage(engine, delayMarks) } : {}),
     };
+}
+
+/**
+ * The delay split by outage stage (pre / during or stage1, stage2 / post): the vehicle-hours stood on the network and
+ * queued outside the entries while the stage was open, and the arrivals that had to queue - outage runs only.
+ */
+function delayByStage(engine, delayMarks) {
+    const stages = [...delayMarks.keys()];
+    const final = delayCounters(engine);
+    return Object.fromEntries(
+        stages.map((stage, i) => {
+            const from = delayMarks.get(stage);
+            const to = i + 1 < stages.length ? delayMarks.get(stages[i + 1]) : final;
+            return [
+                stage,
+                {
+                    onNetworkVehH: round((to.waitAccruedS - from.waitAccruedS) / 3600, 2),
+                    entryBacklogVehH: round((to.backlogWaitS - from.backlogWaitS) / 3600, 2),
+                    arrivalsQueued: to.arrivalsQueued - from.arrivalsQueued,
+                },
+            ];
+        })
+    );
 }
 
 /**

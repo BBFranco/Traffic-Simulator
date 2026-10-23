@@ -836,7 +836,7 @@ export class SimulationEngine {
         /** Random-events mode - see EVENT_SEED_SALT above and setRandomEvents(). */
         this.randomEvents = false;
         this.eventRng = new SeededRandom(1);
-        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0 };
+        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0, arrivalsQueued: 0, backlogWaitS: 0 };
         this.lockupWatch = new LockupWatch(this);
         /** Batch runs' measured window only (runHeadless.js): metrics/signalDiagnostics.js and metrics/zoneFlow.js - recording, never read back. */
         this.signalDiagnostics = null;
@@ -1339,7 +1339,9 @@ export class SimulationEngine {
         this.powerState = powerNow.state;
         this.darkZones = powerNow.zones;
         this._setDark(this._darkArterialsFor(powerNow));
-        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0 };
+        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0, arrivalsQueued: 0, backlogWaitS: 0 };
+        /** Time-of-day demand (demandProfile.js): every live arrival rate is scaled by this - 1 keeps the corridor's own. runHeadless.js sets it. */
+        this.demandMultiplier = 1;
         this.lockupWatch = new LockupWatch(this);
         /** Cars currently driving their turn through a junction - on neither the arterial nor the cross street yet (see _stepTurningCars()). */
         this.turningCars = [];
@@ -2714,9 +2716,60 @@ export class SimulationEngine {
      * greenWave.js time their Webster plan to, so a fixed-time plan frozen
      * at the range's midpoint goes stale exactly like a real one would as
      * live conditions drift away from the historical count it was set from.
+     * A time-of-day profile's `demandMultiplier` scales it the same way: the live rate moves, the Webster plan stays
+     * at the design (peak) flow.
      */
     _liveSpawnRate(demand, designRatePerLanePerMin) {
-        return demand.fluctuation ? fluctuatingDemand(this.simTimeS, demand.fluctuation) : designRatePerLanePerMin;
+        const rate = demand.fluctuation ? fluctuatingDemand(this.simTimeS, demand.fluctuation) : designRatePerLanePerMin;
+        return this.demandMultiplier === 1 ? rate : rate * this.demandMultiplier;
+    }
+
+    /**
+     * Entry backlog (long-outage pilot, Franco 2026-10-23): an arrival that finds its map-edge lane full queues outside
+     * the network, in arrival order, and drives in once there is room - late, not lost (until then it was dropped and
+     * counted in `arrivalsLost`). Each tick: a due arrival joins the queue if the lane is blocked or others are already
+     * waiting; with room, the queue's head comes in first. A lane that never fills draws and spawns exactly as before:
+     * the caller resets its timer and draws the next gap after the car is built, so the random streams keep their order.
+     * Returns null when nothing enters, else { fromBacklog, queuedS }. The time stood outside accrues to `backlogWaitS`.
+     */
+    _admitArrival(lane, blocked, dt, nextGap) {
+        const backlog = (lane.backlog ??= []);
+        this.accounting.backlogWaitS += backlog.length * dt;
+        if (lane.timerS >= lane.nextArrivalS && (blocked || backlog.length)) {
+            backlog.push(this.simTimeS - (lane.timerS - lane.nextArrivalS));
+            this.accounting.arrivalsQueued += 1;
+            lane.timerS = 0;
+            lane.nextArrivalS = nextGap();
+        }
+        if (blocked) return null;
+        if (backlog.length) return { fromBacklog: true, queuedS: this.simTimeS - backlog.shift() };
+        return lane.timerS >= lane.nextArrivalS ? { fromBacklog: false, queuedS: 0 } : null;
+    }
+
+    /**
+     * A car in from the entry backlog starts its trip with the time it stood outside as wait on its entry road - in its
+     * trip, scope and road waits like any queue, and a stop if it stood 1 s or more. Not in `waitAccruedS`: that time is
+     * already in `backlogWaitS`, accrued tick by tick while it waited.
+     */
+    _chargeEntryBacklog(car, queuedS) {
+        const { statsKey, roadId } = car.road;
+        car.totalWaitS = queuedS;
+        car.waitSeenS = queuedS;
+        (car.waitByKey ??= new Map()).set(statsKey, queuedS);
+        (car.waitByRoad ??= new Map()).set(roadId, queuedS);
+        if (queuedS >= 1) {
+            car.everStopped = true;
+            (car.stoppedKeys ??= new Set()).add(statsKey);
+        }
+        this.nodeWaitMarkS.set(car.id, queuedS);
+    }
+
+    /** Vehicles queued outside the map-edge entries right now (the entry backlog). */
+    entryBacklogCount() {
+        let n = 0;
+        for (const state of this.carriagewayState.values()) for (const lane of state.lanes) n += lane.backlog?.length ?? 0;
+        for (const state of this.connectorState.values()) for (const dirKey of ['fwd', 'rev']) for (const lane of state[dirKey].lanes) n += lane.backlog?.length ?? 0;
+        return n;
     }
 
     _spawnForCarriageway(carriageway, dt) {
@@ -2728,18 +2781,16 @@ export class SimulationEngine {
         this.carriagewayState.get(carriageway.id).lanes.forEach((lane, laneIndex) => {
             if (lane.isTurnLane) return;
             lane.timerS += dt;
-            if (lane.timerS < lane.nextArrivalS) return;
+            if (lane.timerS < lane.nextArrivalS && !lane.backlog?.length) return;
 
             const nearestToEntry = lane.cars.reduce(
                 (min, c) => (min === null || c.distanceM < min.distanceM ? c : min),
                 null
             );
-            if (nearestToEntry && nearestToEntry.distanceM < nearestToEntry.lengthM + SPAWN_CLEARANCE_M) {
-                // No room yet - try again next tick without losing the elapsed timer. Only one car comes in once there is,
-                // so whatever else would have arrived meanwhile never does: counted (expected value) as lost demand.
-                this.accounting.arrivalsLost += (this._edgeRate(this._liveSpawnRate(arterial.demand, state.spawnRatePerLanePerMin)) / 60) * dt;
-                return;
-            }
+            const blocked = !!nearestToEntry && nearestToEntry.distanceM < nearestToEntry.lengthM + SPAWN_CLEARANCE_M;
+            const nextGap = () => this._sampleArrival(this._edgeRate(this._liveSpawnRate(arterial.demand, state.spawnRatePerLanePerMin)), this._arrivalRng(carriageway.id));
+            const admitted = this._admitArrival(lane, blocked, dt, nextGap);
+            if (!admitted) return;
 
             const vehicleType = this._rollVehicleType();
             const desiredSpeedMps = this._desiredSpeedFor(vehicleType, v0);
@@ -2757,10 +2808,13 @@ export class SimulationEngine {
             if (this.routingActive) this._assignTrip(car, carriageway.id);
             car.lane = this._arrivalLane(carState, this._nearestNodeAhead(carriageway.gates, car), car, laneIndex);
             car.speedMps = entrySpeedBehind(car, car.lane === laneIndex ? nearestToEntry : lastCarIn(carState.lanes[car.lane]));
+            if (admitted.fromBacklog) this._chargeEntryBacklog(car, admitted.queuedS);
             carState.lanes[car.lane].cars.push(car);
             this.accounting.totalSpawned += 1;
-            lane.timerS = 0;
-            lane.nextArrivalS = this._sampleArrival(this._edgeRate(this._liveSpawnRate(arterial.demand, state.spawnRatePerLanePerMin)), this._arrivalRng(carriageway.id));
+            if (!admitted.fromBacklog) {
+                lane.timerS = 0;
+                lane.nextArrivalS = nextGap();
+            }
         });
     }
 
@@ -3150,16 +3204,16 @@ export class SimulationEngine {
             state[dirKey].lanes.forEach((lane, laneIndex) => {
                 if (lane.isTurnLane) return;
                 lane.timerS += dt;
-                if (lane.timerS < lane.nextArrivalS) return;
+                if (lane.timerS < lane.nextArrivalS && !lane.backlog?.length) return;
 
                 const nearestToEntry = lane.cars.reduce(
                     (min, c) => (min === null || c.distanceM < min.distanceM ? c : min),
                     null
                 );
-                if (nearestToEntry && nearestToEntry.distanceM < nearestToEntry.lengthM + SPAWN_CLEARANCE_M) {
-                    this.accounting.arrivalsLost += (this._edgeRate(this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin)) / 60) * dt; // as _spawnForCarriageway()
-                    return;
-                }
+                const blocked = !!nearestToEntry && nearestToEntry.distanceM < nearestToEntry.lengthM + SPAWN_CLEARANCE_M;
+                const nextGap = () => this._sampleArrival(this._edgeRate(this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin)), this._arrivalRng(`${connector.id}:${dirKey}`));
+                const admitted = this._admitArrival(lane, blocked, dt, nextGap); // as _spawnForCarriageway()
+                if (!admitted) return;
 
                 const vehicleType = this._rollVehicleType();
                 const desiredSpeedMps = this._desiredSpeedFor(vehicleType, v0);
@@ -3179,10 +3233,13 @@ export class SimulationEngine {
                 const peelsOffFirst = (this.divergesFrom.get(`${connector.id}:${dirKey}`) ?? []).some((join) => !join.slip && !(firstGate?.stopLineDistanceM < join.fromAtM));
                 if (!peelsOffFirst) car.lane = this._arrivalLane(state[dirKey], firstGate, car, laneIndex);
                 car.speedMps = entrySpeedBehind(car, car.lane === laneIndex ? nearestToEntry : lastCarIn(state[dirKey].lanes[car.lane]));
+                if (admitted.fromBacklog) this._chargeEntryBacklog(car, admitted.queuedS);
                 state[dirKey].lanes[car.lane].cars.push(car);
                 this.accounting.totalSpawned += 1;
-                lane.timerS = 0;
-                lane.nextArrivalS = this._sampleArrival(this._edgeRate(this._liveSpawnRate(connector.demand, connector.demand.spawnRatePerLanePerMin)), this._arrivalRng(`${connector.id}:${dirKey}`));
+                if (!admitted.fromBacklog) {
+                    lane.timerS = 0;
+                    lane.nextArrivalS = nextGap();
+                }
             });
         }
     }

@@ -20,3 +20,28 @@ export const ROLLING_SCHEDULE = [
     { zones: [1, 3], fromTick: 9000, toTick: 18000 },
     { zones: [2], fromTick: 18000, toTick: 27000 },
 ];
+
+/**
+ * The long-outage protocol (dissertation plan steps 7-8, 2026-10-23): real-duration outages over an evening. 375
+ * measured minutes, 16:15-22:30: 15 min before the cut at 16:30, 4 h dark (the total blackout) or zones 1+3 dark 2 h then
+ * zone 2 dark 2 h (load shedding), then 2 h after the final restore. Demand follows demandProfile.js's EVENING_PROFILE,
+ * the corridor's own demand being the peak. Normal-power runs use the same window, so the seeds still pair.
+ *
+ * Rows are sampled every 5 s, not 1 s: a 375-min run at 1 s would hold ~22,500 samples per scope. Every summary stat is
+ * a cumulative counter or a 60 s rolling value, and recovery smooths over 300 s, so 5 s loses nothing they read.
+ * Ticks are measured ticks at dt = 0.1 s, as above.
+ */
+const MIN = 600;
+export const LONG_PROTOCOL = {
+    id: 'long-evening-v1',
+    measuredTicks: 375 * MIN,
+    powerOutageStartTick: 15 * MIN,
+    powerOutageEndTick: (15 + 240) * MIN,
+    rollingSchedule: [
+        { zones: [1, 3], fromTick: 15 * MIN, toTick: (15 + 120) * MIN },
+        { zones: [2], fromTick: (15 + 120) * MIN, toTick: (15 + 240) * MIN },
+    ],
+    /** 16:15 - the clock at measured tick 0. */
+    startClockS: 16.25 * 3600,
+    sampleEverySeconds: 5,
+};

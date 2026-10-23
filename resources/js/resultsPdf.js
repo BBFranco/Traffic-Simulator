@@ -1286,11 +1286,20 @@ function drawRoutingTrips(report, data, powers) {
 function warmupSettleNote(settle) {
     if (!settle) return null;
     const labels = { fixed: 'fixed-time', green_wave: 'green wave', adaptive: 'adaptive (inductive loop)', coordinated_adaptive: 'coordinated adaptive (inductive loop)' };
+    const scopeLabels = { total: 'all traffic', arterial: 'main arterials', sideStreet: 'side streets' };
     const minutes = (value) => (value == null ? 'never' : `${value} min`);
     const parts = Object.entries(settle).map(
-        ([mode, scopes]) => `${labels[mode] ?? mode} ${minutes(scopes.total)} (main arterial ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)})`
+        ([mode, scopes]) => `${labels[mode] ?? mode}: all traffic ${minutes(scopes.total)}, main arterials ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)}`
     );
-    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting. The probe runs ${PROBE_REPLICATIONS} seeds per controller with the inductive loop only, so these settle times are a noisy sizing step for the warm-up, not findings - a scope that settles later than its parts, or one sensor's slow side streets, is within that noise.`;
+    // The scope that set the warm-up: the latest levelling-off of any controller's scope.
+    let slowest = null;
+    for (const [mode, scopes] of Object.entries(settle)) {
+        for (const [scope, value] of Object.entries(scopes)) if (value != null && (!slowest || value > slowest.value)) slowest = { mode, scope, value };
+    }
+    const setBy = slowest
+        ? ` Here that is ${labels[slowest.mode] ?? slowest.mode}'s ${scopeLabels[slowest.scope] ?? slowest.scope} at ${slowest.value} min, so the warm-up is ${slowest.value} x ${WARMUP_SAFETY_MARGIN} = ${Math.round(slowest.value * WARMUP_SAFETY_MARGIN)} min before rounding and the cap.`
+        : '';
+    return `Warm-up probe, from empty at normal power - when the average wait levelled off, judged separately for each traffic scope: ${parts.join('; ')}. A controller's figure for all traffic can come before one of its scopes: the all-traffic series is dominated by the busy arterials, so it levels off while thin side-street traffic is still settling. The warm-up is the slowest scope of any controller x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting.${setBy} The probe runs ${PROBE_REPLICATIONS} seeds per controller with the inductive loop only, so these settle times are a noisy sizing step for the warm-up, not findings.`;
 }
 
 const GREEN_END_LABELS = {

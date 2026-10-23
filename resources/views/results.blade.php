@@ -154,6 +154,9 @@
             <span id="batch-progress-label" class="font-semibold">Starting...</span>
             <span class="flex items-center gap-3">
                 <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+                {{-- results.js: how many runs go at once; changeable mid-batch (raising starts more now, lowering lets runs in progress finish). --}}
+                <select id="batch-workers-select" aria-label="Runs at a time"
+                        class="hidden rounded border border-sky-300 bg-white py-0 pl-1.5 pr-6 text-[11px] font-semibold text-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-sky-500/25 dark:bg-transparent dark:text-sky-300"></select>
                 {{-- results.js: stops handing runs to the workers (runs in progress finish), Play carries on. --}}
                 <button type="button" id="batch-pause-button"
                         class="hidden inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">

@@ -20,6 +20,15 @@
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
  *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart]
+ *     [--protocol=short|long] [--sensors=inductive_loop,radar]
+ *
+ * --protocol=long runs batchSchedule.js's LONG_PROTOCOL (dissertation plan steps 7-8): 375 measured minutes from 16:15
+ * on the evening demand profile, a 4 h total blackout or 2 h + 2 h zoned load shedding from 16:30, rows every 5 s and
+ * each run's CSV gzipped. It sets --duration and both outage ticks itself. --sensors runs a subset of the sensor modes
+ * (fixed-time and green wave, which read none, always run) - the pilot's loop-only matrix.
+ *
+ * A lockup that starts while junctions are dark is gridlock (lockupWatch.js), listed at the end but not a batch failure;
+ * one that starts with every junction lit still fails the batch.
  *
  * --ablation runs coordinated adaptive with one of ablationArms.mjs's coordination overrides (baseline: none). The
  * overrides land in every coordinated run's raw config, which the batch line reads. Stored as a 'sensitivity' batch,
@@ -57,6 +66,7 @@
  * 30-45 min) - the corridor needs its `zone`s (scripts/add-zones.mjs).
  */
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +75,8 @@ import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experim
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
-import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from '../resources/js/sim/batchSchedule.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE, LONG_PROTOCOL } from '../resources/js/sim/batchSchedule.js';
+import { EVENING_PROFILE } from '../resources/js/sim/demandProfile.js';
 import { buildStamp, simFingerprint } from './buildStamp.mjs';
 import { ABLATION_ARMS } from './ablationArms.mjs';
 
@@ -96,6 +107,8 @@ function parseArgs(argv) {
         batchId: null,
         resume: null,
         ablation: null,
+        protocol: 'short',
+        sensors: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -118,6 +131,14 @@ function parseArgs(argv) {
         else if (key === 'batch-id') args.batchId = value;
         else if (key === 'resume') args.resume = value;
         else if (key === 'ablation') args.ablation = value;
+        else if (key === 'protocol') args.protocol = value;
+        else if (key === 'sensors') args.sensors = value.split(',');
+    }
+    if (!['short', 'long'].includes(args.protocol)) throw new Error(`--protocol=${args.protocol}: short or long.`);
+    if (args.protocol === 'long') {
+        args.duration = LONG_PROTOCOL.measuredTicks;
+        args.powerOutageStartTick = LONG_PROTOCOL.powerOutageStartTick;
+        args.powerOutageEndTick = LONG_PROTOCOL.powerOutageEndTick;
     }
     if (args.ablation != null && !ABLATION_ARMS[args.ablation]) throw new Error(`--ablation=${args.ablation}: not one of ${Object.keys(ABLATION_ARMS).join(', ')}.`);
     // Default outage schedule: 15-30 min into the measured window, whatever its length.
@@ -173,7 +194,10 @@ function probeWarmup(corridorConfig, args) {
     const probes = [];
     for (const condition of probeConditions(args.controllers)) {
         console.log(`Warm-up probe: ${condition.controllerMode}, normal power, from empty, ${PROBE_REPLICATIONS} seeds averaged...`);
-        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration, routingMode: args.routing });
+        // The long protocol probes on the short window at flat (peak) demand: its warm-up then ends at 16:15, on lighter
+        // demand than the peak it settled under, so the probe's warm-up is a safe upper bound.
+        const measuredTicks = args.protocol === 'long' ? MEASURED_TICKS : args.duration;
+        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks, routingMode: args.routing });
         for (const [scope, v] of Object.entries(probe.scopes)) {
             if (v.truncationTick == null) continue;
             const at = `${((v.truncationTick * args.dt) / 60).toFixed(0)} min`;
@@ -280,7 +304,11 @@ async function main() {
 
     const matrix = buildExperimentalMatrix()
         .filter((c) => !args.controllers || args.controllers.includes(c.controllerMode))
-        .filter((c) => !args.power || args.power.includes(c.powerState));
+        .filter((c) => !args.power || args.power.includes(c.powerState))
+        .filter((c) => !args.sensors || c.controllerMode === 'fixed' || c.controllerMode === 'green_wave' || args.sensors.includes(c.sensorMode));
+    const long = args.protocol === 'long';
+    const rollingWindows = long ? LONG_PROTOCOL.rollingSchedule : ROLLING_SCHEDULE;
+    if (long) console.log(`Protocol: ${LONG_PROTOCOL.id} - ${args.duration * args.dt / 60} measured min, demand ${EVENING_PROFILE.id} from 16:15, outage from 16:30.`);
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
     const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
     const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
@@ -298,10 +326,12 @@ async function main() {
     /** Posts what is pending, then records it - a crash before this line reruns those runs on resume, never skips them. */
     const flush = async () => {
         if (args.post && pendingPosts.length) await postBatch(args.post, pendingPosts.splice(0, pendingPosts.length));
-        for (const { key, seed, mismatch, lockup, starved } of unposted) {
+        for (const { key, seed, mismatch, lockup, starved, gridlock, boxStuck } of unposted) {
             (checkpoint.done[key] ??= []).push(seed);
             if (mismatch) checkpoint.mismatches += 1;
             if (lockup) checkpoint.lockups.push(lockup);
+            if (gridlock) (checkpoint.gridlocks ??= []).push(gridlock);
+            if (boxStuck) (checkpoint.boxStuck ??= []).push(boxStuck);
             if (starved) checkpoint.starved.push(starved);
         }
         unposted = [];
@@ -318,12 +348,13 @@ async function main() {
         fs.mkdirSync(outDir, { recursive: true });
 
         const outage = condition.powerState !== 'normal';
-        const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
+        const rollingSchedule = condition.powerState === 'rolling_blackout' ? rollingWindows : null;
         const done = new Set(checkpoint.done[condition.key] ?? []);
 
         for (let rep = 0; rep < args.reps; rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
             if (done.has(seed)) continue;
+            const runStartedMs = Date.now();
             const { rows, sideStreetRows, totalRows, arterialScopeRows, summary } = runHeadless({
                 seed,
                 controllerMode: condition.controllerMode,
@@ -338,13 +369,15 @@ async function main() {
                 routingMode: args.routing,
                 websterTurnWeight: args.websterTurnWeight,
                 coordination: arm?.coordination ?? {},
+                ...(long ? { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds } : {}),
             });
 
-            fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
-            fs.writeFileSync(path.join(outDir, `${seed}.json`), JSON.stringify(summary, null, 2));
+            if (long) fs.writeFileSync(path.join(outDir, `${seed}.long.csv.gz`), zlib.gzipSync(toCsv(rows)));
+            else fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
+            fs.writeFileSync(path.join(outDir, `${seed}${long ? '.long' : ''}.json`), JSON.stringify(summary, null, 2));
 
             // Its findings are recorded with the run itself (flush()), so a rerun after a crash never counts them twice.
-            const run = { key: condition.key, seed, mismatch: false, lockup: null, starved: null };
+            const run = { key: condition.key, seed, mismatch: false, lockup: null, starved: null, gridlock: null, boxStuck: null };
             if (!summary.carAccounting.balanced) {
                 run.mismatch = true;
                 console.warn(`  ! car accounting mismatch on ${condition.key}/${seed}: ${JSON.stringify(summary.carAccounting)}`);
@@ -354,9 +387,20 @@ async function main() {
             if (lockup.isLockup) {
                 run.lockup = `${condition.key}/${seed} at ${lockupJunctions(lockup)}`;
                 console.warn(`  !!! LOCKUP on ${condition.key}, seed ${seed}, at ${lockupJunctions(lockup)}: ${JSON.stringify(lockup)}`);
+            } else if (lockup.gridlock) {
+                // Started while junctions were dark: gridlock under all-way stops, a result to report - not a fault.
+                const g = lockup.gridlock.firstCycle ?? lockup.gridlock.locked;
+                run.gridlock = `${condition.key}/${seed} at ${g.nodeIds?.join(', ') ?? g.nodeId} (${Math.round((g.atS - warmup.warmupTicks * args.dt) / 60)} min)`;
+                console.warn(`  ! gridlock while dark on ${condition.key}, seed ${seed}: ${run.gridlock}`);
             } else if (lockup.starved) {
                 // Saturation, not a fault: something ahead still moved. Listed at the end, doesn't fail the batch.
                 run.starved = `${condition.key}/${seed} at ${lockup.starved.nodeId} (${lockup.starved.seconds} s)`;
+            }
+
+            if (lockup.boxStuck) {
+                // Cars stood 2+ min inside a junction box (lockupWatch.js) - listed at the end, never a failure.
+                const b = lockup.boxStuck;
+                run.boxStuck = `${condition.key}/${seed}: ${b.cars} car(s) at ${Object.entries(b.byNode).map(([node, n]) => `${node} x${n}`).join(', ')}; longest ${b.longest.seconds} s (${b.longest.startedDark ? 'from dark' : 'lit'})`;
             }
 
             if (args.post) {
@@ -375,7 +419,10 @@ async function main() {
             unposted.push(run);
 
             completed += 1;
-            if (completed % 10 === 0 || completed === totalRuns) {
+            if (long) {
+                // A long run takes minutes - every one is reported, with its wall time and the process's peak memory so far.
+                console.log(`  ${completed}/${totalRuns} (${condition.key}, seed ${seed}) ${((Date.now() - runStartedMs) / 1000).toFixed(0)} s, peak RSS ${(process.resourceUsage().maxRSS / 1024).toFixed(0)} MB`);
+            } else if (completed % 10 === 0 || completed === totalRuns) {
                 console.log(`  ${completed}/${totalRuns} (${condition.key}, seed ${seed})`);
             }
 
@@ -412,6 +459,14 @@ async function main() {
     saveCheckpoint();
 
     const { starved, lockups, mismatches } = checkpoint;
+    const gridlocks = checkpoint.gridlocks ?? [];
+    const boxStuck = checkpoint.boxStuck ?? [];
+    if (boxStuck.length) {
+        console.log(`\n${boxStuck.length}/${totalRuns} runs had cars stood 2+ min inside a junction box:\n  ${boxStuck.join('\n  ')}`);
+    }
+    if (gridlocks.length) {
+        console.log(`\n${gridlocks.length}/${totalRuns} runs gridlocked while dark (started under all-way stops - reported, not a fault):\n  ${gridlocks.join('\n  ')}`);
+    }
     if (starved.length) {
         console.log(`\n${starved.length}/${totalRuns} runs had a starved approach (stood 5+ min behind a queue that still moved - saturation):\n  ${starved.join('\n  ')}`);
     }

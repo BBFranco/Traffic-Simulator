@@ -164,7 +164,7 @@ class SimulatorComposer
                 'divertedPct' => 'Diverted',
                 'missedDrivewaysPct' => 'Missed driveways',
                 'missedTurns' => 'Missed turns',
-                'lostArrivals' => 'Lost arrivals',
+                'queuedArrivals' => 'Arrivals queued at entries',
                 'drivewayWaitS' => 'Driveway wait',
                 'carsInDriveways' => 'Cars in driveways',
             ]],

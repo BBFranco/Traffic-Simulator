@@ -107,7 +107,7 @@ export class LiveMetrics {
         this.blockedNodes = new Set();
         this.blockedEvents = 0;
         this.boxStoppedSince = new Map();
-        this.arrivalsLostAtStart = engine.accounting?.arrivalsLost ?? 0;
+        this.arrivalsQueuedAtStart = engine.accounting?.arrivalsQueued ?? 0;
         this.spark = Object.fromEntries(SPARK_KEYS.map((key) => [key, []]));
         this.waitSeries = [];
         this.throughputSeries = [];
@@ -189,7 +189,7 @@ export class LiveMetrics {
                   divertedPct: divertedPct(engine.routingStats),
                   missedDrivewaysPct: missedDrivewaysPct(engine.routingStats),
                   missedTurns: engine.routingStats.missedTurns,
-                  lostArrivals: Math.round(engine.accounting.arrivalsLost - this.arrivalsLostAtStart),
+                  queuedArrivals: engine.accounting.arrivalsQueued - this.arrivalsQueuedAtStart,
                   drivewayWaitS: meanDrivewayWaitS(engine.routingStats),
                   carsInDriveways: carsInDriveways(engine.departures),
                   tripDelayS: meanTripDelayS(engine.routingStats),

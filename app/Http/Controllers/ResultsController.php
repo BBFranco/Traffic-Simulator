@@ -978,7 +978,8 @@ class ResultsController extends Controller
         $controllers = $config['controllerConfig'] ?? null;
         $controllerLabel = $controllers === null
             ? 'signal rules not recorded'
-            : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s";
+            : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s"
+                .(isset($controllers['minCycleS']) ? ", min cycle {$controllers['minCycleS']} s" : '');
         // Normal-power runs store no outage, so read the schedule off one of the batch's load-shedding runs.
         $outageConfig = SimulationRun::query()
             ->where('batch_id', $latest->batch_id)
