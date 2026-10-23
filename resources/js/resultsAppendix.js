@@ -952,8 +952,7 @@ export async function drawDetailedAppendix(report, runs, data, { renderChartImag
     const capFor = (power) => data.batchStamp?.postRestoreWindowSByScope?.[power]?.total ?? FALLBACK_CAP_S[power];
     const table = (title, caption, head, body, note = null) => {
         if (!body.length) return;
-        report.heading(title, caption, { level: 'card' });
-        report.table({ head: [head], body });
+        report.headedTable(title, caption, { head: [head], body });
         if (note) report.paragraph(note);
     };
     const figure = (title, caption, built) => {

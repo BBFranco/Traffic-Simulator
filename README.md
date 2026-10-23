@@ -1,4 +1,4 @@
-# ARTIS: Adaptive Road Traffic Intersection System
+# ARTIS: Adaptive Road Traffic Intersection Simulator
 
 ARTIS at its core is a browser-based traffic simulator that lets you compare three different ways of controlling traffic signals on the same road network, using the same seeded traffic every time, and then cuts the power mid-run to see which of those approaches actually holds up when the lights go dark. It's modelled on a South African context.
 

@@ -91,6 +91,12 @@ const OUTAGES = {
 const SECTION = { load_shedding: 1, rolling_blackout: 2, coordination: 3, methodNotes: 4 };
 const POWER_ORDER = ['normal', 'load_shedding', 'rolling_blackout'];
 
+/**
+ * Throughput recovery is left out under load shedding: at the final restore throughput is already above its pre-cut level
+ * (stage 2 surge), so the total scopes read 0 s, and a zone's figure is dominated by the neighbouring zone still dark.
+ */
+const showsThroughputRecovery = (powers) => !powers.includes('rolling_blackout');
+
 /** An outage section's subsections in order: one per scope, then these three. */
 const OUTAGE_TAIL_PARTS = ['distribution', 'routing', 'roadWaits'];
 
@@ -651,16 +657,39 @@ class Report {
 
     table(options) {
         this.ensureSpace(24);
-        autoTable(this.doc, {
-            startY: this.y,
+        autoTable(this.doc, this.tableOptions(this.y, options));
+        this.y = this.doc.lastAutoTable.finalY + 7;
+    }
+
+    tableOptions(startY, options) {
+        return {
+            startY,
             margin: { left: PAGE.margin, right: PAGE.margin, top: TOP, bottom: PAGE.height - BOTTOM },
             theme: 'grid',
             styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.6, textColor: COLOURS.ink, lineColor: COLOURS.rule, lineWidth: 0.2 },
             headStyles: { fillColor: COLOURS.headFill, textColor: COLOURS.secondary, fontStyle: 'bold', fontSize: 7 },
             alternateRowStyles: { fillColor: [250, 251, 253] },
+            // A row moves whole to the next page rather than leaving its last line alone at the top of it.
+            rowPageBreak: 'avoid',
             ...options,
-        });
-        this.y = this.doc.lastAutoTable.finalY + 7;
+        };
+    }
+
+    /**
+     * A card heading with its table, never split across a page: when both fit on one page but not on what is left of
+     * this one, they start on the next. A table taller than a page still breaks - there is no page it would fit on.
+     */
+    headedTable(title, caption, options) {
+        const captionLines = caption ? this.doc.setFont('helvetica', 'normal').setFontSize(8).splitTextToSize(caption, CONTENT_WIDTH) : [];
+        const headingHeight = 9 + (captionLines.length ? captionLines.length * 3.6 + 1.5 : 0);
+        // Measured by drawing it on a scratch document, so wrapped cells count at their real height.
+        const probe = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        autoTable(probe, this.tableOptions(TOP, options));
+        const fitsOnePage = probe.getNumberOfPages() === 1;
+        const height = headingHeight + probe.lastAutoTable.finalY - TOP;
+        if (fitsOnePage && height <= BOTTOM - TOP) this.ensureSpace(height);
+        this.heading(title, caption, { level: 'card' });
+        this.table(options);
     }
 
     /** Running header + page footer on every page except the cover. */
@@ -977,7 +1006,7 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
                       },
                   },
                   // After wait: throughput is back within seconds for every controller, so it tells little.
-                  { header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' },
+                  ...(showsThroughputRecovery(powers) ? [{ header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' }] : []),
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
@@ -1025,6 +1054,7 @@ function tailTable(report, data, variants, scope, powers) {
 
 function perConditionTable(report, data, variants, scope, powers) {
     const m = (metric) => `${metric}${scope.suffix}`;
+    const withThroughput = showsThroughputRecovery(powers);
     const body = [];
     variants.forEach((variant) => {
         powers.forEach((power) => {
@@ -1038,13 +1068,13 @@ function perConditionTable(report, data, variants, scope, powers) {
                 fmtCi(row[m('throughput_per_min')], row[`${m('throughput_per_min')}_ci95`]),
                 fmtCi(row[m('pct_cleared_without_stop')], row[`${m('pct_cleared_without_stop')}_ci95`]),
                 isOutage(power) ? fmtWaitRecovery(row, m('time_to_recovery_wait_seconds'), postRestoreWindowS(data, power, scope)) : '-',
-                isOutage(power) ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-',
+                ...(withThroughput ? [isOutage(power) ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-'] : []),
             ]);
         });
     });
 
     report.table({
-        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - wait', 'Recovery - thru']],
+        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - wait', ...(withThroughput ? ['Recovery - thru'] : [])]],
         body,
         columnStyles: { 0: { cellWidth: 38 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
     });
@@ -1136,7 +1166,7 @@ function drawScope(report, data, variants, scope, power) {
 
     report.heading(
         'Every ITS variant vs fixed-time',
-        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
+        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). ${showsThroughputRecovery([power]) ? 'Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait' : 'Recovery: wait only - throughput is above its pre-cut level by the final restore, so it is not reported here (see the method notes); wait'} recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
         card
     );
     comparisonTable(report, data, variants, scope, { powers });
@@ -1169,7 +1199,7 @@ function drawScope(report, data, variants, scope, power) {
 function drawRecoveryTimes(report, data, variants, scope, power) {
     const charts = [
         { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}` },
-        { title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` },
+        ...(showsThroughputRecovery([power]) ? [{ title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` }] : []),
     ].map((chart) => ({ ...chart, title: report.numbered(chart.title, 'card') })).map((chart) => {
         const outage = variants.filter((v) => v.row(power));
         const measured = outage.filter((v) => v.row(power)[chart.metric] != null);
@@ -1219,7 +1249,7 @@ function drawRecoveryTimes(report, data, variants, scope, power) {
  * baseline and this section's outage. Always headed, so the section keeps its numbering on a random-turning batch.
  */
 function drawRoutingTrips(report, data, powers) {
-    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive' };
+    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive', adaptive_rich: 'Adaptive (rich call)' };
     const rows = (data.routingMetrics ?? [])
         .filter((row) => powers.includes(row.power_state))
         .sort((a, b) => powers.indexOf(a.power_state) - powers.indexOf(b.power_state));
@@ -1285,7 +1315,7 @@ function drawVersusAdaptive(report, versus, conditions) {
     if (!versus || !Object.keys(versus).length) return;
     report.heading(
         'Coordinated vs adaptive',
-        'Coordinated adaptive against adaptive with the same sensor on the same seeds and power state; ± is the 95% CI on the per-seed differences (the "avg. of sensors" row pairs each seed\'s sensor mean). Wait, P95 and max: negative is better. Throughput and cleared-without-stopping: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI. Recovery: throughput, seconds.'
+        'Coordinated adaptive against adaptive with the same sensor on the same seeds and power state; ± is the 95% CI on the per-seed differences (the "avg. of sensors" row pairs each seed\'s sensor mean). Wait, P95 and max: negative is better. Throughput and cleared-without-stopping: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI.'
     );
     const sensors = ['average', ...SENSOR_ORDER];
     const powers = POWER_ORDER.filter((power) => conditions.some((row) => row.power_state === power));
@@ -1749,7 +1779,7 @@ function drawMethodNotes(report, data, number) {
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where fixed-time recovers throughput within 30 s, the delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
-        'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller - and under load shedding it is already above its pre-cut level at the final restore (stage 2 surge), so it reads 0 s. Read wait recovery and the post-recovery segments instead.',
+        'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller. Read wait recovery and the post-recovery segments instead.',
         `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total and zone scopes only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,

@@ -14,6 +14,8 @@ export default {
         './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
         './storage/framework/views/*.php',
         './resources/views/**/*.blade.php',
+        // Components, composers and controllers build class strings in PHP (NavLink's active underline among them).
+        './app/**/*.php',
         // The page scripts set data-attributes and inject template clones, so any
         // class they reference has to be visible to the scanner too.
         './resources/js/**/*.js',

@@ -407,6 +407,44 @@ const resumeButton = document.getElementById('resume-batch-button');
 
 let batchRunning = false;
 
+const batchPauseButton = document.getElementById('batch-pause-button');
+const batchPauseLabel = document.getElementById('batch-pause-label');
+const batchPauseIcon = document.getElementById('batch-pause-icon');
+const batchPlayIcon = document.getElementById('batch-play-icon');
+/** The running batch's pool and how long it has sat paused - elapsed and ETA leave paused time out. */
+const batchPause = { pool: null, paused: false, sinceMs: 0, totalMs: 0, phaseBefore: null };
+
+function batchPausedMs() {
+    return batchPause.totalMs + (batchPause.paused ? performance.now() - batchPause.sinceMs : 0);
+}
+
+function setBatchPaused(paused) {
+    if (!batchPause.pool || batchPause.paused === paused) return;
+    batchPause.paused = paused;
+    if (paused) {
+        batchPause.sinceMs = performance.now();
+        batchPause.phaseBefore = batchMonitor.state?.phase ?? null;
+        batchMonitor.phase('Paused');
+    } else {
+        batchPause.totalMs += performance.now() - batchPause.sinceMs;
+        batchMonitor.phase(batchPause.phaseBefore ?? 'Running');
+    }
+    batchPause.pool.setPaused(paused);
+    batchPauseLabel.textContent = paused ? 'Play' : 'Pause';
+    batchPauseIcon?.classList.toggle('hidden', paused);
+    batchPlayIcon?.classList.toggle('hidden', !paused);
+    showBatchPauseState();
+}
+
+/** While paused: the runs still finishing, then a plain "Paused" once every worker is idle. */
+function showBatchPauseState() {
+    if (!batchPause.paused || !batchProgressLabel) return;
+    const busy = batchPause.pool?.busy ?? 0;
+    batchProgressLabel.textContent = busy ? `Pausing - letting ${busy} run${busy === 1 ? '' : 's'} in progress finish...` : 'Paused - press Play to carry on.';
+}
+
+batchPauseButton?.addEventListener('click', () => setBatchPaused(!batchPause.paused));
+
 batchButton?.addEventListener('click', () => openBatchModal());
 
 // The run count follows experimentalMatrix.js, not the Blade placeholder text.
@@ -445,6 +483,9 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
 
     try {
         pool = new BatchWorkerPool(batchWorkerCount());
+        pool.onSettle = showBatchPauseState;
+        Object.assign(batchPause, { pool, paused: false, sinceMs: 0, totalMs: 0, phaseBefore: null });
+        batchPauseButton?.classList.remove('hidden');
         const corridorId = resume?.corridorConfig ?? (document.getElementById('filter-corridor')?.value || data.defaultCorridorId);
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
@@ -517,7 +558,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                 job.result = pool.run('run', job.options).then((result) => {
                     completed += 1;
                     batchMonitor.jobFinished(job.condition.key, job.isStored);
-                    updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs);
+                    updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs - batchPausedMs());
                     return result;
                 });
                 started += 1;
@@ -577,6 +618,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
             }
         }
 
+        batchPauseButton?.classList.add('hidden');
         if (batchProgressLabel) batchProgressLabel.textContent = 'Saving results...';
         if (pending.length) await post(pending);
 
@@ -601,6 +643,9 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         alert(`Batch run failed: ${error.message}\n\nWhat it saved is kept - Resume batch carries on from there.`);
     } finally {
         pool?.terminate();
+        setBatchPaused(false);
+        batchPause.pool = null;
+        batchPauseButton?.classList.add('hidden');
         batchMonitor.end();
         batchRunning = false;
         batchButton.disabled = false;
@@ -763,6 +808,7 @@ class BatchWorkerPool {
         this.idle = Array.from({ length: size }, () => createBatchWorker());
         this.all = [...this.idle];
         this.nextId = 0;
+        this.paused = false;
     }
 
     run(task, options) {
@@ -772,8 +818,19 @@ class BatchWorkerPool {
         });
     }
 
+    /** Runs a worker is busy with right now - a pause lets these finish, it only stops handing out new ones. */
+    get busy() {
+        return this.all.length - this.idle.length;
+    }
+
+    /** Paused, no queued task goes to a worker; runs are seeded by their own options, so a pause never changes a result. */
+    setPaused(paused) {
+        this.paused = paused;
+        if (!paused) this._dispatch();
+    }
+
     _dispatch() {
-        while (this.idle.length && this.queue.length) {
+        while (!this.paused && this.idle.length && this.queue.length) {
             const worker = this.idle.pop();
             const { task, options, resolve, reject } = this.queue.shift();
             const id = ++this.nextId;
@@ -782,6 +839,7 @@ class BatchWorkerPool {
                 worker.removeEventListener('error', onError);
                 this.idle.push(worker);
                 this._dispatch();
+                this.onSettle?.();
             };
             const onMessage = ({ data: reply }) => {
                 if (reply.id !== id) return;
@@ -996,7 +1054,7 @@ const batchMonitor = {
             batchMeta.textContent = [routing, s.corridorId, kind, code, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
         }
 
-        const elapsedMs = performance.now() - s.startedAtMs;
+        const elapsedMs = performance.now() - s.startedAtMs - batchPausedMs();
         const remainingMs = s.runsDone ? (elapsedMs / s.runsDone) * (s.runsTotal - s.runsDone) : null;
         const curves = s.conditions.filter((row) => row.isOutage);
         const facts = [
@@ -1096,7 +1154,8 @@ function updateBatchProgress(completed, total, conditionKey, elapsedMs) {
     if (batchProgressBar) batchProgressBar.style.width = `${pct}%`;
     if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs${eta}`;
     if (batchProgressLabel) batchProgressLabel.textContent = `Last finished: ${conditionKey}`;
-    if (batchButton) batchButton.textContent = `Running... ${completed}/${total}`;
+    if (batchButton) batchButton.textContent = `${batchPause.paused ? 'Paused' : 'Running'}... ${completed}/${total}`;
+    showBatchPauseState();
 }
 
 async function fetchCorridor(id) {

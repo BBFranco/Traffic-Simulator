@@ -152,8 +152,15 @@
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">
             <span id="batch-progress-label" class="font-semibold">Starting...</span>
-            <span class="flex items-baseline gap-3">
+            <span class="flex items-center gap-3">
                 <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+                {{-- results.js: stops handing runs to the workers (runs in progress finish), Play carries on. --}}
+                <button type="button" id="batch-pause-button"
+                        class="hidden inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">
+                    <svg id="batch-pause-icon" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5.75 3a.75.75 0 0 0-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 .75-.75V3.75A.75.75 0 0 0 7.25 3h-1.5ZM12.75 3a.75.75 0 0 0-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 .75-.75V3.75a.75.75 0 0 0-.75-.75h-1.5Z" /></svg>
+                    <svg id="batch-play-icon" class="hidden h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z" /></svg>
+                    <span id="batch-pause-label">Pause</span>
+                </button>
                 <button type="button" id="batch-details-toggle" aria-expanded="false" aria-controls="batch-details"
                         class="inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">
                     Details
