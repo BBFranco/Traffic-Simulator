@@ -10,8 +10,8 @@ const DT = 0.1;
 const admit = SimulationEngine.prototype._admitArrival;
 
 /** A lane whose arrivals come every `gapS`, on a fake engine clock; `step(blocked)` advances one tick. */
-function lane(gapS) {
-    const engine = { simTimeS: 0, accounting: { arrivalsQueued: 0, backlogWaitS: 0, arrivalsBalked: 0 } };
+function lane(gapS, entryBacklogBalkS = ENTRY_BACKLOG_BALK_S) {
+    const engine = { simTimeS: 0, entryBacklogBalkS, accounting: { arrivalsQueued: 0, backlogWaitS: 0, arrivalsBalked: 0 } };
     const state = { timerS: 0, nextArrivalS: gapS };
     let draws = 0;
     const step = (blocked) => {
@@ -79,4 +79,14 @@ test('an arrival that has queued ENTRY_BACKLOG_BALK_S gives up: counted as balke
     assert.equal(state.backlog.length, 15);
     assert.ok(state.backlog.every((arrivedS) => engine.simTimeS - arrivedS < ENTRY_BACKLOG_BALK_S));
     assert.ok(engine.accounting.backlogWaitS > 3 * ENTRY_BACKLOG_BALK_S, 'each balked car keeps its 15 min in the delay');
+});
+
+test('the give-up sensitivity: a 10 min give-up time balks the arrivals that have stood 10 min', () => {
+    const gapS = 60;
+    const { engine, state, step } = lane(gapS, 600);
+    for (let i = 0; i < Math.round((600 + 3 * gapS) / DT); i += 1) step(true);
+    // Arrivals every 60 s for 13 min: the oldest three have stood 10 min or more.
+    assert.equal(engine.accounting.arrivalsQueued, 13);
+    assert.equal(engine.accounting.arrivalsBalked, 3);
+    assert.equal(state.backlog.length, 10);
 });

@@ -13,7 +13,7 @@
  * with the returned rows/summary.
  */
 import { buildLayout } from './corridor.js';
-import { SimulationEngine, WAIT_ACCOUNTING, ZONE_ACCOUNTING } from './engine.js';
+import { ENTRY_BACKLOG_BALK_S, SimulationEngine, WAIT_ACCOUNTING, ZONE_ACCOUNTING } from './engine.js';
 import { buildStages, controllerConfigFor, fixedTimeGreens, stageRatios } from './controllers/phasePlan.js';
 import { sensorSpecHash } from './sensorSpecs.js';
 import { SignalDiagnostics } from './metrics/signalDiagnostics.js';
@@ -56,6 +56,7 @@ const readsSensors = (controllerMode) => controllerMode === 'adaptive' || contro
  *                             null keeps the corridor's (random when it has no `routing` section)
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
  * @param fixedFloorS          sensitivity runs only (plan step 14): fixed-time cycles never shorter than this many s (50 or 60); 0 = SARTSM 30 s
+ * @param entryBacklogBalkS    sensitivity runs only: s an arrival queues at a full entry before giving up; undefined = engine.js's ENTRY_BACKLOG_BALK_S
  * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
  *                             { platoonMessages: false, selfTuning: false } for the layer ablation
  * @param sensorSpecSet        sensorSpecs.js set: 'field' (the hardware models, default) or 'legacy' (the pre-overhaul sensors)
@@ -81,6 +82,7 @@ export function runHeadless({
     routingMode = null,
     websterTurnWeight = false,
     fixedFloorS = 0,
+    entryBacklogBalkS = undefined,
     coordination = {},
     sensorSpecSet = undefined,
     sensorErrors = false,
@@ -109,6 +111,7 @@ export function runHeadless({
         routingMode,
         websterTurnWeight,
         fixedFloorS,
+        entryBacklogBalkS,
         coordination,
         sensorSpecSet,
         sensorErrors,
@@ -611,6 +614,7 @@ function buildSummary({
             sensorSpecSet: engine.sensorSpecSet,
             sensorErrors: engine.sensorErrors,
             ...(engine.callRule !== 'presence' ? { callRule: engine.callRule } : {}),
+            ...(engine.entryBacklogBalkS !== ENTRY_BACKLOG_BALK_S ? { entryBacklogBalkS: engine.entryBacklogBalkS } : {}),
             warmupTicks,
             powerOutageStartTick: outageStartArg,
             powerOutageEndTick: outageEndArg,

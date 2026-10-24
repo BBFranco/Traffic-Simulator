@@ -19,8 +19,14 @@
  *     [--power-outage-start-tick=9000] [--power-outage-end-tick=18000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
- *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart]
+ *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart|gate4|forced]
  *     [--protocol=short|long] [--sensors=inductive_loop,radar]
+ *     [--fixed-floor=50|60] [--give-up=<min>] [--tag=<name>]
+ *
+ * Phase 3 sensitivity options (all 'sensitivity' batches, written to results/<condition>.<variant>/, never over the
+ * baseline): --fixed-floor sets a practice minimum cycle on fixed-time signals (plan step 14); --give-up sets how long an
+ * arrival queues at a full entry before giving up (engine.js's ENTRY_BACKLOG_BALK_S, 15 min); --tag names the variant
+ * folder for any other sweep.
  *
  * --protocol=long runs batchSchedule.js's LONG_PROTOCOL (dissertation plan steps 7-8): 375 measured minutes from 16:15
  * on the evening demand profile, a 4 h total blackout or 2 h + 2 h zoned load shedding from 16:30, rows every 5 s and
@@ -103,6 +109,8 @@ function parseArgs(argv) {
         power: null,
         websterTurnWeight: false,
         fixedFloor: 0,
+        giveUpMin: null,
+        tag: null,
         demandScale: 1,
         endToEndShare: null,
         batchId: null,
@@ -128,6 +136,8 @@ function parseArgs(argv) {
         else if (key === 'power') args.power = value.split(',');
         else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
         else if (key === 'fixed-floor') args.fixedFloor = Number(value);
+        else if (key === 'give-up') args.giveUpMin = Number(value);
+        else if (key === 'tag') args.tag = value;
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
         else if (key === 'batch-id') args.batchId = value;
@@ -312,7 +322,7 @@ async function main() {
     const rollingWindows = long ? LONG_PROTOCOL.rollingSchedule : ROLLING_SCHEDULE;
     if (long) console.log(`Protocol: ${LONG_PROTOCOL.id} - ${args.duration * args.dt / 60} measured min, demand ${EVENING_PROFILE.id} from 16:15, outage from 16:30.`);
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
-    const batchKind = args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
+    const batchKind = args.tag || args.giveUpMin != null || args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
     const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
     if (arm) console.log(`Ablation: ${arm.label} ${JSON.stringify(arm.coordination)}`);
     if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
@@ -346,7 +356,9 @@ async function main() {
 
     for (const condition of matrix) {
         // An ablation arm writes beside the others, never over them - the arms share condition keys.
-        const outDir = path.join(ROOT, 'results', args.ablation ? `${condition.key}.${args.ablation}` : args.fixedFloor ? `${condition.key}.floor${args.fixedFloor}` : condition.key);
+        // So do a sweep's runs: --tag names their folder, else the floor or give-up setting does.
+        const variant = args.tag ?? args.ablation ?? (args.fixedFloor ? `floor${args.fixedFloor}` : args.giveUpMin != null ? `giveup${args.giveUpMin}` : null);
+        const outDir = path.join(ROOT, 'results', variant ? `${condition.key}.${variant}` : condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
         const outage = condition.powerState !== 'normal';
@@ -371,6 +383,7 @@ async function main() {
                 routingMode: args.routing,
                 websterTurnWeight: args.websterTurnWeight,
                 fixedFloorS: args.fixedFloor,
+                entryBacklogBalkS: args.giveUpMin != null ? args.giveUpMin * 60 : undefined,
                 coordination: arm?.coordination ?? {},
                 ...(long ? { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds } : {}),
             });

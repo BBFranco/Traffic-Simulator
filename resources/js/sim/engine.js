@@ -1308,11 +1308,13 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, fixedFloorS = 0, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, fixedFloorS = 0, entryBacklogBalkS = ENTRY_BACKLOG_BALK_S, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
         /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
         this.websterTurnWeight = websterTurnWeight;
         /** Fixed-time practice cycle floor in s (plan step 14) - 0 is the SARTSM 30 s baseline. */
         this.fixedFloorS = fixedFloorS;
+        /** How long an arrival queues at a full entry before giving up - the give-up sensitivity (plan Phase 3) varies it. */
+        this.entryBacklogBalkS = entryBacklogBalkS;
         /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
         this.coordination = { ...COORDINATED_DEFAULTS, ...coordination };
         /**
@@ -2748,13 +2750,13 @@ export class SimulationEngine {
      * waiting; with room, the queue's head comes in first. A lane that never fills draws and spawns exactly as before:
      * the caller resets its timer and draws the next gap after the car is built, so the random streams keep their order.
      * Returns null when nothing enters, else { fromBacklog, queuedS }. The time stood outside accrues to `backlogWaitS`;
-     * one queued ENTRY_BACKLOG_BALK_S gives up (`arrivalsBalked`).
+     * one queued entryBacklogBalkS (ENTRY_BACKLOG_BALK_S unless a sensitivity run sets it) gives up (`arrivalsBalked`).
      */
     _admitArrival(lane, blocked, dt, nextGap) {
         const backlog = (lane.backlog ??= []);
         this.accounting.backlogWaitS += backlog.length * dt;
         // Oldest first: whoever has queued ENTRY_BACKLOG_BALK_S gives up.
-        while (backlog.length && this.simTimeS - backlog[0] >= ENTRY_BACKLOG_BALK_S) {
+        while (backlog.length && this.simTimeS - backlog[0] >= this.entryBacklogBalkS) {
             backlog.shift();
             this.accounting.arrivalsBalked += 1;
         }
