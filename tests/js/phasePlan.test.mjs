@@ -43,6 +43,16 @@ test('cycle floor binds: a 24.8 s Webster cycle is stretched to 30 s, the cross 
     near(greens[0] + greens[1] + 8, 30, 'cycle adds up');
 });
 
+test('practice floor (plan step 14): a 60 s floor stretches a 40 s Webster cycle to 60 s; 0 and 30 change nothing', () => {
+    const stages = buildStages([null, null]);
+    const run = (floorS) => fixedTimeGreens(stages, demand(8), demand(4), [null, null], floorS);
+    assert.deepEqual(run(0), run(30));
+    const { greens, cycleLengthS } = run(60);
+    assert.equal(cycleLengthS, 60);
+    near(greens[0] + greens[1] + 8, 60, 'cycle adds up');
+    near(greens[0], 2 * greens[1], 'Webster 2:1 split kept');
+});
+
 test('oversaturated (Y >= 1): the 120 s fallback, above both floors', () => {
     const { greens, cycleLengthS } = plan(15, 10);
     assert.equal(cycleLengthS, 120);

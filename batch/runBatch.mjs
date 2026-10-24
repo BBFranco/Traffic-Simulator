@@ -102,6 +102,7 @@ function parseArgs(argv) {
         controllers: null,
         power: null,
         websterTurnWeight: false,
+        fixedFloor: 0,
         demandScale: 1,
         endToEndShare: null,
         batchId: null,
@@ -126,6 +127,7 @@ function parseArgs(argv) {
         else if (key === 'controllers') args.controllers = value.split(',');
         else if (key === 'power') args.power = value.split(',');
         else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
+        else if (key === 'fixed-floor') args.fixedFloor = Number(value);
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
         else if (key === 'batch-id') args.batchId = value;
@@ -310,7 +312,7 @@ async function main() {
     const rollingWindows = long ? LONG_PROTOCOL.rollingSchedule : ROLLING_SCHEDULE;
     if (long) console.log(`Protocol: ${LONG_PROTOCOL.id} - ${args.duration * args.dt / 60} measured min, demand ${EVENING_PROFILE.id} from 16:15, outage from 16:30.`);
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
-    const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
+    const batchKind = args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
     const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
     if (arm) console.log(`Ablation: ${arm.label} ${JSON.stringify(arm.coordination)}`);
     if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
@@ -344,7 +346,7 @@ async function main() {
 
     for (const condition of matrix) {
         // An ablation arm writes beside the others, never over them - the arms share condition keys.
-        const outDir = path.join(ROOT, 'results', args.ablation ? `${condition.key}.${args.ablation}` : condition.key);
+        const outDir = path.join(ROOT, 'results', args.ablation ? `${condition.key}.${args.ablation}` : args.fixedFloor ? `${condition.key}.floor${args.fixedFloor}` : condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
         const outage = condition.powerState !== 'normal';
@@ -368,6 +370,7 @@ async function main() {
                 dt: args.dt,
                 routingMode: args.routing,
                 websterTurnWeight: args.websterTurnWeight,
+                fixedFloorS: args.fixedFloor,
                 coordination: arm?.coordination ?? {},
                 ...(long ? { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds } : {}),
             });

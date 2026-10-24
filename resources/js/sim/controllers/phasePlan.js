@@ -34,8 +34,9 @@ export const FALLBACK_TURN_GREEN_S = 12;
  * q, the turn `weight` only on the minimum green; `websterTurnWeight` (a sensitivity run only)
  * also scales a protected turn's q by its weight before Webster (engine.js's _turnStagesAt()).
  */
-export function controllerConfigFor({ websterTurnWeight = false } = {}) {
+export function controllerConfigFor({ websterTurnWeight = false, fixedFloorS = 0 } = {}) {
     return {
+        ...(fixedFloorS ? { fixedTimeFloorS: fixedFloorS } : {}),
         websterTurnInput: websterTurnWeight ? 'q-x-weight' : 'real-q',
         turnWeightActsOn: websterTurnWeight ? 'min-green+webster-q' : 'min-green',
         minGreenS: MIN_GREEN_S,
@@ -94,11 +95,13 @@ export function fallbackGreens(stages, turn, cycleLengthS = FALLBACK_CYCLE_S) {
 /**
  * A junction's own fixed-time plan: Webster's cycle and split on real q, every stage then lifted to
  * its minimum green - the lift adds to the cycle. A cycle still under MIN_CYCLE_S is stretched to it,
- * Webster's split of that longer cycle (floorWithinCycle()). Oversaturated (Webster undefined): the
+ * Webster's split of that longer cycle (floorWithinCycle()). `practiceFloorS` (a fixed-time sensitivity run only,
+ * dissertation plan step 14: 50 s or 60 s) raises that floor; 0 keeps the SARTSM 30 s. Oversaturated (Webster undefined): the
  * fallback greens, lifted the same way. Fixed-time runs exactly this; green wave takes its arterial's
  * longest such cycle as the common one, so no junction is squeezed below what it would run on its own.
  */
-export function fixedTimeGreens(stages, arterialDemand, crossDemand, turn) {
+export function fixedTimeGreens(stages, arterialDemand, crossDemand, turn, practiceFloorS = 0) {
+    const floorS = Math.max(MIN_CYCLE_S, practiceFloorS);
     const ratios = stageRatios(stages, arterialDemand, crossDemand, turn);
     let greens;
     try {
@@ -108,8 +111,8 @@ export function fixedTimeGreens(stages, arterialDemand, crossDemand, turn) {
     }
     const lifted = greens.map((g, i) => Math.max(minGreenOf(stages[i]), g));
     const cycleLengthS = lifted.reduce((sum, g) => sum + g, 0) + lostTimeS(stages);
-    if (cycleLengthS >= MIN_CYCLE_S) return { greens: lifted, cycleLengthS };
-    return { greens: floorWithinCycle(stages, websterGreens(stages, ratios, MIN_CYCLE_S), MIN_CYCLE_S), cycleLengthS: MIN_CYCLE_S };
+    if (cycleLengthS >= floorS) return { greens: lifted, cycleLengthS };
+    return { greens: floorWithinCycle(stages, websterGreens(stages, ratios, floorS), floorS), cycleLengthS: floorS };
 }
 
 /** Webster's green split of a cycle of `cycleLengthS` over `stages`, no floors applied. */

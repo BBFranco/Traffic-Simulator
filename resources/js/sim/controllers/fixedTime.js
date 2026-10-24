@@ -19,10 +19,11 @@ export { flowRatio };
 
 export class FixedTimeController {
     /** turn: per road (0 arterial, 1 cross) null, or `{ demand, weight }` for the protected turn stage in front of its through green. */
-    constructor(arterialDemand, crossDemand, turn = [null, null]) {
+    constructor(arterialDemand, crossDemand, turn = [null, null], practiceFloorS = 0) {
         this.stepIndex = 0;
         this.phaseState = 'green'; // 'green' | 'yellow' | 'allRed'
         this.phaseElapsed = 0;
+        this.practiceFloorS = practiceFloorS;
         this.recompute(arterialDemand, crossDemand, turn);
     }
 
@@ -41,7 +42,7 @@ export class FixedTimeController {
         this.stages = buildStages(turn);
         this.stepIndex = Math.min(this.stepIndex, this.stages.length - 1);
 
-        const plan = fixedTimeGreens(this.stages, arterialDemand, crossDemand, turn);
+        const plan = fixedTimeGreens(this.stages, arterialDemand, crossDemand, turn, this.practiceFloorS);
         this.stageGreens = plan.greens;
         /** The through green of each road, and the turn green in front of it (null where it has none). */
         this.greenDurations = [0, 1].map((p) => this.stageGreens[this.stages.findIndex((s) => s.phase === p && !s.turn)]);

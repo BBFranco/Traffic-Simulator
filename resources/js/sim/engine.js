@@ -1308,9 +1308,11 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, fixedFloorS = 0, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
         /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
         this.websterTurnWeight = websterTurnWeight;
+        /** Fixed-time practice cycle floor in s (plan step 14) - 0 is the SARTSM 30 s baseline. */
+        this.fixedFloorS = fixedFloorS;
         /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
         this.coordination = { ...COORDINATED_DEFAULTS, ...coordination };
         /**
@@ -2701,7 +2703,7 @@ export class SimulationEngine {
             info.allWayStopOccupants = new Map();
         } else if (arterialState.mode === 'fixed') {
             info.controllerType = 'fixed';
-            info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand, this._turnStagesAt(info));
+            info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand, this._turnStagesAt(info), this.fixedFloorS);
         } else if (arterialState.mode === 'adaptive') {
             info.controllerType = 'adaptive';
             info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null));

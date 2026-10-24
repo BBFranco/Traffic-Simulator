@@ -55,6 +55,7 @@ const readsSensors = (controllerMode) => controllerMode === 'adaptive' || contro
  * @param routingMode          'random' | 'destination' - overrides the corridor's own `routing.mode` for this run;
  *                             null keeps the corridor's (random when it has no `routing` section)
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
+ * @param fixedFloorS          sensitivity runs only (plan step 14): fixed-time cycles never shorter than this many s (50 or 60); 0 = SARTSM 30 s
  * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
  *                             { platoonMessages: false, selfTuning: false } for the layer ablation
  * @param sensorSpecSet        sensorSpecs.js set: 'field' (the hardware models, default) or 'legacy' (the pre-overhaul sensors)
@@ -79,6 +80,7 @@ export function runHeadless({
     sampleEverySeconds = 1,
     routingMode = null,
     websterTurnWeight = false,
+    fixedFloorS = 0,
     coordination = {},
     sensorSpecSet = undefined,
     sensorErrors = false,
@@ -106,6 +108,7 @@ export function runHeadless({
         power: { loadShedding: false, scheduledOutages: false, offMinutes: 2, periodMinutes: 8 },
         routingMode,
         websterTurnWeight,
+        fixedFloorS,
         coordination,
         sensorSpecSet,
         sensorErrors,
@@ -620,7 +623,7 @@ function buildSummary({
             waitAccounting: WAIT_ACCOUNTING,
             ...(engine.zones.length ? { zoneAccounting: ZONE_ACCOUNTING } : {}),
             controllerConfig: {
-                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight }),
+                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight, fixedFloorS: engine.fixedFloorS }),
                 // Which coordination layers ran (and their thresholds) - so an ablation run never reads as the full mode.
                 ...(controllerMode === 'coordinated_adaptive' ? { coordination: { ...engine.coordination } } : {}),
             },
@@ -785,7 +788,7 @@ function websterPlans(engine) {
         const turn = engine._turnStagesAt(info);
         const stages = buildStages(turn);
         const ratios = stageRatios(stages, arterialDemand, crossDemand, turn);
-        const { greens, cycleLengthS } = fixedTimeGreens(stages, arterialDemand, crossDemand, turn);
+        const { greens, cycleLengthS } = fixedTimeGreens(stages, arterialDemand, crossDemand, turn, engine.fixedFloorS);
         const Y = ratios.reduce((sum, y) => sum + y, 0);
         plans.push({
             nodeId: info.node.id,
