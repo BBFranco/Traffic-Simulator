@@ -33,7 +33,11 @@
  * every junction lit is the fault isLockup reports, as before. A lockup
  * starts when the jam does: the earliest standstill on its waits-on chain (or
  * in its cycle) - a car that joins a dark-period jam after the power is back
- * is that jam, not a new one (long-outage pilot, 2026-10-23).
+ * is that jam, not a new one (long-outage pilot, 2026-10-23). And one that
+ * starts after the power is back, within AFTERMATH_REACH_M of a junction that
+ * jammed while dark, is that jam's aftermath - a queue held at a lit signal
+ * because the road past it is still blocked, its chain ending at the red light
+ * (Franco, 2026-10-24). Both go into report().gridlock.
  *
  * Separately, a car that stands inside a junction box - past its stop line and
  * short of the far kerb, or on a turn path - for BOX_STUCK_S is recorded as
@@ -63,6 +67,8 @@ export const LOCK_CONFIRM_S = 10;
  * right-turner waiting in the box clears on the amber, so a lit junction never holds one there for a whole cycle.
  */
 export const BOX_STUCK_S = 120;
+/** A lit lockup this close (straight line, about two blocks) to a junction that jammed while dark, after a restore, is its aftermath. */
+export const AFTERMATH_REACH_M = 500;
 /** Below this a car counts as standing still. */
 const STILL_SPEED_MPS = 0.1;
 const CHECK_EVERY_S = 1;
@@ -100,8 +106,30 @@ export class LockupWatch {
         this.boxStuckIds = new Set();
         this.boxStuckByNode = new Map();
         this.longestBoxStuck = null;
+        /** Junctions a dark-period jam was at (a stuck chain's car, a box-stuck car), and the post-restore lockups next to them. */
+        this.darkJamNodeIds = new Set();
+        this.darkJamCarIds = new Set();
+        this.longestLockedAftermath = null;
+        this.firstCycleAftermath = null;
         /** [{ fromS, toS }] while any junction was dark (toS null while it still is) - what a lockup's start is classed against. */
         this.darkSpans = [];
+    }
+
+    /**
+     * A lockup that started at `startS` with every junction lit, at `nodeIds`: after a restore (a dark span that has
+     * ended by then) and within AFTERMATH_REACH_M of a junction that jammed while dark?
+     */
+    _isAftermath(nodeIds, startS) {
+        if (!this.darkJamNodeIds.size || !this.darkSpans.some((span) => span.toS != null && span.toS <= startS)) return false;
+        const points = this.engine.nodesInfo;
+        return nodeIds.some((id) => {
+            const at = points?.get(id)?.node.point;
+            if (!at) return false;
+            return [...this.darkJamNodeIds].some((jamId) => {
+                const jam = points.get(jamId)?.node.point;
+                return jam && Math.hypot(jam.x - at.x, jam.y - at.y) <= AFTERMATH_REACH_M;
+            });
+        });
     }
 
     /** Was any junction dark at sim time `atS` (to this watch's 1 s resolution)? */
@@ -138,7 +166,16 @@ export class LockupWatch {
             if (stuck) stuckSinceS.set(car.id, this.stuckSinceS.get(car.id) ?? nowS);
             // A chain that has only just read stuck is a release in progress, not yet a lockup.
             if (stuck && nowS - stuckSinceS.get(car.id) < LOCK_CONFIRM_S) continue;
-            const key = stuck ? (this._darkAt(this._chainStartS(car, waitsOn, stillS, nowS)) ? 'longestLockedDark' : 'longestLocked') : 'longestStarved';
+            let key = 'longestStarved';
+            if (stuck && this._darkAt(this._chainStartS(car, waitsOn, stillS, nowS))) {
+                key = 'longestLockedDark';
+                if (!this.darkJamCarIds.has(car.id)) {
+                    this.darkJamCarIds.add(car.id);
+                    this.darkJamNodeIds.add(this._nearestNodeId(car));
+                }
+            } else if (stuck) {
+                key = this._isAftermath([this._nearestNodeId(car)], nowS - seconds) ? 'longestLockedAftermath' : 'longestLocked';
+            }
             if (seconds > (this[key]?.seconds ?? 0)) this[key] = { seconds, ...this._describe(car), atS: nowS };
         }
         this.stuckSinceS = stuckSinceS;
@@ -164,7 +201,15 @@ export class LockupWatch {
                 ? { cars: this.boxStuckIds.size, byNode: Object.fromEntries(this.boxStuckByNode), longest: { ...plain(this.longestBoxStuck), startedDark: this.longestBoxStuck.startedDark } }
                 : null,
             /** A lockup that started while a junction was dark - gridlock under all-way stops, reported but not a fault. */
-            gridlock: this.longestLockedDark || this.firstCycleDark ? { locked: plain(this.longestLockedDark), firstCycle: this.firstCycleDark } : null,
+            gridlock:
+                this.longestLockedDark || this.firstCycleDark || this.longestLockedAftermath || this.firstCycleAftermath
+                    ? {
+                          locked: plain(this.longestLockedDark),
+                          firstCycle: this.firstCycleDark,
+                          /** Lit lockups after a restore next to a dark-period jam (AFTERMATH_REACH_M) - its aftermath, not a fault. */
+                          aftermath: this.longestLockedAftermath || this.firstCycleAftermath ? { locked: plain(this.longestLockedAftermath), firstCycle: this.firstCycleAftermath } : null,
+                      }
+                    : null,
         };
     }
 
@@ -189,8 +234,10 @@ export class LockupWatch {
                 this.boxStuckIds.add(entry.car.id);
                 this.boxStuckByNode.set(nodeId, (this.boxStuckByNode.get(nodeId) ?? 0) + 1);
             }
+            const startedDark = this._darkAt(nowS - seconds);
+            if (startedDark) this.darkJamNodeIds.add(nodeId);
             if (seconds > (this.longestBoxStuck?.seconds ?? 0)) {
-                this.longestBoxStuck = { seconds, ...this._describe(entry.car), nodeId, atS: nowS, startedDark: this._darkAt(nowS - seconds) };
+                this.longestBoxStuck = { seconds, ...this._describe(entry.car), nodeId, atS: nowS, startedDark };
             }
         }
     }
@@ -340,12 +387,15 @@ export class LockupWatch {
         this.cycleKeys.add(key);
         const heldS = Math.min(...members.map((car) => nowS - this.stillSinceS.get(car.id)));
         const startS = Math.min(...members.map((car) => this.stillSinceS.get(car.id)));
-        const slot = this._darkAt(startS) ? 'firstCycleDark' : 'firstCycle';
-        if (this[slot]) return;
         const described = members.map((car) => this._describe(car));
+        const nodeIds = [...new Set(described.map((d) => d.nodeId))];
+        const dark = this._darkAt(startS);
+        if (dark) nodeIds.forEach((id) => this.darkJamNodeIds.add(id));
+        const slot = dark ? 'firstCycleDark' : this._isAftermath(nodeIds, startS) ? 'firstCycleAftermath' : 'firstCycle';
+        if (this[slot]) return;
         this[slot] = {
             carIds: described.map((d) => d.carId),
-            nodeIds: [...new Set(described.map((d) => d.nodeId))],
+            nodeIds,
             places: described.map((d) => d.place),
             heldS: Math.round(heldS),
             atS: Math.round(nowS),

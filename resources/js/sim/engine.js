@@ -97,8 +97,23 @@ const JOIN_FEED_REACH_M = 5;
 const MINOR_STOP_CRITICAL_GAP_S = 4;
 /** After a minor-road car is let go, the next waits this share of the all-way stop's junction-clear time. */
 const MINOR_STOP_LOCK_SHARE = 0.6;
-/** Backstop: a car let into an all-way stop's box stops counting as in it after this long, even if it was never seen leaving. */
+/**
+ * Backstop: a car let into an all-way stop that is not seen in the box - still pulling up to its stop line, or on a road
+ * this can't follow - stops counting as in it after this long. A car physically in the box (or on its turn path) counts
+ * until it is out, however long that takes (long-outage pilot, 2026-10-24: the backstop let the next approach in round
+ * a car stalled mid-box 719 times in 90 min of total blackout).
+ */
 const ALL_WAY_STOP_OCCUPANT_MAX_S = 20;
+/** Gap a car going straight through an all-way stop needs ahead of it past the far kerb before it is let go (don't block the box). */
+const ALL_WAY_STOP_EXIT_GAP_M = 2;
+/** A leader past the box moving at least this fast is pulling away - there will be room. */
+const ALL_WAY_STOP_EXIT_MOVING_MPS = 3;
+/**
+ * An arrival that has queued outside a full map-edge entry this long gives up - it cancels the trip or goes another way
+ * (Franco, 2026-10-24). Without it a 4 h blackout queued ~19 000 arrivals that all drove in later, so the network never
+ * cleared. Counted in `arrivalsBalked`; the time it stood outside stays in `backlogWaitS`.
+ */
+export const ENTRY_BACKLOG_BALK_S = 900;
 /** A car merging from a turn road (or a slip road) gives way to one on the road it joins that would reach the merge point within this many seconds. */
 const MERGE_GIVE_WAY_S = 2.5;
 /** How far before the end of its road a merging car starts watching for a gap - it stops at the end if there isn't one. */
@@ -836,7 +851,7 @@ export class SimulationEngine {
         /** Random-events mode - see EVENT_SEED_SALT above and setRandomEvents(). */
         this.randomEvents = false;
         this.eventRng = new SeededRandom(1);
-        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0, arrivalsQueued: 0, backlogWaitS: 0 };
+        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0, arrivalsQueued: 0, backlogWaitS: 0, arrivalsBalked: 0 };
         this.lockupWatch = new LockupWatch(this);
         /** Batch runs' measured window only (runHeadless.js): metrics/signalDiagnostics.js and metrics/zoneFlow.js - recording, never read back. */
         this.signalDiagnostics = null;
@@ -1339,7 +1354,7 @@ export class SimulationEngine {
         this.powerState = powerNow.state;
         this.darkZones = powerNow.zones;
         this._setDark(this._darkArterialsFor(powerNow));
-        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0, arrivalsQueued: 0, backlogWaitS: 0 };
+        this.accounting = { totalSpawned: 0, totalClearedNetwork: 0, roundaboutOverruns: 0, arrivalsLost: 0, waitAccruedS: 0, arrivalsQueued: 0, backlogWaitS: 0, arrivalsBalked: 0 };
         /** Time-of-day demand (demandProfile.js): every live arrival rate is scaled by this - 1 keeps the corridor's own. runHeadless.js sets it. */
         this.demandMultiplier = 1;
         this.lockupWatch = new LockupWatch(this);
@@ -2730,11 +2745,17 @@ export class SimulationEngine {
      * counted in `arrivalsLost`). Each tick: a due arrival joins the queue if the lane is blocked or others are already
      * waiting; with room, the queue's head comes in first. A lane that never fills draws and spawns exactly as before:
      * the caller resets its timer and draws the next gap after the car is built, so the random streams keep their order.
-     * Returns null when nothing enters, else { fromBacklog, queuedS }. The time stood outside accrues to `backlogWaitS`.
+     * Returns null when nothing enters, else { fromBacklog, queuedS }. The time stood outside accrues to `backlogWaitS`;
+     * one queued ENTRY_BACKLOG_BALK_S gives up (`arrivalsBalked`).
      */
     _admitArrival(lane, blocked, dt, nextGap) {
         const backlog = (lane.backlog ??= []);
         this.accounting.backlogWaitS += backlog.length * dt;
+        // Oldest first: whoever has queued ENTRY_BACKLOG_BALK_S gives up.
+        while (backlog.length && this.simTimeS - backlog[0] >= ENTRY_BACKLOG_BALK_S) {
+            backlog.shift();
+            this.accounting.arrivalsBalked += 1;
+        }
         if (lane.timerS >= lane.nextArrivalS && (blocked || backlog.length)) {
             backlog.push(this.simTimeS - (lane.timerS - lane.nextArrivalS));
             this.accounting.arrivalsQueued += 1;
@@ -3678,7 +3699,7 @@ export class SimulationEngine {
         const groups = [];
         for (const [phase, gates] of [[0, info.arterialGates], [1, info.crossGates]]) {
             for (const gate of gates) {
-                const cars = this._allWayStopQueuedAtGate(info, gate, phase);
+                const cars = this._allWayStopQueuedAtGate(info, gate, phase).filter((car) => this._allWayStopExitClear(info, gate, phase, car));
                 this._pushFedAllWayStopCars(info, [gate], cars);
                 if (!info.allWayStopLegs.has(gate)) info.allWayStopLegs.set(gate, { arrivedAtS: null, requiredDwellS: null });
                 const leg = info.allWayStopLegs.get(gate);
@@ -3708,10 +3729,14 @@ export class SimulationEngine {
             } else {
                 const gateRoad = o.gate.carriageway?.road ?? o.gate.dir?.road;
                 const crossedWidthM = o.gate.phase === 0 ? node.crossRoadWidthM : node.arterialRoadWidthM;
-                if (o.car.road === gateRoad) inBox = o.car.distanceM - o.car.lengthM / 2 < o.gate.centreDistanceM + crossedWidthM / 2;
-                else inBox = o.car.road === o.road; // still on the road feeding the approach
+                if (o.car.road === gateRoad) {
+                    inBox = o.car.distanceM - o.car.lengthM / 2 < o.gate.centreDistanceM + crossedWidthM / 2;
+                    // Its nose over the stop line: it is in the box now, and stays counted until its rear is out.
+                    o.entered ||= o.car.distanceM + o.car.lengthM / 2 > o.gate.stopLineDistanceM;
+                } else inBox = o.car.road === o.road; // still on the road feeding the approach
             }
-            if (!inBox || this.simTimeS - o.releasedAtS > ALL_WAY_STOP_OCCUPANT_MAX_S) info.allWayStopOccupants.delete(id);
+            const expired = this.simTimeS - o.releasedAtS > ALL_WAY_STOP_OCCUPANT_MAX_S && !turning && !(o.entered && inBox);
+            if (!inBox || expired) info.allWayStopOccupants.delete(id);
         }
         return info.allWayStopOccupants.size > 0;
     }
@@ -3771,6 +3796,26 @@ export class SimulationEngine {
         const result = gates.flatMap((gate) => this._allWayStopQueuedAtGate(info, gate, phase));
         this._pushFedAllWayStopCars(info, gates, result);
         return result;
+    }
+
+    /**
+     * Don't block the box: a car going straight through all-way stop `info` only counts as waiting to go once its lane
+     * past the far kerb has room for it (ALL_WAY_STOP_EXIT_GAP_M behind the car ahead), or that car is pulling away.
+     * Until then its approach isn't in the queue for a turn, so the crossing roads go - a driver at a 4-way stop waits
+     * for room across rather than stopping in the middle. A turning car's exit is checked by its own turn
+     * (_turnExitBlocked()), so it is left alone here.
+     */
+    _allWayStopExitClear(info, gate, phase, car) {
+        if (car.turnPlan?.nodeId === info.node.id && car.turnPlan.movement !== 'straight') return true;
+        const lanes = phase === 0 ? this._gateLanes(gate) : this.connectorState.get(gate.connector.id)[gate.dirKey].lanes;
+        const lane = lanes[car.lane];
+        if (!lane) return true;
+        const crossedWidthM = phase === 0 ? info.node.crossRoadWidthM : info.node.arterialRoadWidthM;
+        const farEdgeM = gate.centreDistanceM + crossedWidthM / 2;
+        let leader = null;
+        for (const other of lane.cars) if (other.distanceM > car.distanceM && (!leader || other.distanceM < leader.distanceM)) leader = other;
+        if (!leader || leader.speedMps >= ALL_WAY_STOP_EXIT_MOVING_MPS) return true;
+        return leader.distanceM - leader.lengthM / 2 >= farEdgeM + car.lengthM + ALL_WAY_STOP_EXIT_GAP_M;
     }
 
     /** _allWayStopQueuedCars() for one approach `gate` - its own lanes only, not the roads joined onto it. */

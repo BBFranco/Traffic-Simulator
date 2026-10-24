@@ -389,8 +389,11 @@ async function main() {
                 console.warn(`  !!! LOCKUP on ${condition.key}, seed ${seed}, at ${lockupJunctions(lockup)}: ${JSON.stringify(lockup)}`);
             } else if (lockup.gridlock) {
                 // Started while junctions were dark: gridlock under all-way stops, a result to report - not a fault.
-                const g = lockup.gridlock.firstCycle ?? lockup.gridlock.locked;
-                run.gridlock = `${condition.key}/${seed} at ${g.nodeIds?.join(', ') ?? g.nodeId} (${Math.round((g.atS - warmup.warmupTicks * args.dt) / 60)} min)`;
+                // A post-restore lockup next to a dark-period jam (its aftermath) is listed with it.
+                const { firstCycle, locked, aftermath } = lockup.gridlock;
+                const g = firstCycle ?? locked ?? aftermath.firstCycle ?? aftermath.locked;
+                const after = aftermath ? `; aftermath after restore at ${(aftermath.firstCycle?.nodeIds ?? [aftermath.locked.nodeId]).join(', ')}` : '';
+                run.gridlock = `${condition.key}/${seed} at ${g.nodeIds?.join(', ') ?? g.nodeId} (${Math.round((g.atS - warmup.warmupTicks * args.dt) / 60)} min)${after}`;
                 console.warn(`  ! gridlock while dark on ${condition.key}, seed ${seed}: ${run.gridlock}`);
             } else if (lockup.starved) {
                 // Saturation, not a fault: something ahead still moved. Listed at the end, doesn't fail the batch.

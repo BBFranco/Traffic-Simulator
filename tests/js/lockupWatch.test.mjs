@@ -162,3 +162,24 @@ test('a lane car is in the box past its stop line and short of the far kerb, not
     assert.equal(at(107.2), 'x'); // rear (104.95) still short of the far kerb (105)
     assert.equal(at(108), null); // clear
 });
+
+test('after a restore, a lit lockup next to a junction that jammed while dark is aftermath, not a fault', () => {
+    const jammed = ringCar(1);
+    const later = ringCar(2, 1.5);
+    const engine = { ...fakeEngine([jammed, later]), darkNodes: new Set(['n1']) };
+    const watch = new LockupWatch(engine);
+    const end = 400 + LOCKUP_STILL_S + LOCK_CONFIRM_S;
+    for (let t = 0; t <= end; t += 1) {
+        engine.simTimeS = t;
+        if (t === 350) {
+            engine.darkNodes = new Set(); // power back after the dark jam at n1 has stood 300+ s
+            engine.turningCars = [later]; // the jam clears; a new queue forms there, lit
+        }
+        if (t === 400) later.speedMps = 0;
+        watch.observe();
+    }
+
+    const report = watch.report();
+    assert.equal(report.isLockup, false, JSON.stringify(report));
+    assert.equal(report.gridlock.aftermath.locked.carId, 2);
+});

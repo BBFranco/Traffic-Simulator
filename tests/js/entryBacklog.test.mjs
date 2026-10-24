@@ -4,14 +4,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SimulationEngine } from '../../resources/js/sim/engine.js';
+import { ENTRY_BACKLOG_BALK_S, SimulationEngine } from '../../resources/js/sim/engine.js';
 
 const DT = 0.1;
 const admit = SimulationEngine.prototype._admitArrival;
 
 /** A lane whose arrivals come every `gapS`, on a fake engine clock; `step(blocked)` advances one tick. */
 function lane(gapS) {
-    const engine = { simTimeS: 0, accounting: { arrivalsQueued: 0, backlogWaitS: 0 } };
+    const engine = { simTimeS: 0, accounting: { arrivalsQueued: 0, backlogWaitS: 0, arrivalsBalked: 0 } };
     const state = { timerS: 0, nextArrivalS: gapS };
     let draws = 0;
     const step = (blocked) => {
@@ -66,4 +66,17 @@ test('while others still queue, a new arrival joins the back of the queue instea
     step(false);
     assert.ok(engine.accounting.arrivalsQueued >= queued);
     assert.ok(state.backlog.every((t, i, all) => i === 0 || all[i - 1] <= t), 'arrival order kept');
+});
+
+test('an arrival that has queued ENTRY_BACKLOG_BALK_S gives up: counted as balked, its time outside kept', () => {
+    const gapS = 60;
+    const { engine, state, step } = lane(gapS);
+    const ticks = Math.round((ENTRY_BACKLOG_BALK_S + 3 * gapS) / DT);
+    for (let i = 0; i < ticks; i += 1) step(true);
+    // Arrivals every 60 s for 18 min, the oldest three have stood 15 min or more by now.
+    assert.equal(engine.accounting.arrivalsQueued, 18);
+    assert.equal(engine.accounting.arrivalsBalked, 3);
+    assert.equal(state.backlog.length, 15);
+    assert.ok(state.backlog.every((arrivedS) => engine.simTimeS - arrivedS < ENTRY_BACKLOG_BALK_S));
+    assert.ok(engine.accounting.backlogWaitS > 3 * ENTRY_BACKLOG_BALK_S, 'each balked car keeps its 15 min in the delay');
 });

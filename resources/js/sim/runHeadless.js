@@ -715,6 +715,8 @@ function measuredDiagnostics(engine, atMeasureStart) {
     return {
         arrivalsLost: Math.round(engine.accounting.arrivalsLost - atMeasureStart.arrivalsLost),
         arrivalsQueued: engine.accounting.arrivalsQueued - atMeasureStart.arrivalsQueued,
+        /** Of those, the ones that queued engine.js's ENTRY_BACKLOG_BALK_S and gave up - trips cancelled or taken elsewhere. */
+        arrivalsBalked: engine.accounting.arrivalsBalked - atMeasureStart.arrivalsBalked,
         roundaboutOverruns: engine.accounting.roundaboutOverruns - atMeasureStart.roundaboutOverruns,
         lockup: engine.lockupWatch.report(),
     };
@@ -722,8 +724,8 @@ function measuredDiagnostics(engine, atMeasureStart) {
 
 /** The engine's running delay counters - what diagnostics.delay and its stage split are differences of. */
 function delayCounters(engine) {
-    const { waitAccruedS, backlogWaitS, arrivalsQueued } = engine.accounting;
-    return { waitAccruedS, backlogWaitS, arrivalsQueued };
+    const { waitAccruedS, backlogWaitS, arrivalsQueued, arrivalsBalked } = engine.accounting;
+    return { waitAccruedS, backlogWaitS, arrivalsQueued, arrivalsBalked };
 }
 
 /**
@@ -762,6 +764,7 @@ function delayByStage(engine, delayMarks) {
                     onNetworkVehH: round((to.waitAccruedS - from.waitAccruedS) / 3600, 2),
                     entryBacklogVehH: round((to.backlogWaitS - from.backlogWaitS) / 3600, 2),
                     arrivalsQueued: to.arrivalsQueued - from.arrivalsQueued,
+                    arrivalsBalked: to.arrivalsBalked - from.arrivalsBalked,
                 },
             ];
         })
