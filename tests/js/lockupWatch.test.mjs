@@ -2,7 +2,7 @@
 // behind a queue that still moves is starved (saturation) - Franco's call, 2026-10-09.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LockupWatch, LOCKUP_STILL_S, LOCK_CONFIRM_S, BOX_STUCK_S } from '../../resources/js/sim/lockupWatch.js';
+import { LockupWatch, LOCKUP_STILL_S, LOCK_CONFIRM_S, BOX_STUCK_S, AFTERMATH_REACH_M } from '../../resources/js/sim/lockupWatch.js';
 import { buildPolylinePath } from '../../resources/js/sim/car.js';
 
 /** A car going round junction n1 - a turn path is all the watch needs to place it. */
@@ -182,4 +182,61 @@ test('after a restore, a lit lockup next to a junction that jammed while dark is
     const report = watch.report();
     assert.equal(report.isLockup, false, JSON.stringify(report));
     assert.equal(report.gridlock.aftermath.locked.carId, 2);
+});
+
+test('after a restore, a lit queue that runs back from a junction near a dark jam is aftermath however far its tail stands', () => {
+    const farX = 2 * AFTERMATH_REACH_M;
+    const jammed = ringCar(1);
+    const head = ringCar(5, 1.5); // at the dark jam's junction
+    const tail = { ...ringCar(farX, 1.5), id: 6 }; // queued back to a junction beyond AFTERMATH_REACH_M of it
+    tail.waitsOn = head;
+    const engine = { ...fakeEngine([jammed]), darkNodes: new Set(['n1']) };
+    engine.nodesInfo.set('n2', { node: { id: 'n2', point: { x: farX, y: 0 } }, controllerType: 'signal' });
+    const watch = new LockupWatch(engine);
+    const end = 400 + LOCKUP_STILL_S + LOCK_CONFIRM_S;
+    for (let t = 0; t <= end; t += 1) {
+        engine.simTimeS = t;
+        if (t === 350) {
+            engine.darkNodes = new Set(); // power back after the dark jam at n1 has stood 300+ s
+            engine.turningCars = [head, tail]; // the jam clears; a new queue forms from n1 back past n2, lit
+        }
+        if (t === 400) head.speedMps = tail.speedMps = 0;
+        watch.observe();
+    }
+
+    const report = watch.report();
+    assert.equal(report.isLockup, false, JSON.stringify(report));
+    assert.ok([5, 6].includes(report.gridlock.aftermath.locked.carId));
+});
+
+// Prospect & Hilda (2026-10-25): two entries let in for one gap at the exit; the one that got there second was refused
+// at its yield line, let in but out of roundaboutExitHeld, and with no link read as a lockup on its own.
+function roundaboutEngine(entrant, blocker) {
+    const exitLanes = [{ cars: [blocker] }];
+    const gate = { approach: { id: 'a' }, carriageway: { id: 'in' }, stopLineDistanceM: 100 };
+    return {
+        ...fakeEngine([]),
+        carriagewayState: new Map([['in', { lanes: [{ cars: [entrant] }] }], ['out', { lanes: exitLanes }]]),
+        carriagewaysById: new Map([['in', { gates: [] }], ['out', { gates: [] }]]),
+        nodesInfo: new Map([
+            ['r', { node: { id: 'r', point: { x: 0, y: 0 }, roundabout: { mouthM: 5 } }, controllerType: 'roundabout', arterialGates: [gate], crossGates: [], roundaboutExitHeld: new Set() }],
+        ]),
+        _roundaboutArrivals: () => [], // let in: no arrival any more
+        _roundaboutTarget: () => ({ lanes: exitLanes, laneIndex: 0, centreM: 200 }),
+        _roundaboutExitFull: () => true,
+    };
+}
+
+test('a car let into a roundabout but refused at its yield line for want of room waits on the car blocking its exit', () => {
+    const entrant = { id: 1, distanceM: 99, lengthM: 4.5, speedMps: 0, releasedNodeIds: new Set(['r']), turnPlan: { nodeId: 'r' } };
+    const blocker = { id: 2, distanceM: 208, lengthM: 4.5, speedMps: 0 };
+    const cars = new LockupWatch(roundaboutEngine(entrant, blocker))._liveCars();
+    assert.equal(cars.find((entry) => entry.car === entrant).waitsOn, blocker);
+});
+
+test('a car not yet let in, and not held for its exit, is not linked to the exit', () => {
+    const entrant = { id: 1, distanceM: 99, lengthM: 4.5, speedMps: 0, releasedNodeIds: new Set(), turnPlan: { nodeId: 'r' } };
+    const blocker = { id: 2, distanceM: 208, lengthM: 4.5, speedMps: 0 };
+    const cars = new LockupWatch(roundaboutEngine(entrant, blocker))._liveCars();
+    assert.equal(cars.find((entry) => entry.car === entrant).waitsOn, null);
 });

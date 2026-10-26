@@ -35,7 +35,7 @@
  * in its cycle) - a car that joins a dark-period jam after the power is back
  * is that jam, not a new one (long-outage pilot, 2026-10-23). And one that
  * starts after the power is back, within AFTERMATH_REACH_M of a junction that
- * jammed while dark, is that jam's aftermath - a queue held at a lit signal
+ * jammed while dark - it, or any junction its queue runs back through - is that jam's aftermath - a queue held at a lit signal
  * because the road past it is still blocked, its chain ending at the red light
  * (Franco, 2026-10-24). Both go into report().gridlock.
  *
@@ -174,7 +174,9 @@ export class LockupWatch {
                     this.darkJamNodeIds.add(this._nearestNodeId(car));
                 }
             } else if (stuck) {
-                key = this._isAftermath([this._nearestNodeId(car)], nowS - seconds) ? 'longestLockedAftermath' : 'longestLocked';
+                const startS = nowS - seconds;
+                const aftermath = this._isAftermath([this._nearestNodeId(car)], startS) || this._isAftermath(this._chainNodeIds(car, waitsOn), startS);
+                key = aftermath ? 'longestLockedAftermath' : 'longestLocked';
             }
             if (seconds > (this[key]?.seconds ?? 0)) this[key] = { seconds, ...this._describe(car), atS: nowS };
         }
@@ -254,6 +256,21 @@ export class LockupWatch {
             if (car.distanceM > gate.stopLineDistanceM && car.distanceM - car.lengthM / 2 < gate.centreDistanceM + (crossedWidthM ?? 0) / 2) return gate.node.id;
         }
         return null;
+    }
+
+    /**
+     * The junctions along `car`'s waits-on chain, itself to the head of its queue. A lit lockup whose queue runs back
+     * from a dark-period jam is that jam's aftermath wherever its tail stands: Prospect & Hilda, 515 m from the nearest
+     * dark jam, stood behind a Prospect queue held at Grosvenor, 293 m from one (long-protocol give-up batch, 2026-10-25).
+     */
+    _chainNodeIds(car, waitsOn) {
+        const seen = new Set();
+        const nodeIds = new Set();
+        for (let at = car; at && !seen.has(at) && seen.size < MAX_CHAIN; at = waitsOn.get(at)) {
+            seen.add(at);
+            nodeIds.add(this._nearestNodeId(at));
+        }
+        return [...nodeIds];
     }
 
     /** When the jam `car` is stuck in began: the earliest standstill on its waits-on chain, itself to the head of its queue. */
@@ -339,15 +356,24 @@ export class LockupWatch {
         return typeof ahead.id === 'number' ? ahead : null;
     }
 
-    /** A car held at a roundabout's yield line because its way out is backed up waits on whoever blocks that exit. */
+    /**
+     * A car held at a roundabout's yield line because its way out is backed up waits on whoever blocks that exit - one
+     * not yet let in (roundaboutExitHeld), or one let in that _driveIntoRoundabout() then refused because the room went
+     * first: two entries let in for one gap, the other got there first (Prospect & Hilda, 2026-10-25). Let in, it is no
+     * arrival any more, and with no link its chain stopped at itself - a queue that stood behind a jam read as locked.
+     */
     _addRoundaboutExitWaits(result) {
         const { engine } = this;
         const byCar = new Map(result.map((entry) => [entry.car, entry]));
         for (const info of engine.nodesInfo.values()) {
-            if (info.controllerType !== 'roundabout' || !info.roundaboutExitHeld?.size) continue;
-            for (const arrival of engine._roundaboutArrivals(info)) {
+            if (info.controllerType !== 'roundabout') continue;
+            const held = [
+                ...(info.roundaboutExitHeld?.size ? engine._roundaboutArrivals(info).filter((a) => a.gate && info.roundaboutExitHeld.has(a.car)) : []),
+                ...this._refusedRoundaboutEntrants(info),
+            ];
+            for (const arrival of held) {
                 const entry = byCar.get(arrival.car);
-                if (!entry || !info.roundaboutExitHeld.has(arrival.car) || !arrival.gate) continue;
+                if (!entry) continue;
                 const target = engine._roundaboutTarget(arrival.car, arrival.gate);
                 if (!target) continue;
                 const exitDistanceM = target.centreM + info.node.roundabout.mouthM + ROUNDABOUT_EXIT_RUN_M;
@@ -358,6 +384,25 @@ export class LockupWatch {
                 entry.waitsOn = blockerAt(lane, exitDistanceM, arrival.car.lengthM) ?? nearestFrom(lane, exitDistanceM - LANDING_REACH_M) ?? entry.waitsOn;
             }
         }
+    }
+
+    /** The car at the front of each lane into the roundabout, short of its yield line, let in there but with no room yet where it comes out. */
+    _refusedRoundaboutEntrants(info) {
+        const { engine } = this;
+        const nodeId = info.node.id;
+        const result = [];
+        for (const gate of [...info.arterialGates, ...info.crossGates]) {
+            if (!gate.approach) continue;
+            const lanes = gate.carriageway ? engine.carriagewayState.get(gate.carriageway.id)?.lanes : engine.connectorState.get(gate.connector.id)?.[gate.dirKey]?.lanes;
+            for (const lane of lanes ?? []) {
+                // Front first, as in engine._roundaboutArrivals().
+                const car = lane.cars.find((c) => c.distanceM < gate.stopLineDistanceM);
+                if (!car?.releasedNodeIds?.has(nodeId) || car.turnPlan?.nodeId !== nodeId) continue;
+                const target = engine._roundaboutTarget(car, gate);
+                if (target && engine._roundaboutExitFull(info.node, target, car)) result.push({ car, gate });
+            }
+        }
+        return result;
     }
 
     _findCycles(cars, nowS) {
