@@ -599,8 +599,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null, 
         const topUp = (takenIndex) => {
             while (started < jobs.length && started < takenIndex + pool.size * 3) {
                 const job = jobs[started];
-                batchMonitor.jobStarted(job.condition.key);
-                job.result = pool.run('run', job.options).then((result) => {
+                job.result = pool.run('run', job.options, () => batchMonitor.jobStarted(job.condition.key)).then((result) => {
                     completed += 1;
                     batchMonitor.jobFinished(job.condition.key, job.isStored);
                     updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs - batchPausedMs());
@@ -881,9 +880,10 @@ class BatchWorkerPool {
         }
     }
 
-    run(task, options) {
+    /** `onStart` is called when a worker actually takes the task, not when it is queued. */
+    run(task, options, onStart) {
         return new Promise((resolve, reject) => {
-            this.queue.push({ task, options, resolve, reject });
+            this.queue.push({ task, options, onStart, resolve, reject });
             this._dispatch();
         });
     }
@@ -906,7 +906,7 @@ class BatchWorkerPool {
                 worker = createBatchWorker();
                 this.all.push(worker);
             }
-            const { task, options, resolve, reject } = this.queue.shift();
+            const { task, options, onStart, resolve, reject } = this.queue.shift();
             const id = ++this.nextId;
             const cleanUp = () => {
                 worker.removeEventListener('message', onMessage);
@@ -929,6 +929,7 @@ class BatchWorkerPool {
             worker.addEventListener('message', onMessage);
             worker.addEventListener('error', onError);
             worker.postMessage({ id, task, options });
+            onStart?.();
         }
     }
 
@@ -1060,19 +1061,20 @@ const batchMonitor = {
         const planned = new Map(plan.map((entry) => [entry.condition.key, entry]));
         this.state.conditions = matrix.map((condition) => {
             const entry = planned.get(condition.key);
-            const saved = entry ? entry.reps.filter((rep) => rep.isStored).length : REPS_PER_CONDITION;
             const isOutage = condition.powerState !== 'normal';
+            // An outage condition's plan keeps its stored reps (rerun for the curve); a normal one's drops them.
+            const saved = !entry ? REPS_PER_CONDITION : isOutage ? entry.reps.filter((rep) => rep.isStored).length : REPS_PER_CONDITION - entry.reps.length;
             return {
                 condition,
-                saved: entry ? saved : REPS_PER_CONDITION,
+                saved,
                 toRun: entry ? entry.reps.filter((rep) => !rep.isStored).length : 0,
                 reruns: entry && isOutage ? saved : 0,
                 finished: 0,
                 rerunsDone: 0,
                 running: 0,
                 isOutage,
-                // A condition held in full before this run already posted its curve.
-                curve: entry ? 'pending' : isOutage ? 'posted' : null,
+                // Only an outage condition has a curve; one held in full before this run already posted it.
+                curve: !isOutage ? null : entry ? 'pending' : 'posted',
             };
         });
         this.state.runsTotal = plan.reduce((sum, { reps }) => sum + reps.length, 0);
