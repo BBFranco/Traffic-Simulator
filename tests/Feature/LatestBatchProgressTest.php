@@ -59,8 +59,32 @@ class LatestBatchProgressTest extends TestCase
             ->assertJsonPath('warmup.warmupTicks', 31800)
             ->assertJsonPath('build.sim', 'f00d')
             ->assertJsonPath('demandOverrides.stanza.max', 8)
+            ->assertJsonPath('protocol', 'short')
             ->assertJsonCount(2, 'runs')
             ->assertJsonFragment(['seed' => 20260102, 'controllerMode' => 'fixed', 'sensorMode' => null, 'powerState' => 'load_shedding']);
+    }
+
+    public function test_it_reports_a_long_protocol_batch(): void
+    {
+        $stored = (string) Str::uuid();
+        $this->postJson(route('simulation-runs.store'), ['runs' => [
+            $this->runPayload($stored, 20260101, ['raw_config_json' => ['warmupTicks' => 31800, 'protocol' => 'long']]),
+        ]])->assertCreated();
+
+        $this->actingAs(User::factory()->create())
+            ->getJson(route('results.latest-batch-progress'))
+            ->assertOk()
+            ->assertJsonPath('protocol', 'long');
+
+        // Posted before the page stored the protocol (runBatch.mjs --protocol=long): read off the demand profile.
+        $this->postJson(route('simulation-runs.store'), ['runs' => [
+            $this->runPayload((string) Str::uuid(), 20260101, ['raw_config_json' => ['warmupTicks' => 31800, 'demandProfile' => ['id' => 'joubert-2000-evening']]]),
+        ]])->assertCreated();
+
+        $this->actingAs(User::factory()->create())
+            ->getJson(route('results.latest-batch-progress'))
+            ->assertOk()
+            ->assertJsonPath('protocol', 'long');
     }
 
     public function test_it_is_null_without_any_batch(): void

@@ -93,6 +93,18 @@
                 </span>
             </label>
 
+            <label class="mt-3 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
+                <input type="checkbox" id="batch-modal-long" class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
+                <span>
+                    <span class="font-semibold">Long protocol (real-duration outages)</span>
+                    <span class="block text-slate-500 dark:text-slate-400">
+                        Measures 16:15-22:30 on the evening demand profile, with a 4 h total blackout or 2 h + 2 h zoned load shedding from 16:30 -
+                        as <code>runBatch.mjs --protocol=long</code>. Each run takes about 10-90 minutes and up to ~450 MB, so set fewer runs at a time.
+                        Unticked: the 90-minute window with 15-minute outages.
+                    </span>
+                </span>
+            </label>
+
             <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
                 <button type="button" id="batch-modal-cancel" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
                     Cancel

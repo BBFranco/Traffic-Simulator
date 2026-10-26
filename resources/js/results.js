@@ -40,7 +40,8 @@ import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
-import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from './sim/batchSchedule.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE, LONG_PROTOCOL } from './sim/batchSchedule.js';
+import { EVENING_PROFILE } from './sim/demandProfile.js';
 import { describeLayoutDrift } from './sim/layoutDrift.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
@@ -392,6 +393,25 @@ const DURATION_TICKS = MEASURED_TICKS; // sim/batchSchedule.js: 90 measured minu
 // Load-shedding conditions cut power 15 min into the MEASURED window and restore it at 30 min (sim/batchSchedule.js).
 const DT = 0.1;
 const BASE_SEED = 20260101;
+
+/**
+ * The run window and outage schedule a batch runs on, as runBatch.mjs's --protocol sets them. 'long' is batchSchedule.js's
+ * LONG_PROTOCOL: 375 measured minutes from 16:15 on the evening demand profile, a 4 h total blackout or 2 h + 2 h zoned
+ * load shedding from 16:30, rows every 5 s. The warm-up probe stays on the short window either way (runBatch.mjs's
+ * probeWarmup()): the long protocol's warm-up ends at 16:15, on lighter demand than the peak it settled under.
+ */
+function protocolSettings(protocol) {
+    if (protocol === 'long') {
+        return {
+            durationTicks: LONG_PROTOCOL.measuredTicks,
+            powerOutageStartTick: LONG_PROTOCOL.powerOutageStartTick,
+            powerOutageEndTick: LONG_PROTOCOL.powerOutageEndTick,
+            rollingSchedule: LONG_PROTOCOL.rollingSchedule,
+            runOptions: { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds },
+        };
+    }
+    return { durationTicks: DURATION_TICKS, powerOutageStartTick: POWER_OUTAGE_START_TICK, powerOutageEndTick: POWER_OUTAGE_END_TICK, rollingSchedule: ROLLING_SCHEDULE, runOptions: {} };
+}
 /** Batch the network writes - don't POST 600 times (build step 17). */
 const POST_BATCH_SIZE = 25;
 
@@ -482,9 +502,11 @@ if (batchConfirmButton) batchConfirmButton.textContent = `Run batch (${batchRunC
  *
  * @param {Record<string, {min: number, max: number, saturationFlowPerLanePerHour: number}>} demandOverrides
  *   Keyed by street id (arterial or connector), spec §10-11.
+ * @param {'short'|'long'} protocol protocolSettings()'s run window - a resume keeps the batch's own.
  */
-async function runBatch(demandOverrides, routingMode = 'random', resume = null) {
+async function runBatch(demandOverrides, routingMode = 'random', resume = null, protocol = 'short') {
     if (batchRunning) return;
+    const schedule = protocolSettings(resume?.protocol ?? protocol);
     batchRunning = true;
     batchButton.disabled = true;
     resumeBanner?.classList.add('hidden');
@@ -512,7 +534,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         const batchStartedAt = resume?.batchStartedAt ?? new Date().toISOString();
         // A resume keeps the batch's own stamp, as runBatch.mjs --resume does - confirmResume() has checked the sim matches.
         const build = resume?.build ?? (await currentBuildStamp(__BUILD_STAMP__));
-        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
+        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, protocol: resume?.protocol ?? protocol, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
 
         const handPicked = handPickedWarmup();
         if (!resume && !handPicked) batchMonitor.phase('Warm-up probe');
@@ -558,13 +580,14 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
                     warmupTicks: warmup.warmupTicks,
-                    powerOutageStartTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_START_TICK : null,
-                    powerOutageEndTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_END_TICK : null,
-                    rollingSchedule: condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null,
+                    powerOutageStartTick: condition.powerState === 'load_shedding' ? schedule.powerOutageStartTick : null,
+                    powerOutageEndTick: condition.powerState === 'load_shedding' ? schedule.powerOutageEndTick : null,
+                    rollingSchedule: condition.powerState === 'rolling_blackout' ? schedule.rollingSchedule : null,
                     corridorConfig,
-                    durationTicks: DURATION_TICKS,
+                    durationTicks: schedule.durationTicks,
                     dt: DT,
                     routingMode,
+                    ...schedule.runOptions,
                 },
             }))
         );
@@ -587,7 +610,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         for (const { condition, reps } of plan) {
             let recoveryAcc = null;
             let darkWindows = null;
-            const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
+            const rollingSchedule = condition.powerState === 'rolling_blackout' ? schedule.rollingSchedule : null;
 
             for (let rep = 0; rep < reps.length; rep += 1) {
                 topUp(jobIndex);
@@ -601,6 +624,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                     const payload = toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build });
                     // What a resume needs to run the same demand again.
                     payload.raw_config_json.demandOverrides = demandOverrides;
+                    payload.raw_config_json.protocol = resume?.protocol ?? protocol;
                     pending.push(payload);
                 }
 
@@ -625,8 +649,8 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                         corridorId: corridorConfig.id,
                         dt: DT,
                         // A rolling blackout's curve spans its first cut to its final restore.
-                        powerOutageStartTick: rollingSchedule ? rollingSchedule[0].fromTick : POWER_OUTAGE_START_TICK,
-                        powerOutageEndTick: rollingSchedule ? rollingSchedule[rollingSchedule.length - 1].toTick : POWER_OUTAGE_END_TICK,
+                        powerOutageStartTick: rollingSchedule ? rollingSchedule[0].fromTick : schedule.powerOutageStartTick,
+                        powerOutageEndTick: rollingSchedule ? rollingSchedule[rollingSchedule.length - 1].toTick : schedule.powerOutageEndTick,
                         routingMode,
                         powerState: condition.powerState,
                         darkWindows,
@@ -727,7 +751,7 @@ async function confirmResume(progress) {
 
 resumeButton?.addEventListener('click', async () => {
     if (!unfinishedBatch || batchRunning || !(await confirmResume(unfinishedBatch))) return;
-    runBatch(unfinishedBatch.demandOverrides ?? {}, unfinishedBatch.routingMode ?? 'random', unfinishedBatch);
+    runBatch(unfinishedBatch.demandOverrides ?? {}, unfinishedBatch.routingMode ?? 'random', unfinishedBatch, unfinishedBatch.protocol ?? 'short');
 });
 
 checkForUnfinishedBatch();
@@ -1005,8 +1029,8 @@ const batchMonitor = {
     state: null,
     frame: null,
 
-    begin({ batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, build }) {
-        this.state = { batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, build, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
+    begin({ batchId, batchStartedAt, corridorId, routingMode, protocol, resumed, storedCount, poolSize, build }) {
+        this.state = { batchId, batchStartedAt, corridorId, routingMode, protocol, resumed, storedCount, poolSize, build, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
         this.render();
     },
 
@@ -1100,11 +1124,12 @@ const batchMonitor = {
         const s = this.state;
         if (!s) return;
         const routing = s.routingMode === 'destination' ? 'Destination routing' : 'Random turning';
+        const protocolLabel = s.protocol === 'long' ? 'Long protocol (16:15-22:30, 4 h outages)' : 'Short protocol (90 min, 15 min outages)';
         const kind = s.resumed ? `resumed batch (${s.storedCount} runs saved earlier)` : 'new batch';
         const warmupMin = s.warmup ? Math.round((s.warmup.warmupTicks * DT) / 60) : null;
         const code = buildLabel(s.build);
         if (batchMeta) {
-            batchMeta.textContent = [routing, s.corridorId, kind, code, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
+            batchMeta.textContent = [routing, protocolLabel, s.corridorId, kind, code, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
         }
 
         const elapsedMs = performance.now() - s.startedAtMs - batchPausedMs();
@@ -1112,6 +1137,7 @@ const batchMonitor = {
         const curves = s.conditions.filter((row) => row.isOutage);
         const facts = [
             ['Routing', routing],
+            ['Protocol', protocolLabel],
             ['Corridor', s.corridorId],
             ['Batch', s.resumed ? `Resumed · ${s.storedCount} saved earlier` : 'New'],
             ['Batch id', s.batchId.slice(0, 8), s.batchId],
@@ -1372,8 +1398,9 @@ document.getElementById('batch-modal-confirm')?.addEventListener('click', () => 
         };
     });
     const routingMode = document.getElementById('batch-modal-destination')?.checked ? 'destination' : 'random';
+    const protocol = document.getElementById('batch-modal-long')?.checked ? 'long' : 'short';
     closeBatchModal();
-    runBatch(overrides, routingMode);
+    runBatch(overrides, routingMode, null, protocol);
 });
 
 /** Clones corridorConfig and overwrites each street's demand with the modal's values. */
