@@ -403,6 +403,9 @@ const BASE_SEED = 20260101;
 function protocolSettings(protocol) {
     if (protocol === 'long') {
         return {
+            // The 53 min (31 800 ticks) every Phase 3 long batch ran on (runBatch.mjs --warmup-ticks=31800), so the long
+            // batch needs no probe and no ?warmup= link; a ?warmup= still overrides it.
+            warmup: { warmupTicks: Math.round((LONG_PROTOCOL_WARMUP_MIN * 60) / DT), stationary: null, drifting: null, settle: null },
             durationTicks: LONG_PROTOCOL.measuredTicks,
             powerOutageStartTick: LONG_PROTOCOL.powerOutageStartTick,
             powerOutageEndTick: LONG_PROTOCOL.powerOutageEndTick,
@@ -410,8 +413,9 @@ function protocolSettings(protocol) {
             runOptions: { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds },
         };
     }
-    return { durationTicks: DURATION_TICKS, powerOutageStartTick: POWER_OUTAGE_START_TICK, powerOutageEndTick: POWER_OUTAGE_END_TICK, rollingSchedule: ROLLING_SCHEDULE, runOptions: {} };
+    return { warmup: null, durationTicks: DURATION_TICKS, powerOutageStartTick: POWER_OUTAGE_START_TICK, powerOutageEndTick: POWER_OUTAGE_END_TICK, rollingSchedule: ROLLING_SCHEDULE, runOptions: {} };
 }
+const LONG_PROTOCOL_WARMUP_MIN = 53;
 /** Batch the network writes - don't POST 600 times (build step 17). */
 const POST_BATCH_SIZE = 25;
 
@@ -536,7 +540,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null, 
         const build = resume?.build ?? (await currentBuildStamp(__BUILD_STAMP__));
         batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, protocol: resume?.protocol ?? protocol, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
 
-        const handPicked = handPickedWarmup();
+        const handPicked = handPickedWarmup() ?? schedule.warmup;
         if (!resume && !handPicked) batchMonitor.phase('Warm-up probe');
         const warmup = resume?.warmup ?? handPicked ?? (await probeWarmup(pool, corridorConfig, routingMode));
         batchMonitor.setWarmup(warmup);
