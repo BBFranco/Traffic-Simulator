@@ -207,9 +207,7 @@
     </div>
     <div id="fireworks-container" class="hidden pointer-events-none fixed inset-0 z-50"></div>
 
-    {{-- ONE filter row, scoping everything below it. The Scope select is client-side only,
-         same mechanism as "Compare against fixed-time" below - every chart already carries
-         all three scopes' numbers, so switching it never refetches. --}}
+    {{-- ONE filter row, scoping everything below it. --}}
     <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
         <div>
             <label for="filter-corridor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Corridor</label>
@@ -228,220 +226,21 @@
                 @endforeach
             </select>
         </div>
-        <div>
-            <label for="filter-its-target" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Compare against fixed-time</label>
-            <select id="filter-its-target" class="{{ $select }}">
-                @include('results.partials.its-target-options')
-            </select>
-        </div>
-        <div>
-            <label for="filter-scope" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Scope</label>
-            <select id="filter-scope" class="{{ $select }}">
-                @foreach ($scopeLabels as $scope => $label)
-                    <option value="{{ $scope }}" {{ $loop->first ? 'selected' : '' }}>{{ $label }}</option>
-                @endforeach
-            </select>
-        </div>
         <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
-            Corridor filters every chart, table, and the batch-run corridor; compare-against picks
-            which ITS configuration the cards below are paired against fixed-time; scope picks
-            which roads' traffic they measure.
+            Corridor and routing pick the batch; the report below is the same one the PDF export prints, one section at a time.
         </p>
     </div>
 
-    {{-- ============================================ the research question --}}
-    <div class="mb-4">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-            Paired comparison against Webster-timed fixed-time control on the same seeds, across every
-            stat block below.
-        </p>
-    </div>
-
-    <section class="mb-8">
-        <div class="grid gap-3 sm:grid-cols-2" id="research-question-cards">
-            @include('results.partials.research-question-cards')
-        </div>
-    </section>
-
-    {{-- ============================================ more headline metrics --}}
-    <div id="metric-section-groups">
-        @include('results.partials.metric-section-groups')
-    </div>
-
-    {{-- ========================================================= bar trio --}}
-    <section class="mb-8">
-        <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <div>
-                <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Per-condition means</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400">
-                    Each controller mode under each power state. Adaptive's bars follow the
-                    "Compare against fixed-time" selection above.
-                </p>
-            </div>
-            {{-- Shared legend: identity is text + swatch, never colour alone. --}}
-            <ul class="flex flex-wrap items-center gap-x-4 gap-y-1">
-                @foreach ($controllerModes as $mode)
-                    <li class="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300">
-                        <span class="h-2.5 w-2.5 rounded-full" style="background-color: {{ $modeColours[$mode] }}"></span>
-                        {{ $modeLabels[$mode] }}
-                    </li>
-                @endforeach
-            </ul>
-        </div>
-
-        <div class="grid gap-4 xl:grid-cols-3">
-            @foreach ([
-                ['id' => 'chart-wait', 'title' => 'Average wait time', 'unit' => 'seconds per vehicle', 'better' => 'lower is better'],
-                ['id' => 'chart-throughput', 'title' => 'Throughput', 'unit' => 'vehicles cleared per minute', 'better' => 'higher is better'],
-                ['id' => 'chart-cleared', 'title' => 'Cleared without stopping', 'unit' => '% of vehicles', 'better' => 'higher is better'],
-            ] as $chart)
-                {{-- min-w-0 matters: without it the grid item takes its min-content
-                     width from the canvas, the canvas sizes itself from the item, and
-                     the chart overflows the card. --}}
-                <figure class="min-w-0 {{ $card }} p-4">
-                    <figcaption class="mb-1">
-                        <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">{{ $chart['title'] }}</span>
-                        <span class="text-[10px] text-slate-500">{{ $chart['unit'] }} · {{ $chart['better'] }}</span>
-                    </figcaption>
-                    <div class="relative h-[260px] w-full">
-                        <canvas id="{{ $chart['id'] }}"></canvas>
-                    </div>
-                </figure>
-            @endforeach
-        </div>
-
-        {{-- Table twin for the three charts above. --}}
-        <details class="mt-3 {{ $card }}">
-            <summary class="cursor-pointer px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
-                Show data table
-            </summary>
-            <div class="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
-                <table id="per-condition-table" class="w-full min-w-[720px] text-left text-xs">
-                    <thead class="{{ $tableHead }}">
-                        <tr>
-                            <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
-                            <th scope="col" class="px-4 py-2 font-semibold">Power state</th>
-                            <th scope="col" class="px-4 py-2 font-semibold">Sensor</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Runs</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Cleared w/o stop (%, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Recovery - thru (s, recovered/runs)</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                        @include('results.partials.per-condition-rows')
-                    </tbody>
-                </table>
-            </div>
-        </details>
-    </section>
-
-    <div id="routing-metrics">
-        @include('results.partials.routing-metrics')
-    </div>
-
-    {{-- ============================================ segmented + distribution --}}
-    <section class="mb-8">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Outages, segmented</h2>
-        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            Pre-outage / during-outage / post-recovery averages, computed from cumulative
-            counters rather than a rolling window - this is what shows the real Adaptive-vs-
-            Fixed-time gap on either side of the outage, instead of a snapshot near the end of
-            the run. During the outage every controller mode runs the same all-way-stop control,
-            but each carries in the queue it had when the power went, so the during-outage figures
-            still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
-            regardless of the selector above - a single mean can't tell "everyone waits a bit
-            longer" apart from "most people are fine, a few are stranded", but that distribution
-            isn't split by arterial/side-street. Under load shedding, during-outage covers both
-            stages and post-recovery starts at the final restore.
-        </p>
-
-        <div class="overflow-x-auto {{ $card }}" id="segmented-table">
-            <table class="w-full min-w-[1080px] text-left text-xs">
-                <thead class="{{ $tableHead }}">
-                    <tr>
-                        <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
-                        <th scope="col" class="px-4 py-2 font-semibold">Power</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, run mean (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, worst run (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage thru (/min)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage thru (/min)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery thru (/min)</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                    @include('results.partials.segmented-rows')
-                </tbody>
-            </table>
-        </div>
-    </section>
-
-    {{-- ========================================================= recovery --}}
-    <section class="mb-8 grid gap-4 xl:grid-cols-2">
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - wait time</span>
-                <span class="text-[10px] text-slate-500">
-                    average wait, seconds per vehicle · shaded band marks the outage window (power is
-                    restored at its right edge) · adaptive follows the "Compare against fixed-time"
-                    selection above
-                </span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery-wait"></canvas>
-            </div>
-        </figure>
-
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - throughput</span>
-                <span class="text-[10px] text-slate-500">
-                    vehicles cleared per minute · shaded band marks the outage window (power is
-                    restored at its right edge) · adaptive follows the "Compare against fixed-time"
-                    selection above
-                </span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery"></canvas>
-            </div>
-        </figure>
-
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery - wait time</span>
-                <span class="text-[10px] text-slate-500">seconds back to pre-cut wait · lower is better · mean of recovered runs only (recovered/runs)</span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery-time-wait"></canvas>
-            </div>
-        </figure>
-
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery - throughput</span>
-                <span class="text-[10px] text-slate-500">seconds back to pre-cut throughput · lower is better · mean of recovered runs only (recovered/runs)</span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery-time"></canvas>
-            </div>
-        </figure>
+    {{-- ============================================ the report - resultsReportView.js draws the PDF's sections here --}}
+    <section id="report-view" class="mb-10" aria-live="polite">
+        <p class="text-xs text-slate-500 dark:text-slate-400">Loading the report…</p>
     </section>
 
     {{-- ====================================================== recent runs --}}
     <section class="mb-10">
         <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Recent runs</h2>
         <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            One row per completed batch run, most recent first - not filtered by the "Compare against
-            fixed-time" selection above, so it can easily show a different sensor mode than whatever
-            aggregate you're looking at. Rows matching the current selection are highlighted; the rest
-            are dimmed rather than hidden, so you can still audit recent activity generally.
+            One row per completed batch run, most recent first - a quick audit of what the database last stored.
         </p>
 
         <div class="overflow-x-auto {{ $card }}">

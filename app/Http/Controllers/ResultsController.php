@@ -1027,6 +1027,8 @@ class ResultsController extends Controller
                 : round(($config['durationTicks'] - $outageEndTicks) * ($config['dt'] ?? 0.1)),
             ...$this->outageWindows($latest->batch_id),
             'zoneAccounting' => $config['zoneAccounting'] ?? null,
+            // The long protocol's evening profile: demand falls through the window, so a pre-cut throughput level is never regained.
+            'demandProfile' => $config['demandProfile']['id'] ?? null,
             'controllerConfig' => $controllers,
             'sensorSpecs' => $sensorSpecs,
             // The coordination layers and thresholds the batch's coordinated adaptive runs used (marriage gates, platoon, tuning, levers).

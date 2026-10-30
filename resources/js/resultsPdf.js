@@ -95,7 +95,11 @@ const POWER_ORDER = ['normal', 'load_shedding', 'rolling_blackout'];
  * Throughput recovery is left out under load shedding: at the final restore throughput is already above its pre-cut level
  * (stage 2 surge), so the total scopes read 0 s, and a zone's figure is dominated by the neighbouring zone still dark.
  */
-const showsThroughputRecovery = (powers) => !powers.includes('rolling_blackout');
+/**
+ * Throughput recovery is left out under load shedding (stage 2's surge has it back before the final restore) and on a
+ * time-varying-demand batch (the evening profile falls through the window, so the pre-cut peak level is never regained).
+ */
+const showsThroughputRecovery = (powers, data = null) => !powers.includes('rolling_blackout') && !data?.batchStamp?.demandProfile;
 
 /** An outage section's subsections in order: one per scope, then these three. */
 const OUTAGE_TAIL_PARTS = ['distribution', 'routing', 'roadWaits'];
@@ -730,18 +734,7 @@ function drawCover(report, data, variants, corridorLayout) {
     doc.text(`Generated ${meta.generatedAt} · Vehicle routing: ${routing}`, PAGE.margin, 56);
 
 
-    // Every power state's runs, the rolling blackout's included; conditions are the per-sensor rows of all three states.
-    const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
-    const conditions = data.aggregatesBySensor.length;
-    const runsByPower = data.powerStates
-        .map((power) => [power, data.aggregates.filter((row) => row.power_state === power).reduce((sum, row) => sum + row.runs, 0)])
-        .filter(([, runs]) => runs);
-    const stats = [
-        ['Batch runs', totalRuns.toLocaleString(), 1],
-        ['Conditions', String(conditions), 1],
-        ['Reps / condition', conditions ? String(Math.round(totalRuns / conditions)) : 'n/a', 1],
-        ['Warm-up', data.batchWarmupLabel ?? 'n/a', 1],
-    ];
+    const { stats, coverLines } = coverFacts(data);
 
     if (data.batchStamp?.label) {
         doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...COLOURS.muted);
@@ -761,10 +754,6 @@ function drawCover(report, data, variants, corridorLayout) {
         x += boxWidth + 4;
     });
     // Under the cards, full width: the schedule outgrows a card (and grows longer with multi-hour outages).
-    const coverLines = [
-        runsByPower.length ? `Runs by power state: ${runsByPower.map(([power, runs]) => `${powerLabel(power)} ${runs.toLocaleString()}`).join(' · ')}` : null,
-        outageScheduleLine(data),
-    ].filter(Boolean);
     doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.secondary);
     coverLines.forEach((line, i) => doc.text(doc.splitTextToSize(line, CONTENT_WIDTH)[0], PAGE.margin, 99 + i * 4));
 
@@ -798,25 +787,7 @@ function drawCover(report, data, variants, corridorLayout) {
         report.y += warning.length * 3.6 + 3;
     }
     if (corridorLayout) {
-        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-        // "Coordinable" is not "coordinated": only the junctions on a strong link marry, so say how many did.
-        const marriedAtNormal = (junctions) => junctions.filter((row) => (row.married_pct_by_power?.normal ?? row.married_pct ?? 0) >= 50).length;
-        report.chartCard(
-            'Corridor layout',
-            [
-                plural(corridorLayout.arterialRoads, 'arterial road'),
-                plural(corridorLayout.sideRoads, 'side street'),
-                // park_hilda is signal-controlled but has no arterial approach, so coordination never takes it: count what could coordinate.
-                data.coordinationMetrics?.junctions?.length && data.coordinationMetrics.junctions.length < corridorLayout.signals
-                    ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')} (${marriedAtNormal(data.coordinationMetrics.junctions)} married at normal power)`
-                    : plural(corridorLayout.signals, 'signalised junction'),
-                corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
-                corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
-                corridorLayout.stopStreets && plural(corridorLayout.stopStreets, 'stop street'),
-            ].filter(Boolean).join(' · '),
-            corridorLayout.image,
-            corridorLayout.aspect
-        );
+        report.chartCard('Corridor layout', corridorCaption(corridorLayout, data), corridorLayout.image, corridorLayout.aspect);
         if (corridorLayout.zoned) drawZoneLegend(report);
     }
 
@@ -839,6 +810,50 @@ function drawCover(report, data, variants, corridorLayout) {
     );
     comparisonTable(report, data, variants, SCOPES[0], { compact: true, powers: data.powerStates });
 }
+
+/** The cover's stat cards and the lines under them - shared with the Results page's overview (resultsReportView.js). */
+function coverFacts(data) {
+    // Every power state's runs, the rolling blackout's included; conditions are the per-sensor rows of all three states.
+    const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
+    const conditions = data.aggregatesBySensor.length;
+    const runsByPower = data.powerStates
+        .map((power) => [power, data.aggregates.filter((row) => row.power_state === power).reduce((sum, row) => sum + row.runs, 0)])
+        .filter(([, runs]) => runs);
+    const stats = [
+        ['Batch runs', totalRuns.toLocaleString(), 1],
+        ['Conditions', String(conditions), 1],
+        ['Reps / condition', conditions ? String(Math.round(totalRuns / conditions)) : 'n/a', 1],
+        ['Warm-up', data.batchWarmupLabel ?? 'n/a', 1],
+    ];
+    const coverLines = [
+        runsByPower.length ? `Runs by power state: ${runsByPower.map(([power, runs]) => `${powerLabel(power)} ${runs.toLocaleString()}`).join(' · ')}` : null,
+        outageScheduleLine(data),
+    ].filter(Boolean);
+    return { stats, coverLines };
+}
+
+/** The corridor figure's caption: what the layout holds. */
+function corridorCaption(corridorLayout, data) {
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    // "Coordinable" is not "coordinated": only the junctions on a strong link marry, so say how many did.
+    const marriedAtNormal = (junctions) => junctions.filter((row) => (row.married_pct_by_power?.normal ?? row.married_pct ?? 0) >= 50).length;
+    return [
+        plural(corridorLayout.arterialRoads, 'arterial road'),
+        plural(corridorLayout.sideRoads, 'side street'),
+        // park_hilda is signal-controlled but has no arterial approach, so coordination never takes it: count what could coordinate.
+        data.coordinationMetrics?.junctions?.length && data.coordinationMetrics.junctions.length < corridorLayout.signals
+            ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')} (${marriedAtNormal(data.coordinationMetrics.junctions)} married at normal power)`
+            : plural(corridorLayout.signals, 'signalised junction'),
+        corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
+        corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
+        corridorLayout.stopStreets && plural(corridorLayout.stopStreets, 'stop street'),
+    ]
+        .filter(Boolean)
+        .join(' · ');
+}
+
+/** The zone figure's key text - under the PDF's zone legend and the web view's. */
+const ZONE_LEGEND_NOTE = `Load-shedding zones: horizontal roads tinted by zone; a junction takes its horizontal road's zone. Vertical roads (${VERTICAL_ROADS}) are untinted - their queues count to the zone of the junction they queue at.`;
 
 /**
  * The cover's outage line, built from the batch's own schedules (outage minutes and rollingSchedule) - only the states
@@ -878,10 +893,7 @@ function drawZoneLegend(report) {
     });
     y += 4.2;
     doc.setFontSize(7.5).setTextColor(...COLOURS.muted);
-    const note = doc.splitTextToSize(
-        `Load-shedding zones: horizontal roads tinted by zone; a junction takes its horizontal road's zone. Vertical roads (${VERTICAL_ROADS}) are untinted - their queues count to the zone of the junction they queue at.`,
-        CONTENT_WIDTH - 2
-    );
+    const note = doc.splitTextToSize(ZONE_LEGEND_NOTE, CONTENT_WIDTH - 2);
     doc.text(note, PAGE.margin + 1, y);
     report.y = y + note.length * 3.4 + 3;
 }
@@ -946,9 +958,14 @@ function lowerIsBetter(delta, ci95) {
     return delta < 0;
 }
 
-/** "mode|power" -> "ITS vs fixed-time" lost arrivals per run, from the destination-routing rows (the sensors pooled per mode). Empty without routing rows. */
+/** Map-edge demand that never got in, per run: arrivals that gave up after queuing at a full entry - or, on batches from before the entry backlog, arrivals dropped at one. */
+function turnedAwayPerRun(row) {
+    return row.arrivals_balked_per_run ?? row.arrivals_lost_per_run ?? null;
+}
+
+/** "mode|power" -> "ITS vs fixed-time" turned-away arrivals per run, from the destination-routing rows (the sensors pooled per mode). Empty without routing rows. */
 function lostArrivalsByCondition(routingMetrics) {
-    const byKey = new Map((routingMetrics ?? []).filter((row) => row.arrivals_lost_per_run != null).map((row) => [`${row.controller_mode}|${row.power_state}`, row.arrivals_lost_per_run]));
+    const byKey = new Map((routingMetrics ?? []).filter((row) => turnedAwayPerRun(row) != null).map((row) => [`${row.controller_mode}|${row.power_state}`, turnedAwayPerRun(row)]));
     const out = new Map();
     for (const [key, lost] of byKey) {
         const [, power] = key.split('|');
@@ -986,7 +1003,7 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
         ...(compact && lostArrivals.size
             ? [
                   // Wait alone hides saturation: a controller that turns demand away at a full entry has a shorter queue to wait in.
-                  { header: 'Lost arrivals / run (ITS vs fixed)', value: (c) => lostArrivals.get(`${c.mode}|${c.power_state}`) ?? 'n/a' },
+                  { header: 'Gave up at entry / run (ITS vs fixed)', value: (c) => lostArrivals.get(`${c.mode}|${c.power_state}`) ?? 'n/a' },
               ]
             : []),
         ...(compact
@@ -1006,7 +1023,7 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
                       },
                   },
                   // After wait: throughput is back within seconds for every controller, so it tells little.
-                  ...(showsThroughputRecovery(powers) ? [{ header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' }] : []),
+                  ...(showsThroughputRecovery(powers, data) ? [{ header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' }] : []),
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
@@ -1054,7 +1071,7 @@ function tailTable(report, data, variants, scope, powers) {
 
 function perConditionTable(report, data, variants, scope, powers) {
     const m = (metric) => `${metric}${scope.suffix}`;
-    const withThroughput = showsThroughputRecovery(powers);
+    const withThroughput = showsThroughputRecovery(powers, data);
     const body = [];
     variants.forEach((variant) => {
         powers.forEach((power) => {
@@ -1166,7 +1183,7 @@ function drawScope(report, data, variants, scope, power) {
 
     report.heading(
         'Every ITS variant vs fixed-time',
-        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). ${showsThroughputRecovery([power]) ? 'Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait' : 'Recovery: wait only - throughput is above its pre-cut level by the final restore, so it is not reported here (see the method notes); wait'} recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
+        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). ${showsThroughputRecovery([power], data) ? 'Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait' : `Recovery: wait only - ${data.batchStamp?.demandProfile ? 'demand falls through the evening, so throughput never regains its pre-cut peak level' : 'throughput is above its pre-cut level by the final restore'}, so it is not reported here (see the method notes); wait`} recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
         card
     );
     comparisonTable(report, data, variants, scope, { powers });
@@ -1199,7 +1216,7 @@ function drawScope(report, data, variants, scope, power) {
 function drawRecoveryTimes(report, data, variants, scope, power) {
     const charts = [
         { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}` },
-        ...(showsThroughputRecovery([power]) ? [{ title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` }] : []),
+        ...(showsThroughputRecovery([power], data) ? [{ title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` }] : []),
     ].map((chart) => ({ ...chart, title: report.numbered(chart.title, 'card') })).map((chart) => {
         const outage = variants.filter((v) => v.row(power));
         const measured = outage.filter((v) => v.row(power)[chart.metric] != null);
@@ -1216,6 +1233,19 @@ function drawRecoveryTimes(report, data, variants, scope, power) {
     const windowS = postRestoreWindowS(data, power, scope);
     const from = scope.zone && power === 'rolling_blackout' ? `zone ${scope.zone}'s own restore` : power === 'rolling_blackout' ? 'the final restore' : 'the restore';
     const basis = `from ${from}${restoreS == null ? '' : ` (min ${minute(restoreS)})`}${windowS == null ? '' : ` · cap ${minute(windowS)} min`}`;
+    // A web report (resultsReportView.js) lays the pair out itself.
+    if (report.chartRow) {
+        report.chartRow(
+            charts.map((chart) => ({
+                title: chart.title,
+                captions: ['seconds back to pre-cut level · lower is better · (recovered/runs)', basis],
+                image: chart.image,
+                warning: chart.missing.length ? `Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}` : null,
+            }))
+        );
+        if (scope.zone && power === 'rolling_blackout' && /NOT comparable/.test(recoveryBasis(data, power, scope))) report.paragraph(recoveryBasis(data, power, scope));
+        return;
+    }
     report.ensureSpace(imageHeight + 28);
     const top = report.y;
 
@@ -1260,10 +1290,10 @@ function drawRoutingTrips(report, data, powers) {
     }
     report.heading(
         'Destination routing',
-        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Avg wait: the average wait over these runs (total scope). Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure - so it sits next to Avg wait. It is therefore excluded from the wait comparisons, and it grows where queues stand across driveway exits, so it is larger in a blackout and dark-network delay is understated. Still in driveways: cars that had not got out when the run ended. Lost arrivals: map-edge demand turned away by a full entry.'
+        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Avg wait: the average wait over these runs (total scope). Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure - so it sits next to Avg wait. It is therefore excluded from the wait comparisons, and it grows where queues stand across driveway exits, so it is larger in a blackout and dark-network delay is understated. Still in driveways: cars that had not got out when the run ended. Gave up at entry: map-edge arrivals that found their entry full, queued outside it and gave up - they never enter, so no wait figure counts them (the total-delay table counts their queuing time); a controller that turns more away looks better on wait than it is.'
     );
     report.table({
-        head: [['Controller', 'Power', 'Runs', 'Avg wait (s)', 'Driveway wait (s)', 'Still in driveways', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Lost arrivals / run']],
+        head: [['Controller', 'Power', 'Runs', 'Avg wait (s)', 'Driveway wait (s)', 'Still in driveways', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Gave up at entry / run']],
         body: rows.map((row) => [
             controllerLabel[row.controller_mode] ?? row.controller_mode,
             powerLabel(row.power_state),
@@ -1276,7 +1306,7 @@ function drawRoutingTrips(report, data, powers) {
             fmt(row.missed_driveways_pct),
             row.missed_turns_per_run == null ? 'n/a' : Number(row.missed_turns_per_run).toFixed(0),
             fmt(row.diversion_pct),
-            row.arrivals_lost_per_run == null ? 'n/a' : Number(row.arrivals_lost_per_run).toFixed(0),
+            turnedAwayPerRun(row) == null ? 'n/a' : Number(turnedAwayPerRun(row)).toFixed(0),
         ]),
         columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((column) => [column, { halign: 'right' }])),
     });
@@ -1630,7 +1660,7 @@ function restartNote(data) {
     const coordination = data.batchStamp?.coordination;
     if (!coordination) return [];
     const artefact =
-        'Under load shedding, with the earlier restart (part-way into the coordination plan), coordinated adaptive trailed plain adaptive in stage 2 on Pretorius (+5.9 s) and Lynnwood (+3.1 s) and led it on Jan Shoba (-3.4 s) - 30 seeds on the 1e58298 dynamics (the 2026-10-18 reference batches). The gap opened at the 30:00 restore, during the resync hold, and Lynnwood\'s signals were never married; that is consistent with the restart deciding which approach clears its stage-1 all-way-stop backlog first, rather than with coordination itself. In a 10-seed ablation (A5, 2026-10-18), restarting on the arterial green removed all three differences.';
+        'Under load shedding, with the earlier restart (part-way into the coordination plan), coordinated adaptive trailed plain adaptive in stage 2 on Pretorius (+5.9 s) and Lynnwood (+3.1 s) and led it on Jan Shoba (-3.4 s) - 30 seeds on the 1e58298 dynamics (the 2026-10-18 reference batches). The gap opened at minute 30 of that 90-minute protocol (its first restore), during the resync hold, and Lynnwood\'s signals were never married; that is consistent with the restart deciding which approach clears its stage-1 all-way-stop backlog first, rather than with coordination itself. In a 10-seed ablation (A5, 2026-10-18), restarting on the arterial green removed all three differences.';
     return [
         restartsOnArterialGreen(coordination)
             ? `Restart after power returns: coordinated adaptive restarts every restored junction on its arterial through green with nothing elapsed, as plain adaptive does, then runs the resync hold. ${artefact}`
@@ -1782,13 +1812,13 @@ function drawMethodNotes(report, data, number) {
         `Zones (the load-shedding scopes, ${zoneRefs}): zone 1 south, zone 2 middle, zone 3 north - groups of horizontal roads, read from the layout's own zone fields. A junction takes its horizontal road's zone, so a roundabout or all-way stop follows its road too; Mall Road (zone 1) has no signals to go dark. Vertical roads (${VERTICAL_ROADS}) carry no zone.`,
         `Zone wait is charged by junction (${stamp?.zoneAccounting ?? 'by-junction-v1'}): a car's wait goes to the zone of the junction it is queuing for - the junction at the end of its lane, or the one it is in. So Jan Shoba's queue at a zone 2 junction is zone 2 wait. This is unlike the total, main-arterial and side-street scopes, which are charged by road. A trip through several zones is in each, with only the wait it built up there, so the zone scopes overlap and don't sum to the total. Normal-power rows carry the zone figures too, as their baselines.`,
         `Recovery: the total, main-arterial and side-street scopes are timed from the FINAL restore (minute ${minute(restoreSeconds(data, 'rolling_blackout', SCOPES[0]) ?? 2700)} under load shedding); each zone from its own restore. Zones 1 and 3 come back while zone 2 is still dark next to them, so their recovery includes spillback from zone 2 and is not comparable to total-blackout recovery.`,
-        `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout and for load-shedding zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for load-shedding zone 2 and the load-shedding total, main-arterial and side-street scopes. The caps differ because each is the whole time left after its own restore - one shared cap would cut the total blackout short or run past the end of the load-shedding window. So recovery figures compare controllers within a section only, never across sections: a capped mean under a 60-minute cap and one under 45 minutes are not on the same scale.`,
-        'Outage schedule on the cover: the total blackout\'s dark minutes, and for load shedding which zones are dark when - e.g. "zones 1+3 15–30, zone 2 30–45" reads zones 1 and 3 dark minutes 15-30, then zone 2 dark minutes 30-45 - minutes into the measured window.',
+        `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout; ${capMin('rolling_blackout', 'zone1', null)} min for load-shedding zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for load-shedding zone 2 and the load-shedding total, main-arterial and side-street scopes. Each cap is the whole time left after its own restore, so recovery figures compare controllers within one scope only - never across sections, nor a zone 1/3 figure against the others: capped means under different caps are not on the same scale.`,
+        `Outage schedule on the cover: the total blackout's dark minutes, and for load shedding which zones are dark when - here ${rollingScheduleText(data)} - minutes into the measured window.`,
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state, so each outage section carries its own normal-power baseline rows. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where fixed-time recovers throughput within 30 s, the delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
-        'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller. Read wait recovery and the post-recovery segments instead.',
+        `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller. ${stamp?.demandProfile ? ' On this batch it is not reported for the total blackout either: demand follows the evening profile and falls through the window, so throughput never regains the peak-hour level it had before the cut, whatever the controller does.' : ''} Read wait recovery and the post-recovery segments instead.`,
         `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total and zone scopes only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
@@ -1844,3 +1874,25 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         applyChartTheme(pageTheme);
     }
 }
+
+/* Shared with the Results page (resultsReportView.js), which draws these same sections as collapsible HTML. */
+export {
+    CONTENT_WIDTH,
+    COLOURS,
+    OUTAGES,
+    SCOPES,
+    SECTION,
+    ZONE_LEGEND_NOTE,
+    buildVariants,
+    comparisonTable,
+    corridorCaption,
+    corridorLayoutImage,
+    coverFacts,
+    drawCoordination,
+    drawMethodNotes,
+    drawOutageSection,
+    drawRichness,
+    fetchAppendixRuns,
+    renderChartImage,
+    timelineFor,
+};

@@ -1522,6 +1522,7 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     }
 
     renderAll();
+    drawReport();
     applyItsTargetFilter();
     applyTableScopeFilter();
     if (exportPdfButton) exportPdfButton.disabled = !data.aggregates?.length;
@@ -1550,6 +1551,36 @@ for (const filterId of ['filter-corridor', 'filter-routing']) {
         });
     });
 }
+
+/* ------------------------------------------------------------ the report */
+
+/** What the report was last drawn from - a refresh that brings the same numbers back leaves open sections open. */
+let reportSignature = null;
+
+/** The PDF's report, drawn on the page (resultsReportView.js) from the same `data` - again whenever the numbers change. */
+function drawReport() {
+    const container = document.getElementById('report-view');
+    if (!container) return;
+    const params = currentFilterParams();
+    const signature = JSON.stringify([params.toString(), data.batchStamp?.label ?? null, data.aggregates, data.aggregatesBySensor]);
+    if (signature === reportSignature) return;
+    reportSignature = signature;
+    const corridorId = document.getElementById('filter-corridor')?.value ?? '';
+    // Lazy: the report pulls in resultsPdf.js and jsPDF with it.
+    import('./resultsReportView.js')
+        .then(({ renderReportView }) =>
+            renderReportView(container, data, {
+                corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
+                appendixRunsUrl: `${data.appendixRunsUrl}?${params}`,
+            })
+        )
+        .catch((error) => {
+            reportSignature = null;
+            container.textContent = `The report could not be drawn: ${error.message}`;
+        });
+}
+
+drawReport();
 
 /* ------------------------------------------------------------ PDF export */
 

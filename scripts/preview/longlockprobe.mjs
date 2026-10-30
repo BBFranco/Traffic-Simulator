@@ -13,6 +13,12 @@ const [controllerMode, powerState, seedArg, giveUpArg, warmupArg, carIdArg, atLi
 const opt = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1] ?? fallback;
 const chainLen = Number(opt('chain', 40));
 const cfg = JSON.parse(readFileSync(new URL('../../corridors/hatfield-realistic.json', import.meta.url), 'utf8'));
+// --config=<a run's raw_config_json>: apply that batch's demand overrides, as results.js's applyDemandOverrides() does.
+const rawConfig = opt('config', null) && JSON.parse(readFileSync(opt('config'), 'utf8'));
+for (const street of [...(cfg.arterials ?? []), ...(cfg.connectors ?? [])]) {
+    const o = rawConfig?.demandOverrides?.[street.id];
+    if (o) street.demand = { ...street.demand, spawnRatePerLanePerMinMin: o.min, spawnRatePerLanePerMinMax: o.max, saturationFlowPerLanePerHour: o.saturationFlowPerLanePerHour };
+}
 const ats = atList.split(',').map(Number).sort((a, b) => a - b);
 const stopAtS = ats.at(-1);
 const r1 = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : v);
@@ -86,7 +92,7 @@ function dumpRing(e, ringId, car, still) {
 
 try {
     runHeadless({
-        seed: Number(seedArg), controllerMode, sensorMode: controllerMode === 'fixed' ? null : 'inductive_loop', warmupTicks: Number(warmupArg),
+        seed: Number(seedArg), controllerMode, sensorMode: controllerMode === 'fixed' ? null : opt('sensor', 'inductive_loop'), warmupTicks: Number(warmupArg),
         powerOutageStartTick: powerState === 'load_shedding' ? LONG_PROTOCOL.powerOutageStartTick : null,
         powerOutageEndTick: powerState === 'load_shedding' ? LONG_PROTOCOL.powerOutageEndTick : null,
         rollingSchedule: powerState === 'rolling_blackout' ? LONG_PROTOCOL.rollingSchedule : null,
