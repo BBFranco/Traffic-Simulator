@@ -211,6 +211,12 @@ export function lineDataset({ label, data, colour, fill = false }) {
  */
 export const barValueLabels = {
     id: 'barValueLabels',
+    // Room above the tallest bars for up to three lifted label rows - otherwise the top row runs off the canvas.
+    beforeInit(chart) {
+        const layout = (chart.options.layout ??= {});
+        const padding = typeof layout.padding === 'object' ? layout.padding : { top: layout.padding ?? 0, right: layout.padding ?? 0, bottom: layout.padding ?? 0, left: layout.padding ?? 0 };
+        layout.padding = { ...padding, top: Math.max(padding.top ?? 0, 40) };
+    },
     afterDatasetsDraw(chart, _args, opts) {
         const format = opts?.formatter ?? ((v) => (v === null ? '' : `${v}`));
         const { ctx } = chart;
@@ -241,6 +247,8 @@ export const barValueLabels = {
                         }
                     }
                 }
+                // Never above the reserved headroom (beforeInit), however many rows a crowded group stacks.
+                bottom = Math.max(bottom, chart.chartArea.top - 34);
                 placed.push({ x: bar.x, half, bottom });
                 ctx.fillText(text, bar.x, bottom);
             });
