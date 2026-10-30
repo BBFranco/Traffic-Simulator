@@ -386,6 +386,8 @@ const printLegend = {
 /** One bar group per power state in `powers` (a section's normal baseline and its own outage), one bar per variant. */
 function barChartImage(variants, metric, powers, { unit, tickSuffix = '' }) {
     const options = baseOptions({ tickFormat: (v) => `${v}${tickSuffix}` });
+    // Headroom for the staggered value labels over the tallest bars.
+    options.scales.y.grace = '10%';
 
     return renderChartImage(
         {
@@ -496,8 +498,26 @@ function recoveryLineImage(data, variants, metricKey, power) {
 }
 
 /** Horizontal time-to-recovery bars under `power`, one per variant that actually recovered in the window. */
-function recoveryTimeImage(variants, metric, power) {
-    const measured = variants.filter((variant) => variant.row(power)?.[metric] != null);
+/** Height per bar in the time-to-recovery charts - room for a wrapped label plus its recovered/runs line. */
+const RECOVERY_BAR_PX = 46;
+
+/**
+ * A long variant label as two tick lines - Chart.js caps the y-axis at half the chart width and clips the rest, which cut
+ * "Coordinated adaptive (avg. of sensors)" to "nated adaptive ...".
+ */
+function wrapTickLabel(label) {
+    if (label.length <= 28) return [label];
+    const at = label.includes(' - ') ? label.indexOf(' - ') : label.indexOf(' (');
+    return at > 0 ? [label.slice(0, at), label.slice(at + 1).replace(/^- /, '')] : [label];
+}
+
+/**
+ * Time-to-recovery bars. With `windowS` (wait recovery) each bar is the capped mean - runs that never recovered count at the
+ * cap - so it matches the tables; without it (throughput) it is the mean over the runs that recovered.
+ */
+function recoveryTimeImage(variants, metric, power, windowS = null) {
+    const valueOf = (row) => (windowS == null ? row[metric] : cappedRecoveryS(row[metric], row[`${metric}_recovered`] ?? 0, row.runs, windowS));
+    const measured = variants.filter((variant) => variant.row(power) && valueOf(variant.row(power)) != null);
     if (!measured.length) return null;
 
     const options = baseOptions();
@@ -526,11 +546,11 @@ function recoveryTimeImage(variants, metric, power) {
             data: {
                 labels: measured.map((variant) => {
                     const row = variant.row(power);
-                    return [variant.label, `${row[`${metric}_recovered`]}/${row.runs} recovered`];
+                    return [...wrapTickLabel(variant.label), `${row[`${metric}_recovered`] ?? 0}/${row.runs} recovered`];
                 }),
                 datasets: [
                     {
-                        data: measured.map((variant) => one(variant.row(power)[metric])),
+                        data: measured.map((variant) => one(valueOf(variant.row(power)))),
                         backgroundColor: measured.map((variant) => variant.colour),
                         borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 },
                         borderSkipped: 'left',
@@ -544,7 +564,7 @@ function recoveryTimeImage(variants, metric, power) {
             plugins: [valueLabels],
         },
         380,
-        60 + measured.length * 38
+        60 + measured.length * RECOVERY_BAR_PX
     );
 }
 
@@ -1214,23 +1234,32 @@ function drawScope(report, data, variants, scope, power) {
 
 /** The two time-to-recovery bar charts side by side, each timed from the scope's own restore and capped at its own window. */
 function drawRecoveryTimes(report, data, variants, scope, power) {
+    // Which restore the bars are timed from - a zone's own under rolling - and the cap a wait recovery runs to.
+    const restoreS = restoreSeconds(data, power, scope);
+    const windowS = postRestoreWindowS(data, power, scope);
     const charts = [
-        { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}` },
-        ...(showsThroughputRecovery([power], data) ? [{ title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` }] : []),
+        { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}`, windowS },
+        ...(showsThroughputRecovery([power], data) ? [{ title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}`, windowS: null }] : []),
     ].map((chart) => ({ ...chart, title: report.numbered(chart.title, 'card') })).map((chart) => {
         const outage = variants.filter((v) => v.row(power));
-        const measured = outage.filter((v) => v.row(power)[chart.metric] != null);
-        return { ...chart, image: recoveryTimeImage(variants, chart.metric, power), bars: measured.length, missing: outage.filter((v) => !measured.includes(v)) };
+        // A capped chart has a bar for every variant; uncapped, a variant with no recovered run has none.
+        const measured = chart.windowS == null ? outage.filter((v) => v.row(power)[chart.metric] != null) : outage;
+        return {
+            ...chart,
+            image: recoveryTimeImage(variants, chart.metric, power, chart.windowS),
+            bars: measured.length,
+            missing: outage.filter((v) => !measured.includes(v)),
+            caption: chart.windowS == null
+                ? 'mean seconds back to pre-cut level, runs that recovered · lower is better · (recovered/runs)'
+                : 'capped mean seconds back to pre-cut level (a run that never recovered counts at the cap) · lower is better · (recovered/runs)',
+        };
     });
     if (!charts.some((chart) => chart.image)) return;
 
     const { doc } = report;
     const width = (CONTENT_WIDTH - 4) / 2;
-    const heightFor = (bars) => (width - 4) * ((60 + bars * 38) / 380);
+    const heightFor = (bars) => (width - 4) * ((60 + bars * RECOVERY_BAR_PX) / 380);
     const imageHeight = Math.max(...charts.map((chart) => heightFor(chart.bars)));
-    // Which restore the bars are timed from - a zone's own under rolling - and the cap a wait recovery runs to.
-    const restoreS = restoreSeconds(data, power, scope);
-    const windowS = postRestoreWindowS(data, power, scope);
     const from = scope.zone && power === 'rolling_blackout' ? `zone ${scope.zone}'s own restore` : power === 'rolling_blackout' ? 'the final restore' : 'the restore';
     const basis = `from ${from}${restoreS == null ? '' : ` (min ${minute(restoreS)})`}${windowS == null ? '' : ` · cap ${minute(windowS)} min`}`;
     // A web report (resultsReportView.js) lays the pair out itself.
@@ -1238,7 +1267,7 @@ function drawRecoveryTimes(report, data, variants, scope, power) {
         report.chartRow(
             charts.map((chart) => ({
                 title: chart.title,
-                captions: ['seconds back to pre-cut level · lower is better · (recovered/runs)', basis],
+                captions: [chart.caption, basis],
                 image: chart.image,
                 warning: chart.missing.length ? `Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}` : null,
             }))
@@ -1246,27 +1275,28 @@ function drawRecoveryTimes(report, data, variants, scope, power) {
         if (scope.zone && power === 'rolling_blackout' && /NOT comparable/.test(recoveryBasis(data, power, scope))) report.paragraph(recoveryBasis(data, power, scope));
         return;
     }
-    report.ensureSpace(imageHeight + 28);
+    report.ensureSpace(imageHeight + 32);
     const top = report.y;
 
     charts.forEach((chart, i) => {
         const x = PAGE.margin + i * (width + 4);
         doc.setDrawColor(...COLOURS.rule).setLineWidth(0.3);
-        doc.roundedRect(x, top, width, imageHeight + 24, 2, 2, 'S');
+        doc.roundedRect(x, top, width, imageHeight + 28, 2, 2, 'S');
         // A zone's longer title steps down a size rather than lose its tail to the card edge.
         doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...COLOURS.ink);
         if (doc.getTextWidth(chart.title) > width - 6) doc.setFontSize(8.5);
         doc.text(doc.splitTextToSize(chart.title, width - 6)[0], x + 3, top + 5.5);
         doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.muted);
-        doc.text('seconds back to pre-cut level · lower is better · (recovered/runs)', x + 3, top + 9.5);
-        doc.text(basis, x + 3, top + 13);
-        if (chart.image) doc.addImage(chart.image, 'PNG', x + 2, top + 15, width - 4, heightFor(chart.bars), undefined, 'FAST');
+        const caption = doc.splitTextToSize(chart.caption, width - 6).slice(0, 2);
+        doc.text(caption, x + 3, top + 9.5);
+        doc.text(basis, x + 3, top + 9.5 + caption.length * 3.5);
+        if (chart.image) doc.addImage(chart.image, 'PNG', x + 2, top + 12 + caption.length * 3.5, width - 4, heightFor(chart.bars), undefined, 'FAST');
         if (chart.missing.length) {
             doc.setFontSize(7).setTextColor(...COLOURS.worseText);
-            doc.text(doc.splitTextToSize(`Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}`, width - 6), x + 3, top + imageHeight + 19);
+            doc.text(doc.splitTextToSize(`Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}`, width - 6), x + 3, top + imageHeight + 23);
         }
     });
-    report.y = top + imageHeight + 28;
+    report.y = top + imageHeight + 32;
 
     // The zone 1/3 caveat again under the bars, where the numbers are read.
     if (scope.zone && power === 'rolling_blackout' && /NOT comparable/.test(recoveryBasis(data, power, scope))) {
@@ -1392,6 +1422,9 @@ function drawVersusAdaptive(report, versus, conditions) {
 }
 
 function roadLabel(road) {
+    // A slip road has no name of its own - its id (slip_<node>_<direction>) says where it is.
+    const slip = /^slip_(.+)_([a-z]+bound)$/.exec(road.road_id);
+    if (slip && (!road.name || road.name === road.road_id)) return `Slip lane at ${slip[1]}, ${slip[2]}`;
     return road.name && road.name !== road.road_id ? `${road.name} (${road.road_id})` : road.road_id;
 }
 
@@ -1818,7 +1851,7 @@ function drawMethodNotes(report, data, number) {
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where fixed-time recovers throughput within 30 s, the delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
         `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
-        `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller. ${stamp?.demandProfile ? ' On this batch it is not reported for the total blackout either: demand follows the evening profile and falls through the window, so throughput never regains the peak-hour level it had before the cut, whatever the controller does.' : ''} Read wait recovery and the post-recovery segments instead.`,
+        `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller.${stamp?.demandProfile ? ' On this batch it is not reported for the total blackout either: demand follows the evening profile and falls through the window, so throughput never regains the peak-hour level it had before the cut, whatever the controller does.' : ''} Read wait recovery and the post-recovery segments instead.`,
         `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total and zone scopes only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
