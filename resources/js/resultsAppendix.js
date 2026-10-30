@@ -883,7 +883,8 @@ async function figureSensors(d, render) {
                 showLegend: false,
                 scales: {
                     x: categoryAxis(['Normal', 'Total blackout', 'Load shedding'], { min: -0.5, max: 2.5 }),
-                    y: axis({ title: panel === 0 ? 'Mean wait per vehicle (s)' : '' }),
+                    // A wait can't be negative - without the floor Chart.js pads the axis down to -200.
+                    y: axis({ title: panel === 0 ? 'Mean wait per vehicle (s)' : '', min: 0 }),
                 },
             },
             500,

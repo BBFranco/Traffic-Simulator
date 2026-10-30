@@ -1484,7 +1484,14 @@ function drawRoadWaits(report, data, powers) {
  * gap between controllers. Only for runs that recorded the split - older batches skip it.
  */
 function drawRoadWaitStages(report, roads, power, valueColumns) {
-    const rows = roads.flatMap((road) => Object.entries(road.stages ?? {}).map(([stage, figures]) => ({ ...figures, road, stage })));
+    // Stages in time order (STAGE_LABELS' key order) - the stored object can list Post before the dark stages.
+    const order = Object.keys(STAGE_LABELS);
+    const rank = (stage) => (order.includes(stage) ? order.indexOf(stage) : order.length);
+    const rows = roads.flatMap((road) =>
+        Object.entries(road.stages ?? {})
+            .sort(([a], [b]) => rank(a) - rank(b))
+            .map(([stage, figures]) => ({ ...figures, road, stage }))
+    );
     if (!rows.length) return;
     report.heading(
         `Main roads by stage - ${powerLabel(power)}`,
@@ -1850,7 +1857,7 @@ function drawMethodNotes(report, data, number) {
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state, so each outage section carries its own normal-power baseline rows. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
         'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where fixed-time recovers throughput within 30 s, the delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
-        `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
+        `Every recovery figure carries its recovered/runs count. Wait recovery is shown as a capped mean (below); a throughput recovery mean averages only the runs that DID recover. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
         `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller.${stamp?.demandProfile ? ' On this batch it is not reported for the total blackout either: demand follows the evening profile and falls through the window, so throughput never regains the peak-hour level it had before the cut, whatever the controller does.' : ''} Read wait recovery and the post-recovery segments instead.`,
         `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
