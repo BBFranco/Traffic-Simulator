@@ -14,7 +14,7 @@ class RoutingMetrics
 {
     /**
      * @param  Collection<int, string>  $batchIds
-     * @return array<int, array{controller_mode: string, power_state: string, runs: int, mean_wait: ?float, mean_trip_time: ?float, mean_trip_delay: ?float, missed_driveways_pct: ?float, missed_turns_per_run: ?float, diversion_pct: ?float, mean_driveway_wait: ?float, still_in_driveways: ?float, arrivals_lost_per_run: ?float}>
+     * @return array<int, array{controller_mode: string, power_state: string, runs: int, mean_wait: ?float, mean_trip_time: ?float, mean_trip_delay: ?float, missed_driveways_pct: ?float, missed_turns_per_run: ?float, diversion_pct: ?float, mean_driveway_wait: ?float, still_in_driveways: ?float, arrivals_lost_per_run: ?float, arrivals_balked_per_run: ?float}>
      */
     public function forBatches(Collection $batchIds): array
     {
@@ -22,8 +22,9 @@ class RoutingMetrics
             ->whereIn('batch_id', $batchIds)
             ->whereNotNull('trips')
             ->selectRaw('controller_mode, power_state, count(*) as runs, avg(avg_wait_time) as mean_wait, avg(mean_trip_time) as mean_trip_time, avg(mean_trip_delay) as mean_trip_delay, sum(missed_driveways) as missed_driveways, sum(pulled_off) as pulled_off, avg(missed_turns) as missed_turns, avg(diversion_pct) as diversion_pct')
-            // Null on runs from before driveway waits and lost demand were recorded.
-            ->selectRaw("avg(json_extract(routing_stats, '$.meanDrivewayWaitS')) as mean_driveway_wait, avg(json_extract(routing_stats, '$.departuresWaiting')) as still_in_driveways, avg(json_extract(diagnostics, '$.arrivalsLost')) as arrivals_lost")
+            // Null on runs from before driveway waits and lost demand were recorded. arrivalsLost (dropped at a full entry)
+            // stays 0 since the entry backlog; arrivalsBalked (gave up after queuing at a full entry) replaced it.
+            ->selectRaw("avg(json_extract(routing_stats, '$.meanDrivewayWaitS')) as mean_driveway_wait, avg(json_extract(routing_stats, '$.departuresWaiting')) as still_in_driveways, avg(json_extract(diagnostics, '$.arrivalsLost')) as arrivals_lost, avg(json_extract(diagnostics, '$.arrivalsBalked')) as arrivals_balked")
             ->groupBy('controller_mode', 'power_state')
             ->get()
             ->map(fn (object $row) => [
@@ -39,6 +40,7 @@ class RoutingMetrics
                 'mean_driveway_wait' => $this->float($row->mean_driveway_wait),
                 'still_in_driveways' => $this->float($row->still_in_driveways),
                 'arrivals_lost_per_run' => $this->float($row->arrivals_lost),
+                'arrivals_balked_per_run' => $this->float($row->arrivals_balked),
             ])
             ->all();
     }

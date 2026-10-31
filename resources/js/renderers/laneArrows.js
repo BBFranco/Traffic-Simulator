@@ -30,10 +30,17 @@ function markedApproaches(layout) {
     return result;
 }
 
-/** Arrow positions along a turn lane: the usual ones that fit inside it, or one squeezed in near the stop line. */
-function turnLaneArrowDistances(lengthM) {
-    const fitting = ARROW_DISTANCES_M.filter((backM) => backM + ARROW_TAIL_M <= lengthM);
-    return fitting.length ? fitting : [Math.max(ARROW_HEAD_M + 0.5, lengthM - ARROW_TAIL_M - 0.5)];
+/**
+ * Arrow positions along a turn lane: the usual ones that fit inside it, or one squeezed in near the stop line.
+ * A lane that leaves as a slip road is only there from `startM` back (turnLaneShapes.js), so its arrows are too.
+ */
+function turnLaneArrowDistances(lengthM, startM = 0) {
+    const fitting = ARROW_DISTANCES_M.filter((backM) => backM - ARROW_HEAD_M >= startM && backM + ARROW_TAIL_M <= lengthM);
+    return fitting.length ? fitting : [Math.max(startM + ARROW_HEAD_M + 0.5, lengthM - ARROW_TAIL_M - 0.5)];
+}
+
+function hasTurnLane(approach) {
+    return TURN_LANE_SIDES.some((side) => approach.turnLanes?.[side]);
 }
 
 /** Every lane of `approach` with the distances its arrows sit at: lane indices, then 'left'/'right' for its turn lanes. */
@@ -45,16 +52,20 @@ function arrowLanes(approach) {
     for (const side of TURN_LANE_SIDES) {
         const turnLane = approach.turnLanes?.[side];
         // On an approach fed by a joined road the turn lane runs on back along that road (corridor.js's `fedByJoin`), so it gets a full lane's arrows.
-        if (turnLane) lanes.push({ lane: side, distances: approach.fedByJoin ? ARROW_DISTANCES_M : turnLaneArrowDistances(turnLane.lengthM) });
+        if (!turnLane) continue;
+        const startM = side === 'left' && approach.slip && !turnLane.laneUse.includes('straight') ? approach.slip.backM : 0;
+        const distances = approach.fedByJoin ? ARROW_DISTANCES_M : turnLaneArrowDistances(turnLane.lengthM, startM);
+        // A double turn lane: the same arrows in each of its lanes, the second a lane further towards the kerb.
+        for (let k = 0; k < (turnLane.lanes ?? 1); k += 1) lanes.push({ lane: side, distances, extraOffsetM: k * approach.laneWidthM });
     }
     return lanes;
 }
 
 /** Where one lane's arrow sits `backM` upstream of the stop line, plus the (u along travel, v towards the kerb) frame to draw it in. */
-function arrowFrame(approach, lane, backM) {
+function arrowFrame(approach, lane, backM, extraOffsetM = 0) {
     const h = approach.heading;
     const left = { x: h.y, y: -h.x };
-    const offsetM = typeof lane === 'string' ? approach.turnLanes[lane].centreOffsetM : approach.laneCentreOffsets[lane];
+    const offsetM = (typeof lane === 'string' ? approach.turnLanes[lane].centreOffsetM : approach.laneCentreOffsets[lane]) + extraOffsetM;
     const base = {
         x: approach.stopCentre.x + left.x * offsetM - h.x * backM,
         y: approach.stopCentre.y + left.y * offsetM - h.y * backM,
@@ -84,9 +95,9 @@ export function laneArrowShapes(layout, filter = null) {
     const heads = [];
 
     for (const approach of markedApproaches(layout)) {
-        for (const { lane, distances } of arrowLanes(approach)) {
+        for (const { lane, distances, extraOffsetM } of arrowLanes(approach)) {
             if (filter && !filter(approach, lane)) continue;
-            for (const backM of distances) pushArrow(lines, heads, arrowFrame(approach, lane, backM).at, laneMovesOf(approach, lane));
+            for (const backM of distances) pushArrow(lines, heads, arrowFrame(approach, lane, backM, extraOffsetM).at, laneMovesOf(approach, lane));
         }
     }
 
@@ -96,15 +107,15 @@ export function laneArrowShapes(layout, filter = null) {
 /**
  * Click targets for the lane-arrow editor: every painted arrow's centre, with
  * the approach and lane (index, or 'left'/'right' for a turn lane) it belongs
- * to. A single-lane approach's own lane always allows everything, so only its
- * turn lanes are targets there.
+ * to. A single-lane approach's own lane allows everything unless it has a turn
+ * lane beside it, so it is a target only then (the turn lane can take a movement off it).
  */
 export function laneArrowTargets(layout) {
     const targets = [];
     for (const approach of markedApproaches(layout)) {
-        for (const { lane, distances } of arrowLanes(approach)) {
-            if (typeof lane === 'number' && approach.lanes < 2) continue;
-            for (const backM of distances) targets.push({ approach, lane, point: arrowFrame(approach, lane, backM).at(-1, 0) });
+        for (const { lane, distances, extraOffsetM } of arrowLanes(approach)) {
+            if (typeof lane === 'number' && approach.lanes < 2 && !hasTurnLane(approach)) continue;
+            for (const backM of distances) targets.push({ approach, lane, point: arrowFrame(approach, lane, backM, extraOffsetM).at(-1, 0) });
         }
     }
     return targets;

@@ -72,10 +72,7 @@ class SeedPairedDeltas
             ->groupBy(fn (SimulationRun $run): string => "{$run->controller_mode}|average|{$run->power_state->value}");
 
         return $subjects->merge($sensorAverages)
-            ->map(fn (Collection $group): array => collect($columns)
-                ->mapWithKeys(fn (string $column): array => [$column => $this->pairedDelta($group, $baselines, $pairKey, $column)])
-                ->filter()
-                ->all())
+            ->map(fn (Collection $group): array => $this->pairedColumns($group, $baselines, $pairKey, $columns))
             ->all();
     }
 
@@ -118,20 +115,23 @@ class SeedPairedDeltas
     /** @return array<string, array{delta: float, ci95: float, pairs: int}> */
     private function pairedColumns(Collection $group, Collection $baselines, callable $pairKey, array $columns): array
     {
+        // The seed grouping doesn't depend on the column, so it is done once per group, not once per column.
+        $bySeed = $group->groupBy($pairKey);
+
         return collect($columns)
-            ->mapWithKeys(fn (string $column): array => [$column => $this->pairedDelta($group, $baselines, $pairKey, $column)])
+            ->mapWithKeys(fn (string $column): array => [$column => $this->pairedDelta($bySeed, $baselines, $column)])
             ->filter()
             ->all();
     }
 
     /**
-     * @param  Collection<int, SimulationRun>  $group
+     * @param  Collection<string, Collection<int, SimulationRun>>  $bySeed  a group's runs by pair key
      * @param  Collection<string, SimulationRun|object>  $baselines
      * @return array{delta: float, ci95: float, pairs: int}|null
      */
-    private function pairedDelta(Collection $group, Collection $baselines, callable $pairKey, string $column): ?array
+    private function pairedDelta(Collection $bySeed, Collection $baselines, string $column): ?array
     {
-        $pairs = $group->groupBy($pairKey)
+        $pairs = $bySeed
             ->map(fn (Collection $seedRuns, string $key): ?array => [
                 'subject' => $seedRuns->map(fn (SimulationRun $run): ?float => $this->value($run, $column))->filter(fn ($value): bool => $value !== null)->avg(),
                 'baseline' => $this->value($baselines->get($key), $column),

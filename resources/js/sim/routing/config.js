@@ -22,6 +22,8 @@
  *   drivewaysPerSide - optional: every block gets this many driveways a side
  *               whatever its tier (sensitivity runs); left out, the tier decides.
  */
+import { ASSIGNMENT_DEFAULTS } from './assignment.js';
+
 export const ROUTING_MODES = ['random', 'destination'];
 export const BLOCK_TIERS = [1.5, 2, 3, 4, 5];
 /** Each tier's map colour (Road Editor) - cool to hot as destination density rises - and the text that reads on it. */
@@ -46,6 +48,16 @@ const DEFAULTS = {
     decayPerSecond: 0.002,
     routeVariants: 5,
     routeCostNoise: 0.1,
+    /**
+     * Dial's logit route choice (routing/odTable.js) in place of the cost-noise variants: `{ thetaPerS, variants }` -
+     * a route dearer by d seconds at a split is taken in proportion exp(-thetaPerS x d). Null keeps the noise variants.
+     */
+    routeChoice: null,
+    /**
+     * Capacity-aware route choice (routing/assignment.js): `{}` (or any of its settings) re-chooses Dial's routes
+     * against the junction and road-segment delay their own flows cause until they settle. Needs `routeChoice`. Null: free-flow routes.
+     */
+    assignment: null,
     detourLimit: 2.5,
     nodePenaltyS: { signal: 20, roundabout: 5, allWayStop: 8, stop: 8 },
     /** Extra route cost per turn (s) - a U-turn round a roundabout by default a little more than a right turn. */
@@ -103,6 +115,27 @@ export function parseRouting(raw, nodesById, roadIds) {
         throw new Error('routing.drivewaysPerSide must be a whole number from 1 to 5.');
     }
 
+    if (raw.routeChoice != null) {
+        const { thetaPerS, variants } = raw.routeChoice;
+        if (!(thetaPerS > 0)) throw new Error('routing.routeChoice.thetaPerS must be above 0.');
+        if (!(Number.isInteger(variants) && variants >= 1 && variants <= 1024)) throw new Error('routing.routeChoice.variants must be a whole number from 1 to 1024.');
+    }
+
+    let assignment = null;
+    if (raw.assignment != null) {
+        if (raw.routeChoice == null) throw new Error('routing.assignment needs routing.routeChoice (Dial route choice).');
+        assignment = { ...ASSIGNMENT_DEFAULTS, ...raw.assignment };
+        assignment.linkTypes = Object.fromEntries(Object.entries(ASSIGNMENT_DEFAULTS.linkTypes).map(([type, values]) => [type, { ...values, ...(raw.assignment.linkTypes?.[type] ?? {}) }]));
+        for (const [type, values] of Object.entries(assignment.linkTypes)) {
+            if (!(values.capacityPerLanePerHour > 0 && values.delayParameter > 0)) throw new Error(`routing.assignment.linkTypes.${type} needs capacityPerLanePerHour and delayParameter above 0.`);
+        }
+        if (!(Number.isInteger(assignment.iterations) && assignment.iterations >= 1 && assignment.iterations <= 200)) throw new Error('routing.assignment.iterations must be a whole number from 1 to 200.');
+        for (const key of ['flowPeriodH', 'delayParameter', 'highFrictionAccessPerKm', 'saturationFlowPerLanePerHour', 'allWayStopHeadwayS', 'minorCriticalGapS', 'minorFollowUpS']) {
+            if (!(assignment[key] > 0)) throw new Error(`routing.assignment.${key} must be above 0.`);
+        }
+        if (!(assignment.signalLostShare >= 0 && assignment.signalLostShare < 1)) throw new Error('routing.assignment.signalLostShare must be from 0 to below 1.');
+    }
+
     for (const roadId of raw.crossableMedianRoads ?? []) {
         if (!roadIds.has(roadId)) throw new Error(`routing.crossableMedianRoads: no road "${roadId}".`);
     }
@@ -116,6 +149,7 @@ export function parseRouting(raw, nodesById, roadIds) {
         nodePenaltyS: { ...DEFAULTS.nodePenaltyS, ...(raw.nodePenaltyS ?? {}) },
         turnPenaltyS: { ...DEFAULTS.turnPenaltyS, ...(raw.turnPenaltyS ?? {}) },
         departures: { ...DEFAULTS.departures, ...(raw.departures ?? {}) },
+        assignment,
         crossableMedianRoads: raw.crossableMedianRoads ?? [],
         blocks,
         warnings: provisional.length ? [`Provisional block tiers (tier ${provisional.map((b) => b.tier).join('/')} until surveyed): ${provisional.map((b) => b.id).join(', ')}`] : [],

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { EVENING_PROFILE } from '../../../resources/js/sim/demandProfile.js';
 
 /**
  * The run matrix the dynamics-neutral baselines were captured on (Live Statistics overhaul).
@@ -36,6 +37,9 @@ for (const sensorMode of ['inductive_loop', 'magnetometer', 'radar', 'camera']) 
 for (const controllerMode of ['fixed', 'green_wave', 'adaptive', 'coordinated_adaptive']) HASH_MATRIX.push({ seed: 1, controllerMode, loadShedding: false, routingMode: null, rolling: true });
 HASH_MATRIX.push({ seed: 1, controllerMode: 'coordinated_adaptive', loadShedding: false, routingMode: 'destination', rolling: true });
 
+// Time-of-day demand (added 2026-10-23, long-outage protocol): every live arrival rate at 0.44x (20:30 on the evening profile).
+for (const controllerMode of ['fixed', 'adaptive']) HASH_MATRIX.push({ seed: 1, controllerMode, loadShedding: true, routingMode: 'destination', demandMultiplier: 0.44 });
+
 /** runHeadless() cases whose summary must stay byte-identical: warm-up, outage window, both routing modes. */
 export const SUMMARY_MATRIX = [];
 for (const seed of [1, 2]) {
@@ -48,6 +52,10 @@ for (const seed of [1, 2]) SUMMARY_MATRIX.push({ seed, controllerMode: 'coordina
 for (const sensorMode of ['magnetometer', 'radar', 'camera']) SUMMARY_MATRIX.push({ seed: 1, controllerMode: 'adaptive', routingMode: 'destination', outage: true, sensorMode });
 // Rolling blackout (added 2026-10-16): the same 1500-3000 outage span, split into its two stages.
 for (const controllerMode of ['fixed', 'coordinated_adaptive']) SUMMARY_MATRIX.push({ seed: 1, controllerMode, routingMode: 'destination', outage: false, rolling: true });
+// The long-outage protocol's code path (added 2026-10-23) on the short window: the evening profile from 19:30, where it
+// falls fastest, rows every 5 s, and the delay split by stage.
+SUMMARY_MATRIX.push({ seed: 1, controllerMode: 'fixed', routingMode: 'destination', outage: true, profile: true });
+SUMMARY_MATRIX.push({ seed: 1, controllerMode: 'coordinated_adaptive', routingMode: 'destination', outage: false, rolling: true, profile: true });
 
 export function caseKey(c) {
     return Object.values(c).join('|');
@@ -65,6 +73,7 @@ export function summaryArgs(c, corridorConfig) {
         corridorConfig,
         durationTicks: 4800,
         routingMode: c.routingMode,
+        ...(c.profile ? { demandProfile: { profile: EVENING_PROFILE, startClockS: 19.5 * 3600 }, sampleEverySeconds: 5 } : {}),
     };
 }
 

@@ -12,21 +12,31 @@
  * hands this controller a plain boolean, so it stays sensor-agnostic.
  */
 import { ADAPTIVE_DEFAULTS, shouldExtendGreen } from '../equations.js';
-import { ALL_RED_S, MIN_TURN_GREEN_S, YELLOW_S } from './phasePlan.js';
+import { ALL_RED_S, MAX_TURN_GREEN_S, MIN_TURN_GREEN_S, YELLOW_S } from './phasePlan.js';
 
-/** A protected turn stage's longest green before its weight - it also ends as soon as its lane stops actuating the detector. */
-export const MAX_TURN_GREEN_S = 25;
+export { MAX_TURN_GREEN_S };
 
 export class AdaptiveController {
-    /** turnWeights: per road (0 arterial, 1 cross) null, or the weight of the protected turn stage in front of its through green. */
-    constructor(params = ADAPTIVE_DEFAULTS, turnWeights = [null, null]) {
+    /**
+     * turnWeights: per road (0 arterial, 1 cross) null, or the weight of the protected turn stage in front of its through green.
+     * maxGreens: null for the usual maxima, or per road `{ through: [s, s], turn: [s | null, s | null] }` - the maximum-green
+     * sensitivity's (phasePlan.js's sartsmMaxGreens(), engine.js's _adaptiveMaxGreensAt()).
+     */
+    constructor(params = ADAPTIVE_DEFAULTS, turnWeights = [null, null], maxGreens = null) {
         this.params = params;
         this.turnWeights = turnWeights;
+        this.maxGreens = maxGreens;
         this.phase = 0; // 0 = arterial, 1 = cross
         this.inTurn = false; // the current stage is road `phase`'s lead turn stage rather than its through green
         this.phaseState = 'green';
         this.phaseElapsed = 0;
         this.secondsSinceLastDetection = 0; // gap timer for the current green's stop-line detector
+    }
+
+    /** Road `phase`'s longest green - its turn stage's when `inTurn`. */
+    maxGreenFor(phase, inTurn) {
+        if (inTurn) return this.maxGreens?.turn[phase] ?? MAX_TURN_GREEN_S * this.turnWeights[phase];
+        return this.maxGreens?.through[phase] ?? this.params.maxGreen;
     }
 
     isArterialGreen() {
@@ -66,7 +76,7 @@ export class AdaptiveController {
         if (this.phaseState === 'green' && this.inTurn) {
             this.secondsSinceLastDetection = vehicleDetectedThisTick ? 0 : this.secondsSinceLastDetection + dt;
             const extend =
-                this.phaseElapsed < MAX_TURN_GREEN_S * this.turnWeights[this.phase] &&
+                this.phaseElapsed < this.maxGreenFor(this.phase, true) &&
                 (this.phaseElapsed < MIN_TURN_GREEN_S * this.turnWeights[this.phase] || this.secondsSinceLastDetection < this.params.gapOutS);
             if (!extend) {
                 this.phaseState = 'yellow';
@@ -76,7 +86,7 @@ export class AdaptiveController {
             this.secondsSinceLastDetection = vehicleDetectedThisTick ? 0 : this.secondsSinceLastDetection + dt;
 
             const extend =
-                this.phaseElapsed < this.params.maxGreen &&
+                this.phaseElapsed < this.maxGreenFor(this.phase, false) &&
                 (shouldExtendGreen(this.secondsSinceLastDetection, this.phaseElapsed, this.params) || !otherCallSufficient);
             if (!extend) {
                 this.phaseState = 'yellow';

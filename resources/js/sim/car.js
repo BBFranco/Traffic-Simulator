@@ -7,7 +7,7 @@
  * `equations.js:idmAcceleration()`. This is deliberate: it means "braking
  * for a red light" is never a second, hand-rolled formula.
  */
-import { leftNormal, addVector, roadPointAt } from './corridor.js';
+import { leftNormal, addVector, roadPointAt, laneShiftAt } from './corridor.js';
 import { IDM_DEFAULTS, idmAcceleration, MOBIL_DEFAULTS } from './equations.js';
 
 /** Speed below which a car counts as "stopped" for wait-time/queue stats. */
@@ -352,14 +352,22 @@ export function resetCarIdCounter() {
  * (0 or 1) turn-lane slots outside the kerb lane, then the road's own lanes,
  * then any median-side turn-lane slot (engine.js's lane layouts).
  */
-function laneOffset(road, lane) {
-    return road.roadWidthM / 2 - (lane - (road.kerbSlots ?? 0) + 0.5) * road.laneWidthM;
+function laneOffset(road, lane, distanceM) {
+    return road.roadWidthM / 2 - (lane - (road.kerbSlots ?? 0) + 0.5) * road.laneWidthM + laneShiftOn(road, distanceM);
+}
+
+/** How far every lane on `road` is moved over towards the kerb at `distanceM` - near a double right turn lane (corridor.js's laneShiftAt()), else 0. */
+function laneShiftOn(road, distanceM) {
+    if (!road.laneShifts) return 0;
+    let shiftM = 0;
+    for (const { stopLineDistanceM, laneShift } of road.laneShifts) shiftM += laneShiftAt(laneShift, stopLineDistanceM - distanceM);
+    return shiftM;
 }
 
 /** Centre of `lane` on `road` at `distanceM` - no lane-change glide. */
 export function lanePoint(road, lane, distanceM) {
     const { point, heading } = roadPointAt(road, distanceM);
-    return { point: addVector(point, leftNormal(heading), laneOffset(road, lane)), heading };
+    return { point: addVector(point, leftNormal(heading), laneOffset(road, lane, distanceM)), heading };
 }
 
 export function carWorldPoint(car) {
@@ -367,7 +375,7 @@ export function carWorldPoint(car) {
     const { point: base, heading } = roadPointAt(road, car.distanceM);
     const normal = leftNormal(heading);
 
-    let lateralOffsetM = laneOffset(road, car.lane);
+    let lateralOffsetM = laneOffset(road, car.lane, car.distanceM);
     if (car.laneChangeAnim) {
         // Glide the RENDERED lateral offset from the old lane to the new one -
         // car.lane already switched the instant the change was decided
@@ -375,7 +383,7 @@ export function carWorldPoint(car) {
         // this, only the drawn position eases sideways instead of teleporting.
         const t = easeInOut(Math.min(1, car.laneChangeAnim.elapsedS / LANE_CHANGE_ANIM_DURATION_S));
         // A lane change starts from the old lane; a hand-over onto another road (engine.js's joins) from wherever the car was drawn.
-        const fromOffsetM = car.laneChangeAnim.fromOffsetM ?? laneOffset(road, car.laneChangeAnim.fromLane);
+        const fromOffsetM = car.laneChangeAnim.fromOffsetM ?? laneOffset(road, car.laneChangeAnim.fromLane, car.distanceM);
         lateralOffsetM = fromOffsetM + (lateralOffsetM - fromOffsetM) * t;
     }
 

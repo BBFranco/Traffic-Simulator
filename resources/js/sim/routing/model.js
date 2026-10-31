@@ -46,7 +46,7 @@ export function buildRoutingModel(engine) {
     for (const id of graph.states.keys()) {
         let best = null;
         for (const exit of exits) {
-            const next = od.variants[0].get(exit.id);
+            const next = od.best.get(exit.id);
             if (!next.has(id)) continue;
             let timeS = 0;
             for (let at = id, guard = 0; at !== exit.target && guard < 200; guard += 1) {

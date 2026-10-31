@@ -40,7 +40,8 @@ import { buildExperimentalMatrix, seedForRep } from './sim/experimentalMatrix.js
 import { toApiPayload } from './sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from './sim/recoveryTickPayload.js';
 import { probeConditions, probeVerdict, chooseWarmup, PROBE_REPLICATIONS } from './sim/warmupProbe.js';
-import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from './sim/batchSchedule.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE, LONG_PROTOCOL } from './sim/batchSchedule.js';
+import { EVENING_PROFILE } from './sim/demandProfile.js';
 import { describeLayoutDrift } from './sim/layoutDrift.js';
 import batchWorkerUrl from './sim/batchWorker.js?worker&url';
 
@@ -376,7 +377,7 @@ onThemeChange((theme) => {
 
 /**
  * Build steps 17-18: runs the full 30-condition x 30-rep experimental matrix
- * (900 headless runs - 30 conditions x 30 reps) in this tab and populates `simulation_runs`.
+ * (1080 headless runs - 36 conditions x 30 reps, experimentalMatrix.js) in this tab and populates `simulation_runs`.
  *
  * `runHeadless()` here is the exact same function batch/runBatch.mjs calls
  * from the CLI - only the driver differs (a browser button instead of a
@@ -392,6 +393,29 @@ const DURATION_TICKS = MEASURED_TICKS; // sim/batchSchedule.js: 90 measured minu
 // Load-shedding conditions cut power 15 min into the MEASURED window and restore it at 30 min (sim/batchSchedule.js).
 const DT = 0.1;
 const BASE_SEED = 20260101;
+
+/**
+ * The run window and outage schedule a batch runs on, as runBatch.mjs's --protocol sets them. 'long' is batchSchedule.js's
+ * LONG_PROTOCOL: 375 measured minutes from 16:15 on the evening demand profile, a 4 h total blackout or 2 h + 2 h zoned
+ * load shedding from 16:30, rows every 5 s. The warm-up probe stays on the short window either way (runBatch.mjs's
+ * probeWarmup()): the long protocol's warm-up ends at 16:15, on lighter demand than the peak it settled under.
+ */
+function protocolSettings(protocol) {
+    if (protocol === 'long') {
+        return {
+            // The 53 min (31 800 ticks) every Phase 3 long batch ran on (runBatch.mjs --warmup-ticks=31800), so the long
+            // batch needs no probe and no ?warmup= link; a ?warmup= still overrides it.
+            warmup: { warmupTicks: Math.round((LONG_PROTOCOL_WARMUP_MIN * 60) / DT), stationary: null, drifting: null, settle: null },
+            durationTicks: LONG_PROTOCOL.measuredTicks,
+            powerOutageStartTick: LONG_PROTOCOL.powerOutageStartTick,
+            powerOutageEndTick: LONG_PROTOCOL.powerOutageEndTick,
+            rollingSchedule: LONG_PROTOCOL.rollingSchedule,
+            runOptions: { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds },
+        };
+    }
+    return { warmup: null, durationTicks: DURATION_TICKS, powerOutageStartTick: POWER_OUTAGE_START_TICK, powerOutageEndTick: POWER_OUTAGE_END_TICK, rollingSchedule: ROLLING_SCHEDULE, runOptions: {} };
+}
+const LONG_PROTOCOL_WARMUP_MIN = 53;
 /** Batch the network writes - don't POST 600 times (build step 17). */
 const POST_BATCH_SIZE = 25;
 
@@ -407,10 +431,71 @@ const resumeButton = document.getElementById('resume-batch-button');
 
 let batchRunning = false;
 
+const batchPauseButton = document.getElementById('batch-pause-button');
+const batchPauseLabel = document.getElementById('batch-pause-label');
+const batchPauseIcon = document.getElementById('batch-pause-icon');
+const batchPlayIcon = document.getElementById('batch-play-icon');
+/** The running batch's pool and how long it has sat paused - elapsed and ETA leave paused time out. */
+const batchPause = { pool: null, paused: false, sinceMs: 0, totalMs: 0, phaseBefore: null };
+
+function batchPausedMs() {
+    return batchPause.totalMs + (batchPause.paused ? performance.now() - batchPause.sinceMs : 0);
+}
+
+function setBatchPaused(paused) {
+    if (!batchPause.pool || batchPause.paused === paused) return;
+    batchPause.paused = paused;
+    if (paused) {
+        batchPause.sinceMs = performance.now();
+        batchPause.phaseBefore = batchMonitor.state?.phase ?? null;
+        batchMonitor.phase('Paused');
+    } else {
+        batchPause.totalMs += performance.now() - batchPause.sinceMs;
+        batchMonitor.phase(batchPause.phaseBefore ?? 'Running');
+    }
+    batchPause.pool.setPaused(paused);
+    batchPauseLabel.textContent = paused ? 'Play' : 'Pause';
+    batchPauseIcon?.classList.toggle('hidden', paused);
+    batchPlayIcon?.classList.toggle('hidden', !paused);
+    showBatchPauseState();
+}
+
+/** While paused: the runs still finishing, then a plain "Paused" once every worker is idle. */
+function showBatchPauseState() {
+    if (!batchPause.paused || !batchProgressLabel) return;
+    const busy = batchPause.pool?.busy ?? 0;
+    batchProgressLabel.textContent = busy ? `Pausing - letting ${busy} run${busy === 1 ? '' : 's'} in progress finish...` : 'Paused - press Play to carry on.';
+}
+
+batchPauseButton?.addEventListener('click', () => setBatchPaused(!batchPause.paused));
+
+const batchWorkersSelect = document.getElementById('batch-workers-select');
+
+/** Fills the selector 1..max (the machine's cap) with the pool's current limit selected. */
+function showBatchWorkerChoices(pool) {
+    if (!batchWorkersSelect) return;
+    batchWorkersSelect.replaceChildren(
+        ...Array.from({ length: pool.maxSize }, (_, i) => new Option(`${i + 1} at a time`, String(i + 1), false, i + 1 === pool.limit))
+    );
+}
+
+batchWorkersSelect?.addEventListener('change', () => {
+    const pool = batchPause.pool;
+    if (!pool) return;
+    pool.setLimit(Number(batchWorkersSelect.value));
+    batchMonitor.setPoolSize?.(pool.limit);
+});
+
 batchButton?.addEventListener('click', () => openBatchModal());
 
+// The run count follows experimentalMatrix.js, not the Blade placeholder text.
+const batchRunCount = buildExperimentalMatrix().length * REPS_PER_CONDITION;
+if (batchButton) batchButton.textContent = `Generate dataset (${batchRunCount} runs)`;
+const batchConfirmButton = document.getElementById('batch-modal-confirm');
+if (batchConfirmButton) batchConfirmButton.textContent = `Run batch (${batchRunCount} runs)`;
+
 /**
- * Runs the 900-run batch (unchanged from before the modal existed - only the
+ * Runs the full batch (unchanged from before the modal existed - only the
  * corridorConfig passed in can now carry per-street demand overrides from the
  * modal, see runBatchModal.js's docblock at the top of this section).
  *
@@ -421,9 +506,11 @@ batchButton?.addEventListener('click', () => openBatchModal());
  *
  * @param {Record<string, {min: number, max: number, saturationFlowPerLanePerHour: number}>} demandOverrides
  *   Keyed by street id (arterial or connector), spec §10-11.
+ * @param {'short'|'long'} protocol protocolSettings()'s run window - a resume keeps the batch's own.
  */
-async function runBatch(demandOverrides, routingMode = 'random', resume = null) {
+async function runBatch(demandOverrides, routingMode = 'random', resume = null, protocol = 'short') {
     if (batchRunning) return;
+    const schedule = protocolSettings(resume?.protocol ?? protocol);
     batchRunning = true;
     batchButton.disabled = true;
     resumeBanner?.classList.add('hidden');
@@ -439,6 +526,11 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
 
     try {
         pool = new BatchWorkerPool(batchWorkerCount());
+        pool.onSettle = showBatchPauseState;
+        Object.assign(batchPause, { pool, paused: false, sinceMs: 0, totalMs: 0, phaseBefore: null });
+        batchPauseButton?.classList.remove('hidden');
+        showBatchWorkerChoices(pool);
+        batchWorkersSelect?.classList.remove('hidden');
         const corridorId = resume?.corridorConfig ?? (document.getElementById('filter-corridor')?.value || data.defaultCorridorId);
         const corridorConfig = applyDemandOverrides(await fetchCorridor(corridorId), demandOverrides);
         const matrix = buildExperimentalMatrix();
@@ -446,10 +538,11 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         const batchStartedAt = resume?.batchStartedAt ?? new Date().toISOString();
         // A resume keeps the batch's own stamp, as runBatch.mjs --resume does - confirmResume() has checked the sim matches.
         const build = resume?.build ?? (await currentBuildStamp(__BUILD_STAMP__));
-        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
+        batchMonitor.begin({ batchId, batchStartedAt, corridorId, routingMode, protocol: resume?.protocol ?? protocol, resumed: Boolean(resume), storedCount: resume?.runs.length ?? 0, poolSize: pool.size, build });
 
-        if (!resume) batchMonitor.phase('Warm-up probe');
-        const warmup = resume?.warmup ?? (await probeWarmup(pool, corridorConfig, routingMode));
+        const handPicked = handPickedWarmup() ?? schedule.warmup;
+        if (!resume && !handPicked) batchMonitor.phase('Warm-up probe');
+        const warmup = resume?.warmup ?? handPicked ?? (await probeWarmup(pool, corridorConfig, routingMode));
         batchMonitor.setWarmup(warmup);
         const stored = new Set((resume?.runs ?? []).map((run) => storedRunKey(run.controllerMode, run.sensorMode, run.powerState, run.seed)));
 
@@ -491,26 +584,25 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                     controllerMode: condition.controllerMode,
                     sensorMode: condition.sensorMode,
                     warmupTicks: warmup.warmupTicks,
-                    powerOutageStartTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_START_TICK : null,
-                    powerOutageEndTick: condition.powerState === 'load_shedding' ? POWER_OUTAGE_END_TICK : null,
-                    rollingSchedule: condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null,
+                    powerOutageStartTick: condition.powerState === 'load_shedding' ? schedule.powerOutageStartTick : null,
+                    powerOutageEndTick: condition.powerState === 'load_shedding' ? schedule.powerOutageEndTick : null,
+                    rollingSchedule: condition.powerState === 'rolling_blackout' ? schedule.rollingSchedule : null,
                     corridorConfig,
-                    durationTicks: DURATION_TICKS,
+                    durationTicks: schedule.durationTicks,
                     dt: DT,
                     routingMode,
+                    ...schedule.runOptions,
                 },
             }))
         );
-        const runAhead = pool.size * 3;
         let started = 0;
         const topUp = (takenIndex) => {
-            while (started < jobs.length && started < takenIndex + runAhead) {
+            while (started < jobs.length && started < takenIndex + pool.size * 3) {
                 const job = jobs[started];
-                batchMonitor.jobStarted(job.condition.key);
-                job.result = pool.run('run', job.options).then((result) => {
+                job.result = pool.run('run', job.options, () => batchMonitor.jobStarted(job.condition.key)).then((result) => {
                     completed += 1;
                     batchMonitor.jobFinished(job.condition.key, job.isStored);
-                    updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs);
+                    updateBatchProgress(completed, totalRuns, job.condition.key, performance.now() - startedAtMs - batchPausedMs());
                     return result;
                 });
                 started += 1;
@@ -521,7 +613,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         for (const { condition, reps } of plan) {
             let recoveryAcc = null;
             let darkWindows = null;
-            const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
+            const rollingSchedule = condition.powerState === 'rolling_blackout' ? schedule.rollingSchedule : null;
 
             for (let rep = 0; rep < reps.length; rep += 1) {
                 topUp(jobIndex);
@@ -535,6 +627,7 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                     const payload = toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build });
                     // What a resume needs to run the same demand again.
                     payload.raw_config_json.demandOverrides = demandOverrides;
+                    payload.raw_config_json.protocol = resume?.protocol ?? protocol;
                     pending.push(payload);
                 }
 
@@ -559,8 +652,8 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
                         corridorId: corridorConfig.id,
                         dt: DT,
                         // A rolling blackout's curve spans its first cut to its final restore.
-                        powerOutageStartTick: rollingSchedule ? rollingSchedule[0].fromTick : POWER_OUTAGE_START_TICK,
-                        powerOutageEndTick: rollingSchedule ? rollingSchedule[rollingSchedule.length - 1].toTick : POWER_OUTAGE_END_TICK,
+                        powerOutageStartTick: rollingSchedule ? rollingSchedule[0].fromTick : schedule.powerOutageStartTick,
+                        powerOutageEndTick: rollingSchedule ? rollingSchedule[rollingSchedule.length - 1].toTick : schedule.powerOutageEndTick,
                         routingMode,
                         powerState: condition.powerState,
                         darkWindows,
@@ -570,6 +663,8 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
             }
         }
 
+        batchPauseButton?.classList.add('hidden');
+        batchWorkersSelect?.classList.add('hidden');
         if (batchProgressLabel) batchProgressLabel.textContent = 'Saving results...';
         if (pending.length) await post(pending);
 
@@ -594,6 +689,10 @@ async function runBatch(demandOverrides, routingMode = 'random', resume = null) 
         alert(`Batch run failed: ${error.message}\n\nWhat it saved is kept - Resume batch carries on from there.`);
     } finally {
         pool?.terminate();
+        setBatchPaused(false);
+        batchPause.pool = null;
+        batchPauseButton?.classList.add('hidden');
+        batchWorkersSelect?.classList.add('hidden');
         batchMonitor.end();
         batchRunning = false;
         batchButton.disabled = false;
@@ -655,7 +754,7 @@ async function confirmResume(progress) {
 
 resumeButton?.addEventListener('click', async () => {
     if (!unfinishedBatch || batchRunning || !(await confirmResume(unfinishedBatch))) return;
-    runBatch(unfinishedBatch.demandOverrides ?? {}, unfinishedBatch.routingMode ?? 'random', unfinishedBatch);
+    runBatch(unfinishedBatch.demandOverrides ?? {}, unfinishedBatch.routingMode ?? 'random', unfinishedBatch, unfinishedBatch.protocol ?? 'short');
 });
 
 checkForUnfinishedBatch();
@@ -693,6 +792,17 @@ function createBatchWorker() {
  * controller's runs averaged in seed order and the slowest levelling-off point
  * plus margin taken. Logged to the console so the choice can be checked.
  */
+/**
+ * `/results?warmup=60` runs the batch on a hand-picked warm-up (minutes) instead of probing - for when the probe's
+ * 3-seed verdict is known to be noise (2026-10-22: a false "drifting" on fixed-time side streets capped it at 90 min,
+ * while 6 seeds from empty were level from 40 min). Stored as runBatch.mjs's --warmup-ticks is: stationary null.
+ */
+function handPickedWarmup() {
+    const minutes = Number(new URLSearchParams(window.location.search).get('warmup'));
+    if (!Number.isFinite(minutes) || minutes <= 0) return null;
+    return { warmupTicks: Math.round((minutes * 60) / DT), stationary: null, drifting: null, settle: null };
+}
+
 async function probeWarmup(pool, corridorConfig, routingMode) {
     const conditions = probeConditions();
     const seeds = Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(BASE_SEED, 'normal', rep));
@@ -739,31 +849,72 @@ function batchWorkerCount() {
  * when, never changes the result.
  */
 class BatchWorkerPool {
-    constructor(size) {
-        this.size = size;
+    constructor(maxSize) {
+        this.maxSize = maxSize;
+        /** Runs allowed at once - changeable mid-batch via setLimit(); workers are created on demand up to this. */
+        this.limit = maxSize;
         this.queue = [];
-        this.idle = Array.from({ length: size }, () => createBatchWorker());
-        this.all = [...this.idle];
+        this.idle = [];
+        this.all = [];
         this.nextId = 0;
+        this.paused = false;
     }
 
-    run(task, options) {
+    get size() {
+        return this.limit;
+    }
+
+    /** Raising it starts queued runs at once; lowering it lets runs in progress finish, then retires the surplus workers. */
+    setLimit(limit) {
+        this.limit = Math.max(1, Math.min(this.maxSize, limit));
+        this._trim();
+        this._dispatch();
+        this.onSettle?.();
+    }
+
+    _trim() {
+        while (this.idle.length && this.all.length > this.limit) {
+            const worker = this.idle.pop();
+            this.all.splice(this.all.indexOf(worker), 1);
+            worker.terminate();
+        }
+    }
+
+    /** `onStart` is called when a worker actually takes the task, not when it is queued. */
+    run(task, options, onStart) {
         return new Promise((resolve, reject) => {
-            this.queue.push({ task, options, resolve, reject });
+            this.queue.push({ task, options, onStart, resolve, reject });
             this._dispatch();
         });
     }
 
+    /** Runs a worker is busy with right now - a pause lets these finish, it only stops handing out new ones. */
+    get busy() {
+        return this.all.length - this.idle.length;
+    }
+
+    /** Paused, no queued task goes to a worker; runs are seeded by their own options, so a pause never changes a result. */
+    setPaused(paused) {
+        this.paused = paused;
+        if (!paused) this._dispatch();
+    }
+
     _dispatch() {
-        while (this.idle.length && this.queue.length) {
-            const worker = this.idle.pop();
-            const { task, options, resolve, reject } = this.queue.shift();
+        while (!this.paused && this.queue.length && this.busy < this.limit) {
+            let worker = this.idle.pop();
+            if (!worker) {
+                worker = createBatchWorker();
+                this.all.push(worker);
+            }
+            const { task, options, onStart, resolve, reject } = this.queue.shift();
             const id = ++this.nextId;
             const cleanUp = () => {
                 worker.removeEventListener('message', onMessage);
                 worker.removeEventListener('error', onError);
                 this.idle.push(worker);
+                this._trim();
                 this._dispatch();
+                this.onSettle?.();
             };
             const onMessage = ({ data: reply }) => {
                 if (reply.id !== id) return;
@@ -778,6 +929,7 @@ class BatchWorkerPool {
             worker.addEventListener('message', onMessage);
             worker.addEventListener('error', onError);
             worker.postMessage({ id, task, options });
+            onStart?.();
         }
     }
 
@@ -882,8 +1034,8 @@ const batchMonitor = {
     state: null,
     frame: null,
 
-    begin({ batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, build }) {
-        this.state = { batchId, batchStartedAt, corridorId, routingMode, resumed, storedCount, poolSize, build, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
+    begin({ batchId, batchStartedAt, corridorId, routingMode, protocol, resumed, storedCount, poolSize, build }) {
+        this.state = { batchId, batchStartedAt, corridorId, routingMode, protocol, resumed, storedCount, poolSize, build, phase: 'Starting', warmup: null, conditions: [], startedAtMs: performance.now(), runsDone: 0, runsTotal: 0, posted: 0 };
         this.render();
     },
 
@@ -898,24 +1050,31 @@ const batchMonitor = {
         this.render();
     },
 
+    setPoolSize(poolSize) {
+        if (!this.state) return;
+        this.state.poolSize = poolSize;
+        this.render();
+    },
+
     /** `plan` from runBatch(): every condition of the matrix, with how many of its reps are saved, to run, and rerun. */
     setPlan(matrix, plan) {
         const planned = new Map(plan.map((entry) => [entry.condition.key, entry]));
         this.state.conditions = matrix.map((condition) => {
             const entry = planned.get(condition.key);
-            const saved = entry ? entry.reps.filter((rep) => rep.isStored).length : REPS_PER_CONDITION;
             const isOutage = condition.powerState !== 'normal';
+            // An outage condition's plan keeps its stored reps (rerun for the curve); a normal one's drops them.
+            const saved = !entry ? REPS_PER_CONDITION : isOutage ? entry.reps.filter((rep) => rep.isStored).length : REPS_PER_CONDITION - entry.reps.length;
             return {
                 condition,
-                saved: entry ? saved : REPS_PER_CONDITION,
+                saved,
                 toRun: entry ? entry.reps.filter((rep) => !rep.isStored).length : 0,
                 reruns: entry && isOutage ? saved : 0,
                 finished: 0,
                 rerunsDone: 0,
                 running: 0,
                 isOutage,
-                // A condition held in full before this run already posted its curve.
-                curve: entry ? 'pending' : isOutage ? 'posted' : null,
+                // Only an outage condition has a curve; one held in full before this run already posted it.
+                curve: !isOutage ? null : entry ? 'pending' : 'posted',
             };
         });
         this.state.runsTotal = plan.reduce((sum, { reps }) => sum + reps.length, 0);
@@ -971,25 +1130,27 @@ const batchMonitor = {
         const s = this.state;
         if (!s) return;
         const routing = s.routingMode === 'destination' ? 'Destination routing' : 'Random turning';
+        const protocolLabel = s.protocol === 'long' ? 'Long protocol (16:15-22:30, 4 h outages)' : 'Short protocol (90 min, 15 min outages)';
         const kind = s.resumed ? `resumed batch (${s.storedCount} runs saved earlier)` : 'new batch';
         const warmupMin = s.warmup ? Math.round((s.warmup.warmupTicks * DT) / 60) : null;
         const code = buildLabel(s.build);
         if (batchMeta) {
-            batchMeta.textContent = [routing, s.corridorId, kind, code, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
+            batchMeta.textContent = [routing, protocolLabel, s.corridorId, kind, code, `${s.poolSize} at a time`, warmupMin != null ? `warm-up ${warmupMin} min` : 'finding warm-up'].join(' · ');
         }
 
-        const elapsedMs = performance.now() - s.startedAtMs;
+        const elapsedMs = performance.now() - s.startedAtMs - batchPausedMs();
         const remainingMs = s.runsDone ? (elapsedMs / s.runsDone) * (s.runsTotal - s.runsDone) : null;
         const curves = s.conditions.filter((row) => row.isOutage);
         const facts = [
             ['Routing', routing],
+            ['Protocol', protocolLabel],
             ['Corridor', s.corridorId],
             ['Batch', s.resumed ? `Resumed · ${s.storedCount} saved earlier` : 'New'],
             ['Batch id', s.batchId.slice(0, 8), s.batchId],
             ['Code', code, [s.build?.source, s.build?.sim && `sim ${s.build.sim}`].filter(Boolean).join(' · ')],
             ['Started', s.batchStartedAt ? new Date(s.batchStartedAt).toLocaleString() : '-'],
             ['Phase', s.phase],
-            ['Warm-up', s.warmup ? `${warmupMin} min (${s.warmup.warmupTicks} ticks)${s.warmup.stationary === false ? ' · not stationary' : ''}` : 'probing...'],
+            ['Warm-up', s.warmup ? `${warmupMin} min (${s.warmup.warmupTicks} ticks)${s.warmup.stationary === false ? ' · not stationary' : s.warmup.stationary === null ? ' · set by hand' : ''}` : 'probing...'],
             ['Workers', `${s.poolSize} runs at a time`],
             ['Runs this session', `${s.runsDone} / ${s.runsTotal}`],
             ['Posted', `${s.posted} runs`],
@@ -1039,7 +1200,7 @@ const batchMonitor = {
 
         const label = document.createElement('span');
         label.className = 'truncate';
-        const sensor = condition.controllerMode === 'adaptive' || condition.controllerMode === 'coordinated_adaptive' ? ` · ${SENSOR_SHORT[condition.sensorMode] ?? condition.sensorMode}` : '';
+        const sensor = condition.controllerMode !== 'fixed' && condition.controllerMode !== 'green_wave' ? ` · ${SENSOR_SHORT[condition.sensorMode] ?? condition.sensorMode}` : '';
         label.textContent = `${MODE_LABELS[condition.controllerMode] ?? condition.controllerMode}${sensor}`;
         label.title = condition.key;
 
@@ -1078,7 +1239,8 @@ function updateBatchProgress(completed, total, conditionKey, elapsedMs) {
     if (batchProgressBar) batchProgressBar.style.width = `${pct}%`;
     if (batchProgressPct) batchProgressPct.textContent = `${pct}% · ${completed}/${total} runs${eta}`;
     if (batchProgressLabel) batchProgressLabel.textContent = `Last finished: ${conditionKey}`;
-    if (batchButton) batchButton.textContent = `Running... ${completed}/${total}`;
+    if (batchButton) batchButton.textContent = `${batchPause.paused ? 'Paused' : 'Running'}... ${completed}/${total}`;
+    showBatchPauseState();
 }
 
 async function fetchCorridor(id) {
@@ -1242,8 +1404,9 @@ document.getElementById('batch-modal-confirm')?.addEventListener('click', () => 
         };
     });
     const routingMode = document.getElementById('batch-modal-destination')?.checked ? 'destination' : 'random';
+    const protocol = document.getElementById('batch-modal-long')?.checked ? 'long' : 'short';
     closeBatchModal();
-    runBatch(overrides, routingMode);
+    runBatch(overrides, routingMode, null, protocol);
 });
 
 /** Clones corridorConfig and overwrites each street's demand with the modal's values. */
@@ -1359,9 +1522,11 @@ async function refreshAggregatesAndRerender(params = currentFilterParams()) {
     }
 
     renderAll();
+    drawReport();
     applyItsTargetFilter();
     applyTableScopeFilter();
     if (exportPdfButton) exportPdfButton.disabled = !data.aggregates?.length;
+    if (exportCsvButton) exportCsvButton.disabled = !data.aggregates?.length;
     document.getElementById('fake-data-badge')?.classList.add('hidden');
     document.getElementById('fake-data-banner')?.classList.add('hidden');
 }
@@ -1387,6 +1552,37 @@ for (const filterId of ['filter-corridor', 'filter-routing']) {
     });
 }
 
+/* ------------------------------------------------------------ the report */
+
+/** What the report was last drawn from - a refresh that brings the same numbers back leaves open sections open. */
+let reportSignature = null;
+
+/** The PDF's report, drawn on the page (resultsReportView.js) from the same `data` - again whenever the numbers change. */
+function drawReport() {
+    const container = document.getElementById('report-view');
+    if (!container) return;
+    const params = currentFilterParams();
+    const signature = JSON.stringify([params.toString(), data.batchStamp?.label ?? null, data.aggregates, data.aggregatesBySensor]);
+    if (signature === reportSignature) return;
+    reportSignature = signature;
+    const corridorId = document.getElementById('filter-corridor')?.value ?? '';
+    // Lazy: the report pulls in resultsPdf.js and jsPDF with it.
+    import('./resultsReportView.js')
+        .then(({ renderReportView }) =>
+            renderReportView(container, data, {
+                corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
+                appendixRunsUrl: `${data.appendixRunsUrl}?${params}`,
+                adaptiveMaxSensitivityUrl: `${data.adaptiveMaxSensitivityUrl}?${params}`,
+            })
+        )
+        .catch((error) => {
+            reportSignature = null;
+            container.textContent = `The report could not be drawn: ${error.message}`;
+        });
+}
+
+drawReport();
+
 /* ------------------------------------------------------------ PDF export */
 
 const exportPdfButton = document.getElementById('export-pdf-button');
@@ -1408,6 +1604,8 @@ exportPdfButton?.addEventListener('click', async () => {
             corridorId,
             corridorName: corridorSelect?.selectedOptions[0]?.textContent.trim() || 'All corridors',
             corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
+            appendixRunsUrl: `${data.appendixRunsUrl}?${currentFilterParams()}`,
+            adaptiveMaxSensitivityUrl: `${data.adaptiveMaxSensitivityUrl}?${currentFilterParams()}`,
         });
     } catch (error) {
         // eslint-disable-next-line no-alert
@@ -1415,6 +1613,26 @@ exportPdfButton?.addEventListener('click', async () => {
     } finally {
         exportPdfButton.disabled = !data.aggregates?.length;
         exportPdfLabel.textContent = 'Export PDF';
+    }
+});
+
+/* ------------------------------------------------------------ CSV export */
+
+const exportCsvButton = document.getElementById('export-csv-button');
+
+exportCsvButton?.addEventListener('click', async () => {
+    exportCsvButton.disabled = true;
+
+    try {
+        // Same re-sync as the PDF: the dropdown can disagree with the loaded data.
+        await refreshAggregatesAndRerender();
+        const { exportResultsCsv } = await import('./resultsCsv.js');
+        exportResultsCsv(data, { corridorId: document.getElementById('filter-corridor')?.value ?? '' });
+    } catch (error) {
+        // eslint-disable-next-line no-alert
+        alert(`CSV export failed: ${error.message}`);
+    } finally {
+        exportCsvButton.disabled = !data.aggregates?.length;
     }
 });
 

@@ -33,10 +33,13 @@ class UpdateCorridorLaneUseRequest extends FormRequest
             'approaches.*.lanes' => ['required', 'array', 'min:1'],
             'approaches.*.lanes.*' => ['required', 'string', 'regex:/^(all|(left|straight|right)(_(left|straight|right))*)$/'],
             'approaches.*.turnLanes' => ['sometimes', 'array:'.$sides],
-            'approaches.*.turnLanes.*' => ['array:lengthM,laneUse'],
+            'approaches.*.turnLanes.*' => ['array:lengthM,laneUse,lanes,exitM'],
             'approaches.*.turnLanes.*.lengthM' => ['required', 'numeric', 'gt:0', 'max:500'],
             // A turn lane has to turn - it may also go straight on (a flared lane), but never straight on alone.
             'approaches.*.turnLanes.*.laneUse' => ['required', 'string', 'regex:/^(left|right|left_right|left_straight|straight_right|all)$/'],
+            // A double right turn lane, and a kerb lane carried on past the junction - corridor.js's parseTurnLanes() checks where each fits.
+            'approaches.*.turnLanes.*.lanes' => ['sometimes', 'integer', 'in:1,2'],
+            'approaches.*.turnLanes.*.exitM' => ['sometimes', 'numeric', 'min:0', 'max:200'],
         ];
     }
 }

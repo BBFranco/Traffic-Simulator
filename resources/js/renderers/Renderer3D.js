@@ -60,9 +60,10 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { ARTERIAL_ACCENTS, LayoutRenderer, litLensIndexFor } from '../sim/renderer.js';
 import { SnapshotBuffer } from './SnapshotBuffer.js';
 import { laneArrowShapes } from './laneArrows.js';
-import { turnLaneShapes, alignedDashes, medianTurnLaneReachM } from './turnLaneShapes.js';
+import { turnLaneShapes, alignedDashes, medianTurnLaneReachM, junctionBoxPolygon } from './turnLaneShapes.js';
 import { SHAPE_KEYS, buildVehicleGeometries, shapeFor } from './vehicleModels.js';
 import { DRIVEWAY_DEPTH_M, DRIVEWAY_WIDTH_M } from '../sim/routing/driveways.js';
+import { roundaboutFlares, roundaboutSplitterIslands } from '../sim/corridor.js';
 
 const PALETTES = {
     light: {
@@ -77,6 +78,7 @@ const PALETTES = {
         pole: '#475569',
         housing: '#1f2937',
         median: '#b8bfc7',
+        roundaboutIsland: '#e5c04a',
         driveway: '#8b939f',
         drivewayWall: '#e2e8f0',
         trim: '#1e293b',
@@ -94,6 +96,7 @@ const PALETTES = {
         pole: '#64748b',
         housing: '#0b1220',
         median: '#4b5563',
+        roundaboutIsland: '#d4a82a',
         driveway: '#3a4352',
         drivewayWall: '#64748b',
         trim: '#0b1220',
@@ -476,6 +479,7 @@ export class Renderer3D {
             pole: new MeshLambertMaterial(),
             housing: new MeshLambertMaterial(),
             median: new MeshLambertMaterial({ side: DoubleSide }),
+            roundaboutIsland: new MeshLambertMaterial({ side: DoubleSide }),
             driveway: flat(LAYER_ORDER.asphalt + 0.1),
             drivewayWall: new MeshLambertMaterial(),
             lens: new MeshBasicMaterial(),
@@ -487,7 +491,7 @@ export class Renderer3D {
     applyTheme() {
         const p = PALETTES[this.theme];
         const m = this.materials;
-        for (const key of ['ground', 'pole', 'housing', 'median', 'drivewayWall']) m[key].color.set(p[key]);
+        for (const key of ['ground', 'pole', 'housing', 'median', 'roundaboutIsland', 'drivewayWall']) m[key].color.set(p[key]);
         m.vehicleTrim.color.set(p.trim);
         m.vehicleSimple.userData.trimColour.value.set(p.trim);
         this.applyFlatColours();
@@ -767,6 +771,8 @@ export class Renderer3D {
         const edgeLine = new FlatLayer();
         const centreLine = new FlatLayer();
         const junction = new FlatLayer();
+        // A roundabout's ring and its flared mouths are road, so they take the road's colour over the junction box.
+        const ring = new FlatLayer();
 
         // Same road list (arterials, connectors, cross stubs) the 2D map strokes.
         const roads = [];
@@ -796,17 +802,25 @@ export class Renderer3D {
         for (const segment of turnLanes.solidEdges) edgeLine.line(segment, 0, 0.14);
         // The road's solid edge line runs along a pocket's inner side: paint it out, then dash the boundary like any lane divider.
         const edgeMask = new FlatLayer();
+        // Turn-lane dashes over the road's own (a road dash a lane shift moves is painted out between the two).
+        const dividerDash = new FlatLayer();
+        const dashMask = new FlatLayer();
         for (const segment of turnLanes.dividers) {
             edgeMask.line(segment, 0, 0.3);
-            for (const piece of alignedDashes(segment, roads, 3, 6, 3)) laneDash.line(piece, 0, 0.13);
+            for (const piece of alignedDashes(segment, roads, 3, 6, 3)) dividerDash.line(piece, 0, 0.13);
         }
+        for (const segment of turnLanes.masks) edgeMask.line(segment, 0, 0.3);
+        for (const segment of turnLanes.dashMasks) dashMask.line(segment, 0, 0.3);
 
-        // Same two-rectangle union drawJunctions() uses, so skewed connectors are covered.
+        // Same box drawJunctions() uses: the two roads' overlap, so a skewed crossing is covered.
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
-                junction.rect(node.point, node.arterialHeading, node.crossRoadWidthM, node.arterialRoadWidthM);
-                junction.rect(node.point, node.crossAxis, node.arterialRoadWidthM, node.crossRoadWidthM);
-                if (node.roundabout) junction.disc(node.point, node.roundabout.radiusM);
+                junction.quad(...junctionBoxPolygon(node));
+                if (!node.roundabout) continue;
+                ring.disc(node.point, node.roundabout.radiusM);
+                for (const { kerb, strip } of roundaboutFlares(node)) {
+                    for (let i = 0; i < kerb.length - 1; i += 1) ring.quad(strip[i], kerb[i], kerb[i + 1], strip[i + 1]);
+                }
             }
         }
 
@@ -821,8 +835,11 @@ export class Renderer3D {
         this.addStatic(edgeLine.build(), m.edgeLine, LAYER_ORDER.markings);
         this.addStatic(edgeMask.build(), m.asphalt, LAYER_ORDER.markings + 0.3);
         this.addStatic(laneDash.build(), m.laneDash, LAYER_ORDER.markings + 0.6);
+        this.addStatic(dashMask.build(), m.asphalt, LAYER_ORDER.markings + 0.65);
+        this.addStatic(dividerDash.build(), m.laneDash, LAYER_ORDER.markings + 0.7);
         this.addStatic(centreLine.build(), m.centreLine, LAYER_ORDER.markings);
         this.addStatic(junction.build(), m.junction, LAYER_ORDER.junction);
+        this.addStatic(ring.build(), m.asphalt, LAYER_ORDER.junction + 0.1);
         this.buildMedians();
     }
 
@@ -837,15 +854,24 @@ export class Renderer3D {
         const dividedStreets = [
             ...this.layout.connectors
                 .filter((connector) => connector.medianWidthM)
-                .map((connector) => ({ road: connector, kind: 'cross', nodes: connector.nodeIds.map((id) => this.layout.nodesById.get(id)), depthOf: (node) => node.arterialRoadWidthM })),
+                .map((connector) => ({ road: connector, nodes: connector.nodeIds.map((id) => this.layout.nodesById.get(id)), depthOf: (node) => node.arterialRoadWidthM })),
             ...this.layout.arterials
                 .filter((arterial) => arterial.medianWidthM)
-                .map((arterial) => ({ road: arterial, kind: 'arterial', nodes: arterial.intersections, depthOf: (node) => node.crossRoadWidthM })),
+                .map((arterial) => ({ road: arterial, nodes: arterial.intersections, depthOf: (node) => node.crossRoadWidthM })),
         ];
-        for (const { road, kind, nodes, depthOf } of dividedStreets) {
+        for (const { road, nodes, depthOf } of dividedStreets) {
             // How far back from `node` the island stops for traffic arriving there heading `travel`.
             const clear = (node, travel) => {
-                const approach = node.approaches.find((ap) => ap.kind === kind && ap.heading.x * travel.x + ap.heading.y * travel.y > 0.5);
+                // By direction, not kind: a connector handed over as a node's arterial arm (Duxbury at Jan Shoba) has an arterial-kind approach.
+                let approach = null;
+                let bestDot = 0.5;
+                for (const ap of node.approaches) {
+                    const dot = ap.heading.x * travel.x + ap.heading.y * travel.y;
+                    if (dot > bestDot) {
+                        bestDot = dot;
+                        approach = ap;
+                    }
+                }
                 const halfDepthM = node.roundabout ? node.roundabout.radiusM : depthOf(node) / 2;
                 return Math.max(halfDepthM + MEDIAN_JUNCTION_CLEARANCE_M, medianTurnLaneReachM(approach));
             };
@@ -879,8 +905,21 @@ export class Renderer3D {
                 pushKerbBlock(positions, start, end, road.medianWidthM / 2, MEDIAN_HEIGHT_M);
             }
         }
+        // A roundabout's centre island gets its own colour (yellow); its splitter islands are kerbing like a median.
+        const islands = [];
         for (const node of this.layout.nodesById.values()) {
-            if (node.roundabout) pushIsland(positions, node.point, node.roundabout.islandRadiusM, MEDIAN_HEIGHT_M);
+            if (!node.roundabout) continue;
+            pushIsland(islands, node.point, node.roundabout.islandRadiusM, MEDIAN_HEIGHT_M);
+            for (const triangle of roundaboutSplitterIslands(node)) pushTriangleIsland(positions, triangle, MEDIAN_HEIGHT_M);
+        }
+        if (islands.length) {
+            const geometry = new BufferGeometry();
+            geometry.setAttribute('position', new BufferAttribute(new Float32Array(islands), 3));
+            geometry.computeVertexNormals();
+            const mesh = new Mesh(geometry, this.materials.roundaboutIsland);
+            mesh.renderOrder = 10;
+            mesh.frustumCulled = false;
+            this.scene.add(mesh);
         }
         if (!positions.length) return;
         const geometry = new BufferGeometry();
@@ -1479,18 +1518,6 @@ class FlatLayer {
         }
     }
 
-    /** Rotated rectangle centred on `centre`, `alongM` along `axis` and `acrossM` across it. */
-    rect(centre, axis, alongM, acrossM) {
-        const normal = { x: -axis.y, y: axis.x };
-        const ha = alongM / 2;
-        const hb = acrossM / 2;
-        const corner = (sa, sb) => ({
-            x: centre.x + axis.x * ha * sa + normal.x * hb * sb,
-            y: centre.y + axis.y * ha * sa + normal.y * hb * sb,
-        });
-        this.quad(corner(1, 1), corner(1, -1), corner(-1, -1), corner(-1, 1));
-    }
-
     triangle(a, b, c) {
         this.positions.push(a.x, 0, a.y, b.x, 0, b.y, c.x, 0, c.y);
     }
@@ -1545,6 +1572,19 @@ function pushIsland(positions, centre, radiusM, heightM, segments = CIRCLE_SEGME
     for (let i = 0; i < segments; i += 1) {
         positions.push(...top, ...at(i + 1, heightM), ...at(i, heightM));
         positions.push(...at(i, 0), ...at(i, heightM), ...at(i + 1, heightM), ...at(i, 0), ...at(i + 1, heightM), ...at(i + 1, 0));
+    }
+}
+
+/** A splitter island - a kerb-height triangular block: its top and its three sides. */
+function pushTriangleIsland(positions, [a, b, c], heightM) {
+    const up = (p) => [p.x, heightM, p.y];
+    const down = (p) => [p.x, 0, p.y];
+    // Wound like pushIsland(): top clockwise on the map, sides walked the other way, so every face points out.
+    const clockwise = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) < 0;
+    const [p, q, r] = clockwise ? [a, b, c] : [a, c, b];
+    positions.push(...up(p), ...up(q), ...up(r));
+    for (const [s, t] of [[q, p], [r, q], [p, r]]) {
+        positions.push(...down(s), ...up(s), ...up(t), ...down(s), ...up(t), ...down(t));
     }
 }
 

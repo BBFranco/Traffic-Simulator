@@ -23,9 +23,10 @@
  * labels stay in a text token with a coloured dot beside them.
  */
 import { laneArrowShapes, laneArrowTargets } from '../renderers/laneArrows.js';
-import { turnLaneShapes, alignedDashes } from '../renderers/turnLaneShapes.js';
+import { turnLaneShapes, alignedDashes, junctionBoxPolygon } from '../renderers/turnLaneShapes.js';
 import { carShapeFor } from './carShapes.js';
 import { DRIVEWAY_DEPTH_M, DRIVEWAY_WIDTH_M } from './routing/driveways.js';
+import { roundaboutFlares, roundaboutSplitterIslands } from './corridor.js';
 
 /** Live overlay ramps: one hue each, opacity carrying the magnitude (rose for queues, violet for density) - SimulatorComposer's legends match. */
 const OVERLAY_RAMPS = { queue: [225, 29, 72], density: [124, 58, 237] };
@@ -87,6 +88,10 @@ const PALETTES = {
         // override this - the stop/go signal has to stay legible regardless of
         // which body colour a given car happens to be.
         median: '#b3bcc7',
+        // A roundabout's centre island - yellow, so it never reads as more road.
+        roundaboutIsland: '#f3d675',
+        roundaboutIslandEdge: '#c9a227',
+        splitterHatch: '#e0b52a',
         // Destination routing's driveways: a paved cut off the kerb, with the apron line where it meets the road.
         driveway: '#e2e8ef',
         drivewayApron: '#8492a6',
@@ -135,6 +140,9 @@ const PALETTES = {
         hud: 'rgba(226, 232, 240, 0.7)',
         junctionInner: 'rgba(226, 232, 240, 0.10)',
         median: '#4b586f',
+        roundaboutIsland: '#d4a82a',
+        roundaboutIslandEdge: '#f0c64a',
+        splitterHatch: '#e0b52a',
         driveway: '#364257',
         drivewayApron: '#5d6b84',
         drivewayIn: '#0284c7',
@@ -702,7 +710,7 @@ export class LayoutRenderer {
         ctx.lineCap = 'butt';
         ctx.strokeStyle = PALETTE.asphalt;
         ctx.lineWidth = 3;
-        trace(dividers);
+        trace([...dividers, ...this.turnLanes.masks, ...this.turnLanes.dashMasks]);
         // Same 7 px dash / 9 px gap as the road's own lane dashes, in metres so the phase matches along the road.
         ctx.strokeStyle = PALETTE.laneDash;
         ctx.lineWidth = 1.2;
@@ -918,23 +926,43 @@ export class LayoutRenderer {
         const { ctx } = this;
         const { scale } = this.camera;
 
+        // A divided road's median island ends at the stop line - between it and the box (a skewed crossing's stop lines
+        // sit well back) is open road, so a median-side turn lane runs straight into the junction (3D: buildMedians()).
+        ctx.save();
+        ctx.fillStyle = PALETTE.asphalt;
+        ctx.beginPath();
         for (const arterial of this.layout.arterials) {
             for (const node of arterial.intersections) {
-                // Union of two rectangles - one aligned to the arterial, one to the
-                // cross street - so a skewed connector is still covered.
-                const rects = [
-                    { axis: node.arterialHeading, along: node.crossRoadWidthM, across: node.arterialRoadWidthM },
-                    { axis: node.crossAxis, along: node.arterialRoadWidthM, across: node.crossRoadWidthM },
-                ];
-                for (const rect of rects) {
-                    ctx.save();
-                    ctx.fillStyle = PALETTE.junction;
-                    ctx.strokeStyle = PALETTE.junctionEdge;
-                    ctx.lineWidth = 1;
-                    this.pathRotatedRect(node.point, rect.axis, rect.along, rect.across);
-                    ctx.fill();
-                    ctx.restore();
+                if (node.control === 'roundabout') continue;
+                for (const approach of node.approaches) {
+                    if (!(approach.medianWidthM > 0)) continue;
+                    const h = approach.heading;
+                    const left = { x: h.y, y: -h.x };
+                    const s = approach.stopCentre;
+                    const toCentreM = (node.point.x - s.x) * h.x + (node.point.y - s.y) * h.y;
+                    if (toCentreM <= 0) continue;
+                    // Right-turn lanes are centred on the median (centreOffsetM 0), so the island sits on the stop line's centre; a pixel over covers its kerb lines.
+                    const halfM = approach.medianWidthM / 2 + 1 / scale;
+                    const at = (alongM, offsetM) => this.camera.toScreen({ x: s.x + h.x * alongM + left.x * offsetM, y: s.y + h.y * alongM + left.y * offsetM });
+                    const corners = [at(0, -halfM), at(0, halfM), at(toCentreM, halfM), at(toCentreM, -halfM)];
+                    ctx.moveTo(corners[0].x, corners[0].y);
+                    for (const p of corners.slice(1)) ctx.lineTo(p.x, p.y);
+                    ctx.closePath();
                 }
+            }
+        }
+        ctx.fill();
+        ctx.restore();
+
+        for (const arterial of this.layout.arterials) {
+            for (const node of arterial.intersections) {
+                // Where the two roads overlap - a parallelogram at a skewed crossing.
+                const box = junctionBoxPolygon(node);
+                ctx.save();
+                ctx.fillStyle = PALETTE.junction;
+                this.pathPolygon(box);
+                ctx.fill();
+                ctx.restore();
 
                 if (node.control === 'roundabout') {
                     this.drawRoundaboutCircle(node);
@@ -942,7 +970,7 @@ export class LayoutRenderer {
                     ctx.save();
                     ctx.strokeStyle = PALETTE.junctionInner;
                     ctx.lineWidth = 1;
-                    this.pathRotatedRect(node.point, node.arterialHeading, node.crossRoadWidthM, node.arterialRoadWidthM);
+                    this.pathPolygon(box);
                     ctx.stroke();
                     ctx.restore();
                 }
@@ -950,44 +978,88 @@ export class LayoutRenderer {
         }
     }
 
-    /** A roundabout (corridor.js's node.roundabout): its circle of road over the approaches' ends, and the island cars drive round. */
+    /** A roundabout (corridor.js's node.roundabout): its circle of road over the approaches' ends - the same tarmac as the roads, flared round each splitter island - and the planted island cars drive round. */
     drawRoundaboutCircle(node) {
         const { ctx } = this;
         const { scale } = this.camera;
         const { radiusM, islandRadiusM } = node.roundabout;
         const c = this.camera.toScreen(node.point);
+        const tracePolygon = (polygon) => {
+            const [first, ...rest] = polygon.map((p) => this.camera.toScreen(p));
+            ctx.beginPath();
+            ctx.moveTo(first.x, first.y);
+            for (const p of rest) ctx.lineTo(p.x, p.y);
+            ctx.closePath();
+        };
         ctx.save();
         ctx.lineWidth = 1;
-        ctx.fillStyle = PALETTE.junction;
-        ctx.strokeStyle = PALETTE.junctionEdge;
+        // The flares: road surface over the old straight kerb, then the new curved kerb drawn like the road's own edge.
+        const flares = roundaboutFlares(node);
+        ctx.fillStyle = PALETTE.asphalt;
+        for (const { kerb, strip } of flares) {
+            tracePolygon([...kerb, ...strip.slice().reverse()]);
+            ctx.fill();
+        }
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (const [style, width] of [[PALETTE.asphaltEdge, Math.min(3, Math.max(1, scale * 0.5))], [PALETTE.edgeLine, 1]]) {
+            ctx.strokeStyle = style;
+            ctx.lineWidth = width;
+            for (const { kerb } of flares) {
+                const [first, ...rest] = kerb.map((p) => this.camera.toScreen(p));
+                ctx.beginPath();
+                ctx.moveTo(first.x, first.y);
+                for (const p of rest) ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+            }
+        }
+        ctx.lineWidth = 1;
+        ctx.fillStyle = PALETTE.asphalt;
+        ctx.strokeStyle = PALETTE.asphaltEdge;
         ctx.beginPath();
         ctx.arc(c.x, c.y, radiusM * scale, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = PALETTE.median;
-        ctx.strokeStyle = PALETTE.asphaltEdge;
+        ctx.fillStyle = PALETTE.roundaboutIsland;
+        ctx.strokeStyle = PALETTE.roundaboutIslandEdge;
         ctx.beginPath();
         ctx.arc(c.x, c.y, Math.max(1.5, islandRadiusM * scale), 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+        ctx.fillStyle = PALETTE.median;
+        ctx.strokeStyle = PALETTE.asphaltEdge;
+        // Splitter islands: painted with diagonal yellow chevron-style hatching, about a metre apart.
+        for (const triangle of roundaboutSplitterIslands(node)) {
+            tracePolygon(triangle);
+            ctx.fill();
+            ctx.save();
+            ctx.clip();
+            const pts = triangle.map((p) => this.camera.toScreen(p));
+            const xs = pts.map((p) => p.x);
+            const ys = pts.map((p) => p.y);
+            const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+            const stepPx = Math.max(3, scale);
+            ctx.strokeStyle = PALETTE.splitterHatch;
+            ctx.lineWidth = Math.max(1, scale * 0.25);
+            ctx.beginPath();
+            for (let x = minX - (maxY - minY); x <= maxX; x += stepPx) {
+                ctx.moveTo(x, maxY);
+                ctx.lineTo(x + (maxY - minY), minY);
+            }
+            ctx.stroke();
+            ctx.restore();
+            tracePolygon(triangle);
+            ctx.stroke();
+        }
         ctx.restore();
     }
 
-    pathRotatedRect(centre, axis, alongM, acrossM) {
+    pathPolygon(points) {
         const { ctx } = this;
-        const normal = { x: -axis.y, y: axis.x };
-        const ha = alongM / 2;
-        const hb = acrossM / 2;
-        const corners = [
-            { x: centre.x + axis.x * ha + normal.x * hb, y: centre.y + axis.y * ha + normal.y * hb },
-            { x: centre.x + axis.x * ha - normal.x * hb, y: centre.y + axis.y * ha - normal.y * hb },
-            { x: centre.x - axis.x * ha - normal.x * hb, y: centre.y - axis.y * ha - normal.y * hb },
-            { x: centre.x - axis.x * ha + normal.x * hb, y: centre.y - axis.y * ha + normal.y * hb },
-        ].map((p) => this.camera.toScreen(p));
-
+        const [first, ...rest] = points.map((p) => this.camera.toScreen(p));
         ctx.beginPath();
-        ctx.moveTo(corners[0].x, corners[0].y);
-        for (let i = 1; i < corners.length; i += 1) ctx.lineTo(corners[i].x, corners[i].y);
+        ctx.moveTo(first.x, first.y);
+        for (const p of rest) ctx.lineTo(p.x, p.y);
         ctx.closePath();
     }
 

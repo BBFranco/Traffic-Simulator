@@ -19,7 +19,30 @@
  *     [--power-outage-start-tick=9000] [--power-outage-end-tick=18000]
  *     [--post=http://traffic-simulator.test/api/simulation-runs] [--routing=random|destination]
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
- *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart]
+ *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart|gate4|forced]
+ *     [--protocol=short|long] [--sensors=inductive_loop,radar]
+ *     [--fixed-floor=50|60] [--give-up=<min>] [--tag=<name>] [--adaptive-max=sartsm] [--fixed-tod] [--rep-range=0-9]
+ *
+ * Phase 3 sensitivity options (all 'sensitivity' batches, written to results/<condition>.<variant>/, never over the
+ * baseline): --fixed-floor sets a practice minimum cycle on fixed-time signals (plan step 14); --give-up sets how long an
+ * arrival queues at a full entry before giving up (engine.js's ENTRY_BACKLOG_BALK_S, 15 min); --tag names the variant
+ * folder for any other sweep. --adaptive-max=sartsm caps plain adaptive's maximum greens to a 120 s cycle where the usual
+ * 45 s maxima could exceed it (phasePlan.js's sartsmMaxGreens(), dissertation plan Phase 4 item 6). --tag is also stored
+ * in each run's raw_config_json.tag, which is how /results finds a sensitivity batch (e.g. adaptive-max-sartsm and its
+ * same-build baseline adaptive-max-45 - AdaptiveMaxSensitivity.php). --fixed-tod (long protocol only) re-times fixed-time signals
+ * on the hour for that hour's evening demand instead of one peak plan (runHeadless.js's fixedTimeOfDay).
+ *
+ * --rep-range=<from>-<to> runs only those reps (0-based, inclusive) - one shard of a batch, so several processes can share
+ * a condition; give the shards the same --batch-id and --warmup-ticks. A shard keeps its own checkpoint and is resumed
+ * with its own --power and --rep-range.
+ *
+ * --protocol=long runs batchSchedule.js's LONG_PROTOCOL (dissertation plan steps 7-8): 375 measured minutes from 16:15
+ * on the evening demand profile, a 4 h total blackout or 2 h + 2 h zoned load shedding from 16:30, rows every 5 s and
+ * each run's CSV gzipped. It sets --duration and both outage ticks itself. --sensors runs a subset of the sensor modes
+ * (fixed-time and green wave, which read none, always run) - the pilot's loop-only matrix.
+ *
+ * A lockup that starts while junctions are dark is gridlock (lockupWatch.js), listed at the end but not a batch failure;
+ * one that starts with every junction lit still fails the batch.
  *
  * --ablation runs coordinated adaptive with one of ablationArms.mjs's coordination overrides (baseline: none). The
  * overrides land in every coordinated run's raw config, which the batch line reads. Stored as a 'sensitivity' batch,
@@ -57,6 +80,7 @@
  * 30-45 min) - the corridor needs its `zone`s (scripts/add-zones.mjs).
  */
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +89,8 @@ import { buildExperimentalMatrix, seedForRep } from '../resources/js/sim/experim
 import { toApiPayload } from '../resources/js/sim/apiPayload.js';
 import { accumulateRecoveryTicks, finalizeRecoveryTickPayload } from '../resources/js/sim/recoveryTickPayload.js';
 import { probeConditions, probeCondition, chooseWarmup, PROBE_REPLICATIONS } from '../resources/js/sim/warmupProbe.js';
-import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE } from '../resources/js/sim/batchSchedule.js';
+import { MEASURED_TICKS, POWER_OUTAGE_START_TICK, POWER_OUTAGE_END_TICK, ROLLING_SCHEDULE, LONG_PROTOCOL } from '../resources/js/sim/batchSchedule.js';
+import { EVENING_PROFILE } from '../resources/js/sim/demandProfile.js';
 import { buildStamp, simFingerprint } from './buildStamp.mjs';
 import { ABLATION_ARMS } from './ablationArms.mjs';
 
@@ -91,11 +116,19 @@ function parseArgs(argv) {
         controllers: null,
         power: null,
         websterTurnWeight: false,
+        fixedFloor: 0,
+        adaptiveMax: 'default',
+        fixedTod: false,
+        repRange: null,
+        giveUpMin: null,
+        tag: null,
         demandScale: 1,
         endToEndShare: null,
         batchId: null,
         resume: null,
         ablation: null,
+        protocol: 'short',
+        sensors: null,
     };
     for (const arg of argv) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -113,11 +146,28 @@ function parseArgs(argv) {
         else if (key === 'controllers') args.controllers = value.split(',');
         else if (key === 'power') args.power = value.split(',');
         else if (key === 'webster-turn-weight') args.websterTurnWeight = true;
+        else if (key === 'fixed-floor') args.fixedFloor = Number(value);
+        else if (key === 'give-up') args.giveUpMin = Number(value);
+        else if (key === 'tag') args.tag = value;
+        else if (key === 'adaptive-max') args.adaptiveMax = value;
+        else if (key === 'fixed-tod') args.fixedTod = true;
+        else if (key === 'rep-range') args.repRange = value.split('-').map(Number);
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
         else if (key === 'batch-id') args.batchId = value;
         else if (key === 'resume') args.resume = value;
         else if (key === 'ablation') args.ablation = value;
+        else if (key === 'protocol') args.protocol = value;
+        else if (key === 'sensors') args.sensors = value.split(',');
+    }
+    if (!['default', 'sartsm'].includes(args.adaptiveMax)) throw new Error(`--adaptive-max=${args.adaptiveMax}: default or sartsm.`);
+    if (args.fixedTod && args.protocol !== 'long') throw new Error('--fixed-tod needs --protocol=long (the evening demand profile).');
+    if (args.repRange && !(args.repRange.length === 2 && args.repRange.every(Number.isInteger) && args.repRange[0] >= 0 && args.repRange[0] <= args.repRange[1])) throw new Error('--rep-range=<from>-<to>, e.g. 0-9.');
+    if (!['short', 'long'].includes(args.protocol)) throw new Error(`--protocol=${args.protocol}: short or long.`);
+    if (args.protocol === 'long') {
+        args.duration = LONG_PROTOCOL.measuredTicks;
+        args.powerOutageStartTick = LONG_PROTOCOL.powerOutageStartTick;
+        args.powerOutageEndTick = LONG_PROTOCOL.powerOutageEndTick;
     }
     if (args.ablation != null && !ABLATION_ARMS[args.ablation]) throw new Error(`--ablation=${args.ablation}: not one of ${Object.keys(ABLATION_ARMS).join(', ')}.`);
     // Default outage schedule: 15-30 min into the measured window, whatever its length.
@@ -173,7 +223,10 @@ function probeWarmup(corridorConfig, args) {
     const probes = [];
     for (const condition of probeConditions(args.controllers)) {
         console.log(`Warm-up probe: ${condition.controllerMode}, normal power, from empty, ${PROBE_REPLICATIONS} seeds averaged...`);
-        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks: args.duration, routingMode: args.routing });
+        // The long protocol probes on the short window at flat (peak) demand: its warm-up then ends at 16:15, on lighter
+        // demand than the peak it settled under, so the probe's warm-up is a safe upper bound.
+        const measuredTicks = args.protocol === 'long' ? MEASURED_TICKS : args.duration;
+        const probe = probeCondition({ ...condition, corridorConfig, seeds: Array.from({ length: PROBE_REPLICATIONS }, (_, rep) => seedForRep(args.baseSeed, 'normal', rep)), dt: args.dt, measuredTicks, routingMode: args.routing });
         for (const [scope, v] of Object.entries(probe.scopes)) {
             if (v.truncationTick == null) continue;
             const at = `${((v.truncationTick * args.dt) / 60).toFixed(0)} min`;
@@ -230,23 +283,23 @@ const accToJson = (acc) => acc && { reps: acc.reps, total: [...acc.total], arter
 const accFromJson = (json) => json && { reps: json.reps, total: new Map(json.total), arterial: new Map(json.arterial), sideStreet: new Map(json.sideStreet) };
 
 /** The checkpoint `--resume=<batchId>` picks: the batch's only unfinished part, or the part run with the same --power. */
-function findCheckpoint(batchId, power) {
+function findCheckpoint(batchId, power, repRange) {
     const files = fs.existsSync(CHECKPOINT_DIR) ? fs.readdirSync(CHECKPOINT_DIR).filter((name) => name.startsWith(`${batchId}`) && name.endsWith('.json')) : [];
     const parts = files.map((name) => ({ file: path.join(CHECKPOINT_DIR, name), checkpoint: JSON.parse(fs.readFileSync(path.join(CHECKPOINT_DIR, name), 'utf8')) }));
     if (!parts.length) throw new Error(`No checkpoint for batch ${batchId} in ${CHECKPOINT_DIR}.`);
-    const samePower = (part) => (part.checkpoint.args.power ?? []).join(',') === (power ?? []).join(',');
-    const candidates = power ? parts.filter(samePower) : parts.filter((part) => !part.checkpoint.finishedAt);
+    const samePower = (part) => (part.checkpoint.args.power ?? []).join(',') === (power ?? []).join(',') && (part.checkpoint.args.repRange ?? []).join('-') === (repRange ?? []).join('-');
+    const candidates = power || repRange ? parts.filter(samePower) : parts.filter((part) => !part.checkpoint.finishedAt);
     if (candidates.length === 1) return candidates[0];
     if (!power && parts.every((part) => part.checkpoint.finishedAt)) throw new Error(`Batch ${batchId} already finished - nothing to resume.`);
-    const listed = parts.map((part) => `--power=${(part.checkpoint.args.power ?? ['all']).join(',')}${part.checkpoint.finishedAt ? ' (finished)' : ''}`).join(', ');
+    const listed = parts.map((part) => `--power=${(part.checkpoint.args.power ?? ['all']).join(',')}${part.checkpoint.args.repRange ? ` --rep-range=${part.checkpoint.args.repRange.join('-')}` : ''}${part.checkpoint.finishedAt ? ' (finished)' : ''}`).join(', ');
     throw new Error(`Batch ${batchId} has ${candidates.length ? 'several unfinished parts' : 'no matching part'} (${listed}) - pass the part's --power.`);
 }
 
 async function main() {
     const cliArgs = parseArgs(process.argv.slice(2));
-    const resumed = cliArgs.resume ? findCheckpoint(cliArgs.resume, cliArgs.power) : null;
+    const resumed = cliArgs.resume ? findCheckpoint(cliArgs.resume, cliArgs.power, cliArgs.repRange) : null;
     // A resume runs on the batch's own settings - only where it posts to can change.
-    const args = resumed ? { ...resumed.checkpoint.args, post: cliArgs.post ?? resumed.checkpoint.args.post, probeOnly: false } : cliArgs;
+    const args = resumed ? { adaptiveMax: 'default', repRange: null, ...resumed.checkpoint.args, post: cliArgs.post ?? resumed.checkpoint.args.post, probeOnly: false } : cliArgs;
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
     const corridorConfig = withSweepSettings(JSON.parse(fs.readFileSync(corridorPath, 'utf8')), args);
     const prints = fingerprint(corridorConfig);
@@ -271,8 +324,9 @@ async function main() {
         const batchId = args.batchId ?? randomUUID();
         checkpoint = { batchId, args, warmup, batchStartedAt, build, fingerprint: prints, done: {}, recovery: {}, recoveryPosted: [], lockups: [], starved: [], mismatches: 0, finishedAt: null };
         fs.mkdirSync(CHECKPOINT_DIR, { recursive: true });
-        checkpointFile = path.join(CHECKPOINT_DIR, `${batchId}${args.power ? `.${args.power.join('+')}` : ''}.json`);
-        console.log(`Batch ${batchId}${args.batchId ? ' (posting into an existing batch)' : ''}. Resume it with --resume=${batchId}${args.power ? ` --power=${args.power.join(',')}` : ''} if it stops.`);
+        const shard = args.repRange ? `.reps${args.repRange.join('-')}` : '';
+        checkpointFile = path.join(CHECKPOINT_DIR, `${batchId}${args.power ? `.${args.power.join('+')}` : ''}${shard}.json`);
+        console.log(`Batch ${batchId}${args.batchId ? ' (posting into an existing batch)' : ''}. Resume it with --resume=${batchId}${args.power ? ` --power=${args.power.join(',')}` : ''}${args.repRange ? ` --rep-range=${args.repRange.join('-')}` : ''} if it stops.`);
     }
     const { batchId, warmup, batchStartedAt, build } = checkpoint;
     const saveCheckpoint = () => fs.writeFileSync(checkpointFile, JSON.stringify(checkpoint));
@@ -280,15 +334,20 @@ async function main() {
 
     const matrix = buildExperimentalMatrix()
         .filter((c) => !args.controllers || args.controllers.includes(c.controllerMode))
-        .filter((c) => !args.power || args.power.includes(c.powerState));
+        .filter((c) => !args.power || args.power.includes(c.powerState))
+        .filter((c) => !args.sensors || c.controllerMode === 'fixed' || c.controllerMode === 'green_wave' || args.sensors.includes(c.sensorMode));
+    const long = args.protocol === 'long';
+    const rollingWindows = long ? LONG_PROTOCOL.rollingSchedule : ROLLING_SCHEDULE;
+    if (long) console.log(`Protocol: ${LONG_PROTOCOL.id} - ${args.duration * args.dt / 60} measured min, demand ${EVENING_PROFILE.id} from 16:15, outage from 16:30.`);
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
-    const batchKind = args.websterTurnWeight || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
+    const batchKind = args.tag || args.adaptiveMax !== 'default' || args.fixedTod || args.giveUpMin != null || args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
     const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
     if (arm) console.log(`Ablation: ${arm.label} ${JSON.stringify(arm.coordination)}`);
     if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
         throw new Error(`"${args.corridor}" has no zones - a rolling blackout needs them (scripts/add-zones.mjs).`);
     }
-    const totalRuns = matrix.length * args.reps;
+    const [repFrom, repTo] = args.repRange ?? [0, args.reps - 1];
+    const totalRuns = matrix.length * (Math.min(repTo, args.reps - 1) - repFrom + 1);
     let completed = Object.values(checkpoint.done).flat().length;
     const pendingPosts = [];
     /** Runs finished since the last successful POST - marked done only once the server has them. */
@@ -298,10 +357,12 @@ async function main() {
     /** Posts what is pending, then records it - a crash before this line reruns those runs on resume, never skips them. */
     const flush = async () => {
         if (args.post && pendingPosts.length) await postBatch(args.post, pendingPosts.splice(0, pendingPosts.length));
-        for (const { key, seed, mismatch, lockup, starved } of unposted) {
+        for (const { key, seed, mismatch, lockup, starved, gridlock, boxStuck } of unposted) {
             (checkpoint.done[key] ??= []).push(seed);
             if (mismatch) checkpoint.mismatches += 1;
             if (lockup) checkpoint.lockups.push(lockup);
+            if (gridlock) (checkpoint.gridlocks ??= []).push(gridlock);
+            if (boxStuck) (checkpoint.boxStuck ??= []).push(boxStuck);
             if (starved) checkpoint.starved.push(starved);
         }
         unposted = [];
@@ -309,21 +370,24 @@ async function main() {
         saveCheckpoint();
     };
 
-    console.log(`Running ${matrix.length} conditions x ${args.reps} reps = ${totalRuns} runs against "${args.corridor}"${completed ? ` (${totalRuns - completed} left)` : ''}...`);
+    console.log(`Running ${matrix.length} conditions x ${totalRuns / matrix.length} reps${args.repRange ? ` (reps ${repFrom}-${repTo})` : ''} = ${totalRuns} runs against "${args.corridor}"${completed ? ` (${totalRuns - completed} left)` : ''}...`);
     if (args.post) console.log(`Will POST results to ${args.post} in batches of ${POST_BATCH_SIZE}.`);
 
     for (const condition of matrix) {
         // An ablation arm writes beside the others, never over them - the arms share condition keys.
-        const outDir = path.join(ROOT, 'results', args.ablation ? `${condition.key}.${args.ablation}` : condition.key);
+        // So do a sweep's runs: --tag names their folder, else the floor or give-up setting does.
+        const variant = args.tag ?? args.ablation ?? (args.adaptiveMax !== 'default' ? `adaptive-max-${args.adaptiveMax}` : args.fixedTod ? 'fixed-tod' : args.fixedFloor ? `floor${args.fixedFloor}` : args.giveUpMin != null ? `giveup${args.giveUpMin}` : null);
+        const outDir = path.join(ROOT, 'results', variant ? `${condition.key}.${variant}` : condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
         const outage = condition.powerState !== 'normal';
-        const rollingSchedule = condition.powerState === 'rolling_blackout' ? ROLLING_SCHEDULE : null;
+        const rollingSchedule = condition.powerState === 'rolling_blackout' ? rollingWindows : null;
         const done = new Set(checkpoint.done[condition.key] ?? []);
 
-        for (let rep = 0; rep < args.reps; rep += 1) {
+        for (let rep = repFrom; rep <= Math.min(repTo, args.reps - 1); rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
             if (done.has(seed)) continue;
+            const runStartedMs = Date.now();
             const { rows, sideStreetRows, totalRows, arterialScopeRows, summary } = runHeadless({
                 seed,
                 controllerMode: condition.controllerMode,
@@ -337,14 +401,20 @@ async function main() {
                 dt: args.dt,
                 routingMode: args.routing,
                 websterTurnWeight: args.websterTurnWeight,
+                fixedFloorS: args.fixedFloor,
+                adaptiveMaxGreen: args.adaptiveMax,
+                fixedTimeOfDay: args.fixedTod,
+                entryBacklogBalkS: args.giveUpMin != null ? args.giveUpMin * 60 : undefined,
                 coordination: arm?.coordination ?? {},
+                ...(long ? { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds } : {}),
             });
 
-            fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
-            fs.writeFileSync(path.join(outDir, `${seed}.json`), JSON.stringify(summary, null, 2));
+            if (long) fs.writeFileSync(path.join(outDir, `${seed}.long.csv.gz`), zlib.gzipSync(toCsv(rows)));
+            else fs.writeFileSync(path.join(outDir, `${seed}.csv`), toCsv(rows));
+            fs.writeFileSync(path.join(outDir, `${seed}${long ? '.long' : ''}.json`), JSON.stringify(summary, null, 2));
 
             // Its findings are recorded with the run itself (flush()), so a rerun after a crash never counts them twice.
-            const run = { key: condition.key, seed, mismatch: false, lockup: null, starved: null };
+            const run = { key: condition.key, seed, mismatch: false, lockup: null, starved: null, gridlock: null, boxStuck: null };
             if (!summary.carAccounting.balanced) {
                 run.mismatch = true;
                 console.warn(`  ! car accounting mismatch on ${condition.key}/${seed}: ${JSON.stringify(summary.carAccounting)}`);
@@ -354,13 +424,27 @@ async function main() {
             if (lockup.isLockup) {
                 run.lockup = `${condition.key}/${seed} at ${lockupJunctions(lockup)}`;
                 console.warn(`  !!! LOCKUP on ${condition.key}, seed ${seed}, at ${lockupJunctions(lockup)}: ${JSON.stringify(lockup)}`);
+            } else if (lockup.gridlock) {
+                // Started while junctions were dark: gridlock under all-way stops, a result to report - not a fault.
+                // A post-restore lockup next to a dark-period jam (its aftermath) is listed with it.
+                const { firstCycle, locked, aftermath } = lockup.gridlock;
+                const g = firstCycle ?? locked ?? aftermath.firstCycle ?? aftermath.locked;
+                const after = aftermath ? `; aftermath after restore at ${(aftermath.firstCycle?.nodeIds ?? [aftermath.locked.nodeId]).join(', ')}` : '';
+                run.gridlock = `${condition.key}/${seed} at ${g.nodeIds?.join(', ') ?? g.nodeId} (${Math.round((g.atS - warmup.warmupTicks * args.dt) / 60)} min)${after}`;
+                console.warn(`  ! gridlock while dark on ${condition.key}, seed ${seed}: ${run.gridlock}`);
             } else if (lockup.starved) {
                 // Saturation, not a fault: something ahead still moved. Listed at the end, doesn't fail the batch.
                 run.starved = `${condition.key}/${seed} at ${lockup.starved.nodeId} (${lockup.starved.seconds} s)`;
             }
 
+            if (lockup.boxStuck) {
+                // Cars stood 2+ min inside a junction box (lockupWatch.js) - listed at the end, never a failure.
+                const b = lockup.boxStuck;
+                run.boxStuck = `${condition.key}/${seed}: ${b.cars} car(s) at ${Object.entries(b.byNode).map(([node, n]) => `${node} x${n}`).join(', ')}; longest ${b.longest.seconds} s (${b.longest.startedDark ? 'from dark' : 'lit'})`;
+            }
+
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build, batchKind }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build, batchKind, tag: args.tag }));
 
                 // Every rep of an outage condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to
@@ -375,7 +459,10 @@ async function main() {
             unposted.push(run);
 
             completed += 1;
-            if (completed % 10 === 0 || completed === totalRuns) {
+            if (long) {
+                // A long run takes minutes - every one is reported, with its wall time and the process's peak memory so far.
+                console.log(`  ${completed}/${totalRuns} (${condition.key}, seed ${seed}) ${((Date.now() - runStartedMs) / 1000).toFixed(0)} s, peak RSS ${(process.resourceUsage().maxRSS / 1024).toFixed(0)} MB`);
+            } else if (completed % 10 === 0 || completed === totalRuns) {
                 console.log(`  ${completed}/${totalRuns} (${condition.key}, seed ${seed})`);
             }
 
@@ -412,6 +499,14 @@ async function main() {
     saveCheckpoint();
 
     const { starved, lockups, mismatches } = checkpoint;
+    const gridlocks = checkpoint.gridlocks ?? [];
+    const boxStuck = checkpoint.boxStuck ?? [];
+    if (boxStuck.length) {
+        console.log(`\n${boxStuck.length}/${totalRuns} runs had cars stood 2+ min inside a junction box:\n  ${boxStuck.join('\n  ')}`);
+    }
+    if (gridlocks.length) {
+        console.log(`\n${gridlocks.length}/${totalRuns} runs gridlocked while dark (started under all-way stops - reported, not a fault):\n  ${gridlocks.join('\n  ')}`);
+    }
     if (starved.length) {
         console.log(`\n${starved.length}/${totalRuns} runs had a starved approach (stood 5+ min behind a queue that still moved - saturation):\n  ${starved.join('\n  ')}`);
     }

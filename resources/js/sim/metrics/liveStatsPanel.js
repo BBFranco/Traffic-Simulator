@@ -73,7 +73,7 @@ const ROW_FORMAT = {
     divertedPct: (s) => pct(s.routing?.divertedPct),
     missedDrivewaysPct: (s) => pct(s.routing?.missedDrivewaysPct),
     missedTurns: (s) => num(s.routing?.missedTurns),
-    lostArrivals: (s) => num(s.routing?.lostArrivals),
+    queuedArrivals: (s) => num(s.routing?.queuedArrivals),
     drivewayWaitS: (s) => seconds(s.routing?.drivewayWaitS),
     carsInDriveways: (s) => num(s.routing?.carsInDriveways),
 };

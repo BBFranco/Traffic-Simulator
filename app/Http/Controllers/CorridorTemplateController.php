@@ -11,8 +11,9 @@ class CorridorTemplateController extends Controller
 {
     public function __invoke(CorridorRepository $templates, string $corridor): JsonResponse
     {
-        $config = $templates->find($corridor) ?? throw new NotFoundHttpException("Unknown corridor template [{$corridor}].");
+        $raw = $templates->raw($corridor) ?? throw new NotFoundHttpException("Unknown corridor template [{$corridor}].");
 
-        return response()->json($config);
+        // As objects, so an empty `{}` stays `{}` - decoded as arrays it came back `[]` and read as drift from the saved layout.
+        return response()->json(json_decode($raw, false, 512, JSON_THROW_ON_ERROR));
     }
 }

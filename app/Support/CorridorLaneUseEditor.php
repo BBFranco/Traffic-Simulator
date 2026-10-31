@@ -166,10 +166,9 @@ class CorridorLaneUseEditor
     {
         $sides = collect(TurnLaneSide::cases())
             ->filter(fn (TurnLaneSide $side) => isset($turnLanes[$side->value]))
-            ->mapWithKeys(fn (TurnLaneSide $side) => [$side->value => (object) [
-                'lengthM' => $turnLanes[$side->value]['lengthM'],
-                'laneUse' => $turnLanes[$side->value]['laneUse'],
-            ]]);
+            ->mapWithKeys(fn (TurnLaneSide $side) => [$side->value => (object) collect($turnLanes[$side->value])
+                ->only(['lengthM', 'laneUse', 'lanes', 'exitM'])
+                ->all()]);
 
         return $sides->isEmpty() ? null : (object) $sides->all();
     }

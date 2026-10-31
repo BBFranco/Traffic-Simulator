@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\BatchKind;
 use App\Enums\ControllerMode;
 use App\Enums\PowerState;
 use App\Enums\RoutingMode;
@@ -12,6 +11,7 @@ use App\Models\TrafficCount;
 use App\Support\ConfidenceInterval;
 use App\Support\CoordinationMetrics;
 use App\Support\CorridorRepository;
+use App\Support\LatestBatchIds;
 use App\Support\RoadWaitMetrics;
 use App\Support\RoutingMetrics;
 use App\Support\SeedPairedDeltas;
@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 /**
@@ -100,7 +101,7 @@ class ResultsController extends Controller
     /** Fewest recovered runs a side needs before its mean recovery time is compared as a delta. */
     private const MIN_RECOVERED_RUNS = 10;
 
-    /** Both sides recover within this - a % change on a few seconds reads as a big effect, so it's shown in seconds. */
+    /** Fixed-time recovers within this - a % change on a few seconds reads as a big effect (70 s vs 4.3 s = +1528%), so it's shown in seconds. */
     private const SHORT_RECOVERY_S = 30;
 
     public function __construct(
@@ -110,6 +111,7 @@ class ResultsController extends Controller
         private readonly CoordinationMetrics $coordinationMetrics,
         private readonly RoadWaitMetrics $roadWaitMetrics,
         private readonly ZoneScopes $zoneScopes,
+        private readonly LatestBatchIds $latestBatchIds,
     ) {}
 
     public function index(): View
@@ -153,6 +155,8 @@ class ResultsController extends Controller
                 'savedLayoutUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
                 'resultsDataUrl' => route('results.data'),
                 'latestBatchProgressUrl' => route('results.latest-batch-progress'),
+                'appendixRunsUrl' => route('results.appendix-runs'),
+                'adaptiveMaxSensitivityUrl' => route('results.adaptive-max-sensitivity'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,
             ],
@@ -651,9 +655,22 @@ class ResultsController extends Controller
         return RoutingMode::tryFrom((string) request()->query('routing')) ?? RoutingMode::Random;
     }
 
+    /**
+     * The payload only changes when runs are added or removed (a batch run, a delete), so it is kept until the run or
+     * recovery-tick tables change - the build reads and decodes every run of the latest batches.
+     */
     private function buildPayload(?string $corridorFilter, RoutingMode $routingMode): array
     {
-        $batchIds = $this->latestBatchIds($corridorFilter, $routingMode);
+        $runs = SimulationRun::query()->toBase()->selectRaw('count(*) as total, max(id) as last_id')->first();
+        $ticks = SimulationRunRecoveryTick::query()->toBase()->selectRaw('count(*) as total, max(id) as last_id')->first();
+        $key = sprintf('results.payload.%s.%s.%s', $corridorFilter ?: 'all', $routingMode->value, md5(json_encode([$runs, $ticks, filemtime(__FILE__)])));
+
+        return Cache::remember($key, now()->addDay(), fn (): array => $this->computePayload($corridorFilter, $routingMode));
+    }
+
+    private function computePayload(?string $corridorFilter, RoutingMode $routingMode): array
+    {
+        $batchIds = $this->latestBatchIds->for($corridorFilter, $routingMode);
         $query = SimulationRun::query()->whereIn('batch_id', $batchIds);
 
         $aggregates = $this->aggregates((clone $query));
@@ -962,7 +979,8 @@ class ResultsController extends Controller
         $controllers = $config['controllerConfig'] ?? null;
         $controllerLabel = $controllers === null
             ? 'signal rules not recorded'
-            : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s";
+            : "Webster on {$controllers['websterTurnInput']}, turn weight on {$controllers['turnWeightActsOn']}, min green {$controllers['minGreenS']}/{$controllers['minTurnGreenS']} s"
+                .(isset($controllers['minCycleS']) ? ", min cycle {$controllers['minCycleS']} s" : '');
         // Normal-power runs store no outage, so read the schedule off one of the batch's load-shedding runs.
         $outageConfig = SimulationRun::query()
             ->where('batch_id', $latest->batch_id)
@@ -995,6 +1013,8 @@ class ResultsController extends Controller
             'routingMode' => $latest->routing_mode,
             'warmupMinutes' => $minutes($config['warmupTicks'] ?? null),
             'warmupSettleMinutes' => $this->warmupSettleMinutes($config),
+            // No probe verdict: the warm-up was chosen by hand (runBatch.mjs --warmup-ticks, /results?warmup=).
+            'warmupHandPicked' => isset($config['warmupTicks']) && $latest->warmup_stationary === null,
             'measuredMinutes' => $minutes($config['durationTicks'] ?? null),
             'outageStartMinutes' => $minutes($outageConfig['powerOutageStartTick'] ?? null),
             'outageEndMinutes' => $minutes($outageEndTicks),
@@ -1008,6 +1028,8 @@ class ResultsController extends Controller
                 : round(($config['durationTicks'] - $outageEndTicks) * ($config['dt'] ?? 0.1)),
             ...$this->outageWindows($latest->batch_id),
             'zoneAccounting' => $config['zoneAccounting'] ?? null,
+            // The long protocol's evening profile: demand falls through the window, so a pre-cut throughput level is never regained.
+            'demandProfile' => $config['demandProfile']['id'] ?? null,
             'controllerConfig' => $controllers,
             'sensorSpecs' => $sensorSpecs,
             // The coordination layers and thresholds the batch's coordinated adaptive runs used (marriage gates, platoon, tuning, levers).
@@ -1040,24 +1062,6 @@ class ResultsController extends Controller
         return $utcTimestamp === null
             ? null
             : Carbon::parse($utcTimestamp, 'UTC')->setTimezone(config('app.display_timezone'))->format('j M Y, H:i');
-    }
-
-    /**
-     * Each corridor's most recent batch - older batches were produced by earlier engine
-     * versions, so pooling them would blend incomparable runs. They stay in the table.
-     *
-     * @return Collection<int, string>
-     */
-    private function latestBatchIds(?string $corridorFilter, RoutingMode $routingMode): Collection
-    {
-        $latestRunIds = SimulationRun::query()
-            ->where('routing_mode', $routingMode->value)
-            ->where('batch_kind', BatchKind::Main->value)
-            ->when($corridorFilter, fn (Builder $query) => $query->where('corridor_config', $corridorFilter))
-            ->selectRaw('max(id)')
-            ->groupBy('corridor_config');
-
-        return SimulationRun::query()->whereIn('id', $latestRunIds)->pluck('batch_id');
     }
 
     /**
@@ -1162,8 +1166,9 @@ class ResultsController extends Controller
             ->map(function (Collection $groupRuns) use ($metricColumns): array {
                 // A group from before zones has nothing to build the zone intervals from.
                 $hasZoneStats = $groupRuns->contains(fn (SimulationRun $run): bool => $run->zone_stats !== null);
+                $bySeed = $groupRuns->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->seed}");
                 $ci95s = collect($metricColumns)->mapWithKeys(fn (string $column): array => [
-                    $column => $hasZoneStats || ! $this->zoneScopes->isZoneColumn($column) ? $this->ci95OnSeedMeans($groupRuns, $column) : null,
+                    $column => $hasZoneStats || ! $this->zoneScopes->isZoneColumn($column) ? $this->ci95OnGroupedSeedMeans($bySeed, $column) : null,
                 ]);
                 $zoneCi95s = $ci95s->only($this->zoneMetricColumns())
                     ->mapWithKeys(fn (?float $ci95, string $column): array => ["{$column}_ci95" => $ci95]);
@@ -1225,21 +1230,37 @@ class ResultsController extends Controller
         return $run->{$column} === null ? null : (float) $run->{$column};
     }
 
-    /** @param  Collection<int, SimulationRun>  $runs */
-    private function ci95OnSeedMeans(Collection $runs, string $column): ?float
+    /**
+     * 95% CI half-width of a column's per-seed means. Takes runs already grouped by seed - the grouping doesn't depend
+     * on the column, so a caller doing many columns groups once.
+     *
+     * @param  Collection<string, Collection<int, SimulationRun>>  $bySeed
+     */
+    private function ci95OnGroupedSeedMeans(Collection $bySeed, string $column): ?float
     {
-        $seedMeans = $runs->filter(fn (SimulationRun $run): bool => $this->runValue($run, $column) !== null)
-            ->groupBy(fn (SimulationRun $run): string => "{$run->corridor_config}|{$run->seed}")
-            ->map(fn (Collection $seedRuns): float => (float) $seedRuns->avg(fn (SimulationRun $run): ?float => $this->runValue($run, $column)))
-            ->values();
+        $seedMeans = [];
+        foreach ($bySeed as $seedRuns) {
+            $sum = 0.0;
+            $count = 0;
+            foreach ($seedRuns as $run) {
+                $value = $this->runValue($run, $column);
+                if ($value !== null) {
+                    $sum += $value;
+                    $count++;
+                }
+            }
+            if ($count > 0) {
+                $seedMeans[] = $sum / $count;
+            }
+        }
 
-        $samples = $seedMeans->count();
+        $samples = count($seedMeans);
         if ($samples < 2) {
             return null;
         }
 
-        $mean = $seedMeans->avg();
-        $variance = $seedMeans->sum(fn (float $value): float => ($value - $mean) ** 2) / ($samples - 1);
+        $mean = array_sum($seedMeans) / $samples;
+        $variance = array_sum(array_map(fn (float $value): float => ($value - $mean) ** 2, $seedMeans)) / ($samples - 1);
 
         return round(ConfidenceInterval::halfWidth95(sqrt($variance), $samples), 1);
     }
@@ -1430,7 +1451,7 @@ class ResultsController extends Controller
         $throughputDelta = $paired[$throughputKey]['delta'] ?? ($throughputKnown ? $this->pctChange($baseline[$throughputKey], $subject[$throughputKey]) : null);
         $clearedDelta = $paired[$clearedKey]['delta'] ?? ($clearedKnown ? round($subject[$clearedKey] - $baseline[$clearedKey], 1) : null);
         $waitImproves = $this->improvesBeyondNoise($waitDelta, $paired[$waitKey] ?? null, isLowerBetter: true);
-        $isShortRecovery = $recoveryKnown && max($subject[$recoveryKey], $baseline[$recoveryKey]) < self::SHORT_RECOVERY_S;
+        $isShortRecovery = $recoveryKnown && $baseline[$recoveryKey] < self::SHORT_RECOVERY_S;
 
         return [
             'mode' => $mode,

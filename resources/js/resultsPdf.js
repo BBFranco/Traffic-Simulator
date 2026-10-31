@@ -6,10 +6,12 @@
  * at a time, the report spells out every combination the payload already carries, in fixed
  * sections (SECTION): a headline, 1 Total blackout and 2 Rolling blackout (each scope beside the
  * normal-power baseline - Total / Main arterial / Side streets, plus the three zones under the
- * rolling blackout), 3 Coordination and 4 Method notes - with every controller variant side by
+ * rolling blackout), 3 Coordination, 4 Sensor richness (only when the batch ran adaptive_rich) and then Method notes - with every controller variant side by
  * side: fixed-time, the blended adaptive average, each adaptive sensor on its own, and green wave.
+ * An unnumbered appendix then repeats the detailed results figures and tables, recomputed from every run of the
+ * batch (resultsAppendix.js), so they can be reused after a new batch.
  * Nothing is recomputed here except the blended adaptive recovery curve (same point-wise
- * average results.js draws); the paired deltas come straight from
+ * average results.js draws) and Sensor richness (paired from the appendix's per-run rows); the other paired deltas come straight from
  * ResultsController::pairedComparisons().
  *
  * Charts are drawn offscreen with the same Chart.js theme as the page, forced to light ink
@@ -32,12 +34,15 @@ import {
     xRangeBand,
 } from './charts/theme.js';
 import { currentTheme } from './theme.js';
+import { reportFileName } from './resultsFileName.js';
 import { buildLayout, corridorCounts } from './sim/corridor.js';
 import { MAX_WARMUP_TICKS, PROBE_REPLICATIONS, WARMUP_SAFETY_MARGIN } from './sim/warmupProbe.js';
 import { ADAPTIVE_DEFAULTS, COORDINATED_DEFAULTS } from './sim/equations.js';
 import { SENSOR_SPEC_SETS, latencyTicks } from './sim/sensorSpecs.js';
 import { seedForRep } from './sim/experimentalMatrix.js';
 import { LayoutRenderer, ZONE_TINTS, setRendererTheme } from './sim/renderer.js';
+import { drawDetailedAppendix } from './resultsAppendix.js';
+import { paired } from './stats/pairedStats.js';
 
 /** Zone wait is charged by junction (zoneAccounting by-junction-v1), so every zone caption says what that pulls in. */
 const zoneDescription = (zone) =>
@@ -85,6 +90,16 @@ const OUTAGES = {
 /** Fixed section numbers - every cross-reference in the text reads from here, never a literal. */
 const SECTION = { load_shedding: 1, rolling_blackout: 2, coordination: 3, methodNotes: 4 };
 const POWER_ORDER = ['normal', 'load_shedding', 'rolling_blackout'];
+
+/**
+ * Throughput recovery is left out under load shedding: at the final restore throughput is already above its pre-cut level
+ * (stage 2 surge), so the total scopes read 0 s, and a zone's figure is dominated by the neighbouring zone still dark.
+ */
+/**
+ * Throughput recovery is left out under load shedding (stage 2's surge has it back before the final restore) and on a
+ * time-varying-demand batch (the evening profile falls through the window, so the pre-cut peak level is never regained).
+ */
+const showsThroughputRecovery = (powers, data = null) => !powers.includes('rolling_blackout') && !data?.batchStamp?.demandProfile;
 
 /** An outage section's subsections in order: one per scope, then these three. */
 const OUTAGE_TAIL_PARTS = ['distribution', 'routing', 'roadWaits'];
@@ -371,6 +386,8 @@ const printLegend = {
 /** One bar group per power state in `powers` (a section's normal baseline and its own outage), one bar per variant. */
 function barChartImage(variants, metric, powers, { unit, tickSuffix = '' }) {
     const options = baseOptions({ tickFormat: (v) => `${v}${tickSuffix}` });
+    // Headroom for the staggered value labels over the tallest bars.
+    options.scales.y.grace = '10%';
 
     return renderChartImage(
         {
@@ -481,8 +498,26 @@ function recoveryLineImage(data, variants, metricKey, power) {
 }
 
 /** Horizontal time-to-recovery bars under `power`, one per variant that actually recovered in the window. */
-function recoveryTimeImage(variants, metric, power) {
-    const measured = variants.filter((variant) => variant.row(power)?.[metric] != null);
+/** Height per bar in the time-to-recovery charts - room for a wrapped label plus its recovered/runs line. */
+const RECOVERY_BAR_PX = 46;
+
+/**
+ * A long variant label as two tick lines - Chart.js caps the y-axis at half the chart width and clips the rest, which cut
+ * "Coordinated adaptive (avg. of sensors)" to "nated adaptive ...".
+ */
+function wrapTickLabel(label) {
+    if (label.length <= 28) return [label];
+    const at = label.includes(' - ') ? label.indexOf(' - ') : label.indexOf(' (');
+    return at > 0 ? [label.slice(0, at), label.slice(at + 1).replace(/^- /, '')] : [label];
+}
+
+/**
+ * Time-to-recovery bars. With `windowS` (wait recovery) each bar is the capped mean - runs that never recovered count at the
+ * cap - so it matches the tables; without it (throughput) it is the mean over the runs that recovered.
+ */
+function recoveryTimeImage(variants, metric, power, windowS = null) {
+    const valueOf = (row) => (windowS == null ? row[metric] : cappedRecoveryS(row[metric], row[`${metric}_recovered`] ?? 0, row.runs, windowS));
+    const measured = variants.filter((variant) => variant.row(power) && valueOf(variant.row(power)) != null);
     if (!measured.length) return null;
 
     const options = baseOptions();
@@ -511,11 +546,11 @@ function recoveryTimeImage(variants, metric, power) {
             data: {
                 labels: measured.map((variant) => {
                     const row = variant.row(power);
-                    return [variant.label, `${row[`${metric}_recovered`]}/${row.runs} recovered`];
+                    return [...wrapTickLabel(variant.label), `${row[`${metric}_recovered`] ?? 0}/${row.runs} recovered`];
                 }),
                 datasets: [
                     {
-                        data: measured.map((variant) => one(variant.row(power)[metric])),
+                        data: measured.map((variant) => one(valueOf(variant.row(power)))),
                         backgroundColor: measured.map((variant) => variant.colour),
                         borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 },
                         borderSkipped: 'left',
@@ -529,7 +564,7 @@ function recoveryTimeImage(variants, metric, power) {
             plugins: [valueLabels],
         },
         380,
-        60 + measured.length * 38
+        60 + measured.length * RECOVERY_BAR_PX
     );
 }
 
@@ -590,6 +625,12 @@ class Report {
      * A heading (3.1) - or, with `level: 'card'`, one numbered like a chart card (3.1.2) inside a subsection. `swatch`
      * draws a colour mark before the title (a zone's tint); the title itself stays in text ink.
      */
+    /** Millimetres heading() takes for this caption, so a figure can keep its heading and image on one page. */
+    headingHeight(caption) {
+        const lines = caption ? this.doc.setFontSize(8).splitTextToSize(caption, CONTENT_WIDTH).length : 0;
+        return 7.5 + (lines ? lines * 3.6 + 1.5 : 0);
+    }
+
     heading(title, caption, { level = 'sub', swatch = null } = {}) {
         title = this.numbered(title, level);
         const { doc } = this;
@@ -646,16 +687,39 @@ class Report {
 
     table(options) {
         this.ensureSpace(24);
-        autoTable(this.doc, {
-            startY: this.y,
+        autoTable(this.doc, this.tableOptions(this.y, options));
+        this.y = this.doc.lastAutoTable.finalY + 7;
+    }
+
+    tableOptions(startY, options) {
+        return {
+            startY,
             margin: { left: PAGE.margin, right: PAGE.margin, top: TOP, bottom: PAGE.height - BOTTOM },
             theme: 'grid',
             styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.6, textColor: COLOURS.ink, lineColor: COLOURS.rule, lineWidth: 0.2 },
             headStyles: { fillColor: COLOURS.headFill, textColor: COLOURS.secondary, fontStyle: 'bold', fontSize: 7 },
             alternateRowStyles: { fillColor: [250, 251, 253] },
+            // A row moves whole to the next page rather than leaving its last line alone at the top of it.
+            rowPageBreak: 'avoid',
             ...options,
-        });
-        this.y = this.doc.lastAutoTable.finalY + 7;
+        };
+    }
+
+    /**
+     * A card heading with its table, never split across a page: when both fit on one page but not on what is left of
+     * this one, they start on the next. A table taller than a page still breaks - there is no page it would fit on.
+     */
+    headedTable(title, caption, options) {
+        const captionLines = caption ? this.doc.setFont('helvetica', 'normal').setFontSize(8).splitTextToSize(caption, CONTENT_WIDTH) : [];
+        const headingHeight = 9 + (captionLines.length ? captionLines.length * 3.6 + 1.5 : 0);
+        // Measured by drawing it on a scratch document, so wrapped cells count at their real height.
+        const probe = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        autoTable(probe, this.tableOptions(TOP, options));
+        const fitsOnePage = probe.getNumberOfPages() === 1;
+        const height = headingHeight + probe.lastAutoTable.finalY - TOP;
+        if (fitsOnePage && height <= BOTTOM - TOP) this.ensureSpace(height);
+        this.heading(title, caption, { level: 'card' });
+        this.table(options);
     }
 
     /** Running header + page footer on every page except the cover. */
@@ -696,19 +760,7 @@ function drawCover(report, data, variants, corridorLayout) {
     doc.text(`Generated ${meta.generatedAt} · Vehicle routing: ${routing}`, PAGE.margin, 56);
 
 
-    // Every power state's runs, the rolling blackout's included; conditions are the per-sensor rows of all three states.
-    const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
-    const conditions = data.aggregatesBySensor.length;
-    const runsByPower = data.powerStates
-        .map((power) => [power, data.aggregates.filter((row) => row.power_state === power).reduce((sum, row) => sum + row.runs, 0)])
-        .filter(([, runs]) => runs);
-    const stats = [
-        ['Batch runs', totalRuns.toLocaleString(), 1],
-        ['Conditions', String(conditions), 1],
-        ['Reps / condition', conditions ? String(Math.round(totalRuns / conditions)) : 'n/a', 1],
-        ['Outage window', outageWindowCard(data), 1.9],
-        ['Warm-up', data.batchWarmupLabel ?? 'n/a', 1],
-    ];
+    const { stats, coverLines } = coverFacts(data);
 
     if (data.batchStamp?.label) {
         doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...COLOURS.muted);
@@ -723,18 +775,15 @@ function drawCover(report, data, variants, corridorLayout) {
         doc.roundedRect(x, 74, boxWidth, 20, 2, 2, 'FD');
         doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...COLOURS.muted);
         doc.text(label.toUpperCase(), x + 3, 80);
-        // A two-line value (the outage card's two schedules) drops to a size that fits the card.
-        const lines = value.split('\n');
-        doc.setFont('helvetica', 'bold').setFontSize(lines.length > 1 ? 8.5 : 14).setTextColor(...COLOURS.ink);
-        doc.text(lines, x + 3, lines.length > 1 ? 85 : 89);
+        doc.setFont('helvetica', 'bold').setFontSize(14).setTextColor(...COLOURS.ink);
+        doc.text(value, x + 3, 89);
         x += boxWidth + 4;
     });
-    if (runsByPower.length) {
-        doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.secondary);
-        doc.text(`Runs by power state: ${runsByPower.map(([power, runs]) => `${powerLabel(power)} ${runs.toLocaleString()}`).join(' · ')}`, PAGE.margin, 99);
-    }
+    // Under the cards, full width: the schedule outgrows a card (and grows longer with multi-hour outages).
+    doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.secondary);
+    coverLines.forEach((line, i) => doc.text(doc.splitTextToSize(line, CONTENT_WIDTH)[0], PAGE.margin, 99 + i * 4));
 
-    report.y = 104;
+    report.y = 100 + coverLines.length * 4;
     if (data.lockupLabel) {
         doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(...COLOURS.worseText);
         const warning = doc.splitTextToSize(
@@ -764,25 +813,7 @@ function drawCover(report, data, variants, corridorLayout) {
         report.y += warning.length * 3.6 + 3;
     }
     if (corridorLayout) {
-        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-        // "Coordinable" is not "coordinated": only the junctions on a strong link marry, so say how many did.
-        const marriedAtNormal = (junctions) => junctions.filter((row) => (row.married_pct_by_power?.normal ?? row.married_pct ?? 0) >= 50).length;
-        report.chartCard(
-            'Corridor layout',
-            [
-                plural(corridorLayout.arterialRoads, 'arterial road'),
-                plural(corridorLayout.sideRoads, 'side street'),
-                // park_hilda is signal-controlled but has no arterial approach, so coordination never takes it: count what could coordinate.
-                data.coordinationMetrics?.junctions?.length && data.coordinationMetrics.junctions.length < corridorLayout.signals
-                    ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')} (${marriedAtNormal(data.coordinationMetrics.junctions)} married at normal power)`
-                    : plural(corridorLayout.signals, 'signalised junction'),
-                corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
-                corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
-                corridorLayout.stopStreets && plural(corridorLayout.stopStreets, 'stop street'),
-            ].filter(Boolean).join(' · '),
-            corridorLayout.image,
-            corridorLayout.aspect
-        );
+        report.chartCard('Corridor layout', corridorCaption(corridorLayout, data), corridorLayout.image, corridorLayout.aspect);
         if (corridorLayout.zoned) drawZoneLegend(report);
     }
 
@@ -806,22 +837,66 @@ function drawCover(report, data, variants, corridorLayout) {
     comparisonTable(report, data, variants, SCOPES[0], { compact: true, powers: data.powerStates });
 }
 
+/** The cover's stat cards and the lines under them - shared with the Results page's overview (resultsReportView.js). */
+function coverFacts(data) {
+    // Every power state's runs, the rolling blackout's included; conditions are the per-sensor rows of all three states.
+    const totalRuns = data.aggregates.reduce((sum, row) => sum + row.runs, 0);
+    const conditions = data.aggregatesBySensor.length;
+    const runsByPower = data.powerStates
+        .map((power) => [power, data.aggregates.filter((row) => row.power_state === power).reduce((sum, row) => sum + row.runs, 0)])
+        .filter(([, runs]) => runs);
+    const stats = [
+        ['Batch runs', totalRuns.toLocaleString(), 1],
+        ['Conditions', String(conditions), 1],
+        ['Reps / condition', conditions ? String(Math.round(totalRuns / conditions)) : 'n/a', 1],
+        ['Warm-up', data.batchWarmupLabel ?? 'n/a', 1],
+    ];
+    const coverLines = [
+        runsByPower.length ? `Runs by power state: ${runsByPower.map(([power, runs]) => `${powerLabel(power)} ${runs.toLocaleString()}`).join(' · ')}` : null,
+        outageScheduleLine(data),
+    ].filter(Boolean);
+    return { stats, coverLines };
+}
+
+/** The corridor figure's caption: what the layout holds. */
+function corridorCaption(corridorLayout, data) {
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    // "Coordinable" is not "coordinated": only the junctions on a strong link marry, so say how many did.
+    const marriedAtNormal = (junctions) => junctions.filter((row) => (row.married_pct_by_power?.normal ?? row.married_pct ?? 0) >= 50).length;
+    return [
+        plural(corridorLayout.arterialRoads, 'arterial road'),
+        plural(corridorLayout.sideRoads, 'side street'),
+        // park_hilda is signal-controlled but has no arterial approach, so coordination never takes it: count what could coordinate.
+        data.coordinationMetrics?.junctions?.length && data.coordinationMetrics.junctions.length < corridorLayout.signals
+            ? `${data.coordinationMetrics.junctions.length} coordinable of ${plural(corridorLayout.signals, 'signalised junction')} (${marriedAtNormal(data.coordinationMetrics.junctions)} married at normal power)`
+            : plural(corridorLayout.signals, 'signalised junction'),
+        corridorLayout.roundabouts && plural(corridorLayout.roundabouts, 'roundabout'),
+        corridorLayout.allWayStops && plural(corridorLayout.allWayStops, 'all-way stop'),
+        corridorLayout.stopStreets && plural(corridorLayout.stopStreets, 'stop street'),
+    ]
+        .filter(Boolean)
+        .join(' · ');
+}
+
+/** The zone figure's key text - under the PDF's zone legend and the web view's. */
+const ZONE_LEGEND_NOTE = `Load-shedding zones: horizontal roads tinted by zone; a junction takes its horizontal road's zone. Vertical roads (${VERTICAL_ROADS}) are untinted - their queues count to the zone of the junction they queue at.`;
+
 /**
- * The outage card: "Total 15–30 min" and "Rolling Z1+3 15–30, Z2 30–45" on two lines, built from the batch's own schedules
- * (outage minutes and rollingSchedule) - only the states the batch ran.
+ * The cover's outage line, built from the batch's own schedules (outage minutes and rollingSchedule) - only the states
+ * the batch ran: "Outage schedule (minutes into the measured window): total blackout 15–30 · load shedding zones 1+3 15–30, zone 2 30–45".
  */
-function outageWindowCard(data) {
+function outageScheduleLine(data) {
     const stamp = data.batchStamp;
-    const lines = [];
-    if (stamp?.outageStartMinutes != null && stamp?.outageEndMinutes != null) lines.push(`Total ${stamp.outageStartMinutes}–${stamp.outageEndMinutes} min`);
+    const parts = [];
+    if (stamp?.outageStartMinutes != null && stamp?.outageEndMinutes != null) parts.push(`total blackout ${stamp.outageStartMinutes}–${stamp.outageEndMinutes}`);
     if (stamp?.rollingSchedule?.length) {
-        lines.push(`Load shedding ${stamp.rollingSchedule.map((w) => `Z${(w.zones ?? []).join('+')} ${minute(w.fromS)}–${minute(w.toS)}`).join(', ')}`);
+        parts.push(`load shedding ${stamp.rollingSchedule.map((w) => `zone${(w.zones ?? []).length > 1 ? 's' : ''} ${(w.zones ?? []).join('+')} ${minute(w.fromS)}–${minute(w.toS)}`).join(', ')}`);
     }
-    if (lines.length) return lines.join('\n');
+    if (parts.length) return `Outage schedule (minutes into the measured window): ${parts.join(' · ')}`;
 
     // An unstamped batch: the recovery timeline's band, as before.
     const timeline = data.recoveryTimeline;
-    return timeline?.sheddingStart != null ? `${Math.round(timeline.sheddingStart)}-${Math.round(timeline.sheddingEnd)} s` : 'n/a';
+    return timeline?.sheddingStart != null ? `Outage window: ${Math.round(timeline.sheddingStart)}–${Math.round(timeline.sheddingEnd)} s` : null;
 }
 
 /** The zone figure's key: one swatch per zone in its tint, and how the untinted vertical roads are counted. */
@@ -844,10 +919,7 @@ function drawZoneLegend(report) {
     });
     y += 4.2;
     doc.setFontSize(7.5).setTextColor(...COLOURS.muted);
-    const note = doc.splitTextToSize(
-        `Load-shedding zones: horizontal roads tinted by zone; a junction takes its horizontal road's zone. Vertical roads (${VERTICAL_ROADS}) are untinted - their queues count to the zone of the junction they queue at.`,
-        CONTENT_WIDTH - 2
-    );
+    const note = doc.splitTextToSize(ZONE_LEGEND_NOTE, CONTENT_WIDTH - 2);
     doc.text(note, PAGE.margin + 1, y);
     report.y = y + note.length * 3.4 + 3;
 }
@@ -912,9 +984,14 @@ function lowerIsBetter(delta, ci95) {
     return delta < 0;
 }
 
-/** "mode|power" -> "ITS vs fixed-time" lost arrivals per run, from the destination-routing rows (the sensors pooled per mode). Empty without routing rows. */
+/** Map-edge demand that never got in, per run: arrivals that gave up after queuing at a full entry - or, on batches from before the entry backlog, arrivals dropped at one. */
+function turnedAwayPerRun(row) {
+    return row.arrivals_balked_per_run ?? row.arrivals_lost_per_run ?? null;
+}
+
+/** "mode|power" -> "ITS vs fixed-time" turned-away arrivals per run, from the destination-routing rows (the sensors pooled per mode). Empty without routing rows. */
 function lostArrivalsByCondition(routingMetrics) {
-    const byKey = new Map((routingMetrics ?? []).filter((row) => row.arrivals_lost_per_run != null).map((row) => [`${row.controller_mode}|${row.power_state}`, row.arrivals_lost_per_run]));
+    const byKey = new Map((routingMetrics ?? []).filter((row) => turnedAwayPerRun(row) != null).map((row) => [`${row.controller_mode}|${row.power_state}`, turnedAwayPerRun(row)]));
     const out = new Map();
     for (const [key, lost] of byKey) {
         const [, power] = key.split('|');
@@ -952,7 +1029,7 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
         ...(compact && lostArrivals.size
             ? [
                   // Wait alone hides saturation: a controller that turns demand away at a full entry has a shorter queue to wait in.
-                  { header: 'Lost arrivals / run (ITS vs fixed)', value: (c) => lostArrivals.get(`${c.mode}|${c.power_state}`) ?? 'n/a' },
+                  { header: 'Gave up at entry / run (ITS vs fixed)', value: (c) => lostArrivals.get(`${c.mode}|${c.power_state}`) ?? 'n/a' },
               ]
             : []),
         ...(compact
@@ -972,7 +1049,7 @@ function comparisonTable(report, data, variants, scope, { compact = false, power
                       },
                   },
                   // After wait: throughput is back within seconds for every controller, so it tells little.
-                  { header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' },
+                  ...(showsThroughputRecovery(powers, data) ? [{ header: 'Recovery (thru)', value: (c) => fmtRecoveryDelta(c, 'throughput'), improves: 'recovery_improves' }] : []),
                   { header: 'Runs (ITS / fixed)', value: (c) => `${c.runs} / ${c.baseline_runs}` },
               ]),
     ];
@@ -1020,6 +1097,7 @@ function tailTable(report, data, variants, scope, powers) {
 
 function perConditionTable(report, data, variants, scope, powers) {
     const m = (metric) => `${metric}${scope.suffix}`;
+    const withThroughput = showsThroughputRecovery(powers, data);
     const body = [];
     variants.forEach((variant) => {
         powers.forEach((power) => {
@@ -1033,13 +1111,13 @@ function perConditionTable(report, data, variants, scope, powers) {
                 fmtCi(row[m('throughput_per_min')], row[`${m('throughput_per_min')}_ci95`]),
                 fmtCi(row[m('pct_cleared_without_stop')], row[`${m('pct_cleared_without_stop')}_ci95`]),
                 isOutage(power) ? fmtWaitRecovery(row, m('time_to_recovery_wait_seconds'), postRestoreWindowS(data, power, scope)) : '-',
-                isOutage(power) ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-',
+                ...(withThroughput ? [isOutage(power) ? fmtRecovery(row, m('time_to_recovery_seconds')) : '-'] : []),
             ]);
         });
     });
 
     report.table({
-        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - wait', 'Recovery - thru']],
+        head: [['Variant', 'Power', 'Runs', 'Avg wait (s)', 'Throughput (/min)', 'Cleared w/o stop (%)', 'Recovery - wait', ...(withThroughput ? ['Recovery - thru'] : [])]],
         body,
         columnStyles: { 0: { cellWidth: 38 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
     });
@@ -1131,7 +1209,7 @@ function drawScope(report, data, variants, scope, power) {
 
     report.heading(
         'Every ITS variant vs fixed-time',
-        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
+        `Percentage change against fixed-time on the same seeds and power state; ± is the 95% CI on the per-seed differences. Green = improvement, red = regression, uncoloured = inside the 95% CI (no clear difference). ${showsThroughputRecovery([power], data) ? 'Recovery: wait first - throughput is back within seconds for every controller, so it tells little; wait' : `Recovery: wait only - ${data.batchStamp?.demandProfile ? 'demand falls through the evening, so throughput never regains its pre-cut peak level' : 'throughput is above its pre-cut level by the final restore'}, so it is not reported here (see the method notes); wait`} recovery is often cut off by the end of the measured window. ${recoveryBasis(data, power, scope)}`,
         card
     );
     comparisonTable(report, data, variants, scope, { powers });
@@ -1162,46 +1240,69 @@ function drawScope(report, data, variants, scope, power) {
 
 /** The two time-to-recovery bar charts side by side, each timed from the scope's own restore and capped at its own window. */
 function drawRecoveryTimes(report, data, variants, scope, power) {
+    // Which restore the bars are timed from - a zone's own under rolling - and the cap a wait recovery runs to.
+    const restoreS = restoreSeconds(data, power, scope);
+    const windowS = postRestoreWindowS(data, power, scope);
     const charts = [
-        { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}` },
-        { title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}` },
+        { title: `${scope.label} - time to recovery, wait`, metric: `time_to_recovery_wait_seconds${scope.suffix}`, windowS },
+        ...(showsThroughputRecovery([power], data) ? [{ title: `${scope.label} - time to recovery, throughput`, metric: `time_to_recovery_seconds${scope.suffix}`, windowS: null }] : []),
     ].map((chart) => ({ ...chart, title: report.numbered(chart.title, 'card') })).map((chart) => {
         const outage = variants.filter((v) => v.row(power));
-        const measured = outage.filter((v) => v.row(power)[chart.metric] != null);
-        return { ...chart, image: recoveryTimeImage(variants, chart.metric, power), bars: measured.length, missing: outage.filter((v) => !measured.includes(v)) };
+        // A capped chart has a bar for every variant; uncapped, a variant with no recovered run has none.
+        const measured = chart.windowS == null ? outage.filter((v) => v.row(power)[chart.metric] != null) : outage;
+        return {
+            ...chart,
+            image: recoveryTimeImage(variants, chart.metric, power, chart.windowS),
+            bars: measured.length,
+            missing: outage.filter((v) => !measured.includes(v)),
+            caption: chart.windowS == null
+                ? 'mean seconds back to pre-cut level, runs that recovered · lower is better · (recovered/runs)'
+                : 'capped mean seconds back to pre-cut level (a run that never recovered counts at the cap) · lower is better · (recovered/runs)',
+        };
     });
     if (!charts.some((chart) => chart.image)) return;
 
     const { doc } = report;
     const width = (CONTENT_WIDTH - 4) / 2;
-    const heightFor = (bars) => (width - 4) * ((60 + bars * 38) / 380);
+    const heightFor = (bars) => (width - 4) * ((60 + bars * RECOVERY_BAR_PX) / 380);
     const imageHeight = Math.max(...charts.map((chart) => heightFor(chart.bars)));
-    // Which restore the bars are timed from - a zone's own under rolling - and the cap a wait recovery runs to.
-    const restoreS = restoreSeconds(data, power, scope);
-    const windowS = postRestoreWindowS(data, power, scope);
     const from = scope.zone && power === 'rolling_blackout' ? `zone ${scope.zone}'s own restore` : power === 'rolling_blackout' ? 'the final restore' : 'the restore';
     const basis = `from ${from}${restoreS == null ? '' : ` (min ${minute(restoreS)})`}${windowS == null ? '' : ` · cap ${minute(windowS)} min`}`;
-    report.ensureSpace(imageHeight + 28);
+    // A web report (resultsReportView.js) lays the pair out itself.
+    if (report.chartRow) {
+        report.chartRow(
+            charts.map((chart) => ({
+                title: chart.title,
+                captions: [chart.caption, basis],
+                image: chart.image,
+                warning: chart.missing.length ? `Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}` : null,
+            }))
+        );
+        if (scope.zone && power === 'rolling_blackout' && /NOT comparable/.test(recoveryBasis(data, power, scope))) report.paragraph(recoveryBasis(data, power, scope));
+        return;
+    }
+    report.ensureSpace(imageHeight + 32);
     const top = report.y;
 
     charts.forEach((chart, i) => {
         const x = PAGE.margin + i * (width + 4);
         doc.setDrawColor(...COLOURS.rule).setLineWidth(0.3);
-        doc.roundedRect(x, top, width, imageHeight + 24, 2, 2, 'S');
+        doc.roundedRect(x, top, width, imageHeight + 28, 2, 2, 'S');
         // A zone's longer title steps down a size rather than lose its tail to the card edge.
         doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...COLOURS.ink);
         if (doc.getTextWidth(chart.title) > width - 6) doc.setFontSize(8.5);
         doc.text(doc.splitTextToSize(chart.title, width - 6)[0], x + 3, top + 5.5);
         doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...COLOURS.muted);
-        doc.text('seconds back to pre-cut level · lower is better · (recovered/runs)', x + 3, top + 9.5);
-        doc.text(basis, x + 3, top + 13);
-        if (chart.image) doc.addImage(chart.image, 'PNG', x + 2, top + 15, width - 4, heightFor(chart.bars), undefined, 'FAST');
+        const caption = doc.splitTextToSize(chart.caption, width - 6).slice(0, 2);
+        doc.text(caption, x + 3, top + 9.5);
+        doc.text(basis, x + 3, top + 9.5 + caption.length * 3.5);
+        if (chart.image) doc.addImage(chart.image, 'PNG', x + 2, top + 12 + caption.length * 3.5, width - 4, heightFor(chart.bars), undefined, 'FAST');
         if (chart.missing.length) {
             doc.setFontSize(7).setTextColor(...COLOURS.worseText);
-            doc.text(doc.splitTextToSize(`Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}`, width - 6), x + 3, top + imageHeight + 19);
+            doc.text(doc.splitTextToSize(`Did not recover in window: ${chart.missing.map((v) => v.label).join(', ')}`, width - 6), x + 3, top + imageHeight + 23);
         }
     });
-    report.y = top + imageHeight + 28;
+    report.y = top + imageHeight + 32;
 
     // The zone 1/3 caveat again under the bars, where the numbers are read.
     if (scope.zone && power === 'rolling_blackout' && /NOT comparable/.test(recoveryBasis(data, power, scope))) {
@@ -1214,7 +1315,7 @@ function drawRecoveryTimes(report, data, variants, scope, power) {
  * baseline and this section's outage. Always headed, so the section keeps its numbering on a random-turning batch.
  */
 function drawRoutingTrips(report, data, powers) {
-    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive' };
+    const controllerLabel = { fixed: 'Fixed-time', green_wave: 'Green wave', adaptive: 'Adaptive', coordinated_adaptive: 'Coordinated adaptive', adaptive_rich: 'Adaptive (rich call)' };
     const rows = (data.routingMetrics ?? [])
         .filter((row) => powers.includes(row.power_state))
         .sort((a, b) => powers.indexOf(a.power_state) - powers.indexOf(b.power_state));
@@ -1225,10 +1326,10 @@ function drawRoutingTrips(report, data, powers) {
     }
     report.heading(
         'Destination routing',
-        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Avg wait: the average wait over these runs (total scope). Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure - so it sits next to Avg wait. It is therefore excluded from the wait comparisons, and it grows where queues stand across driveway exits, so it is larger in a blackout and dark-network delay is understated. Still in driveways: cars that had not got out when the run ended. Lost arrivals: map-edge demand turned away by a full entry.'
+        'Trip delay: time beyond free-flow driving along the route, over trips that reached their intended destination. Missed driveways: pull-offs that missed their driveway first time. Diverted: trips that ended somewhere else - read the tier-driven results with this alongside. Avg wait: the average wait over these runs (total scope). Driveway wait: how long a car leaving a block waited to pull out, in neither its trip nor any wait figure - so it sits next to Avg wait. It is therefore excluded from the wait comparisons, and it grows where queues stand across driveway exits, so it is larger in a blackout and dark-network delay is understated. Still in driveways: cars that had not got out when the run ended. Gave up at entry: map-edge arrivals that found their entry full, queued outside it and gave up - they never enter, so no wait figure counts them (the total-delay table counts their queuing time); a controller that turns more away looks better on wait than it is.'
     );
     report.table({
-        head: [['Controller', 'Power', 'Runs', 'Avg wait (s)', 'Driveway wait (s)', 'Still in driveways', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Lost arrivals / run']],
+        head: [['Controller', 'Power', 'Runs', 'Avg wait (s)', 'Driveway wait (s)', 'Still in driveways', 'Mean trip (s)', 'Trip delay (s)', 'Missed driveways (%)', 'Missed turns / run', 'Diverted (%)', 'Gave up at entry / run']],
         body: rows.map((row) => [
             controllerLabel[row.controller_mode] ?? row.controller_mode,
             powerLabel(row.power_state),
@@ -1241,7 +1342,7 @@ function drawRoutingTrips(report, data, powers) {
             fmt(row.missed_driveways_pct),
             row.missed_turns_per_run == null ? 'n/a' : Number(row.missed_turns_per_run).toFixed(0),
             fmt(row.diversion_pct),
-            row.arrivals_lost_per_run == null ? 'n/a' : Number(row.arrivals_lost_per_run).toFixed(0),
+            turnedAwayPerRun(row) == null ? 'n/a' : Number(turnedAwayPerRun(row)).toFixed(0),
         ]),
         columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((column) => [column, { halign: 'right' }])),
     });
@@ -1251,11 +1352,20 @@ function drawRoutingTrips(report, data, powers) {
 function warmupSettleNote(settle) {
     if (!settle) return null;
     const labels = { fixed: 'fixed-time', green_wave: 'green wave', adaptive: 'adaptive (inductive loop)', coordinated_adaptive: 'coordinated adaptive (inductive loop)' };
+    const scopeLabels = { total: 'all traffic', arterial: 'main arterials', sideStreet: 'side streets' };
     const minutes = (value) => (value == null ? 'never' : `${value} min`);
     const parts = Object.entries(settle).map(
-        ([mode, scopes]) => `${labels[mode] ?? mode} ${minutes(scopes.total)} (main arterial ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)})`
+        ([mode, scopes]) => `${labels[mode] ?? mode}: all traffic ${minutes(scopes.total)}, main arterials ${minutes(scopes.arterial)}, side streets ${minutes(scopes.sideStreet)}`
     );
-    return `Warm-up probe, from empty at normal power - when each controller's average wait levelled off: ${parts.join('; ')}. The warm-up is the slowest of these x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting. The probe runs ${PROBE_REPLICATIONS} seeds per controller with the inductive loop only, so these settle times are a noisy sizing step for the warm-up, not findings - a scope that settles later than its parts, or one sensor's slow side streets, is within that noise.`;
+    // The scope that set the warm-up: the latest levelling-off of any controller's scope.
+    let slowest = null;
+    for (const [mode, scopes] of Object.entries(settle)) {
+        for (const [scope, value] of Object.entries(scopes)) if (value != null && (!slowest || value > slowest.value)) slowest = { mode, scope, value };
+    }
+    const setBy = slowest
+        ? ` Here that is ${labels[slowest.mode] ?? slowest.mode}'s ${scopeLabels[slowest.scope] ?? slowest.scope} at ${slowest.value} min, so the warm-up is ${slowest.value} x ${WARMUP_SAFETY_MARGIN} = ${Math.round(slowest.value * WARMUP_SAFETY_MARGIN)} min before rounding and the cap.`
+        : '';
+    return `Warm-up probe, from empty at normal power - when the average wait levelled off, judged separately for each traffic scope: ${parts.join('; ')}. A controller's figure for all traffic can come before one of its scopes: the all-traffic series is dominated by the busy arterials, so it levels off while thin side-street traffic is still settling. The warm-up is the slowest scope of any controller x ${WARMUP_SAFETY_MARGIN}, capped at ${MAX_WARMUP_TICKS / 600} min; "never" is a scope still drifting.${setBy} The probe runs ${PROBE_REPLICATIONS} seeds per controller with the inductive loop only, so these settle times are a noisy sizing step for the warm-up, not findings.`;
 }
 
 const GREEN_END_LABELS = {
@@ -1280,7 +1390,7 @@ function drawVersusAdaptive(report, versus, conditions) {
     if (!versus || !Object.keys(versus).length) return;
     report.heading(
         'Coordinated vs adaptive',
-        'Coordinated adaptive against adaptive with the same sensor on the same seeds and power state; ± is the 95% CI on the per-seed differences (the "avg. of sensors" row pairs each seed\'s sensor mean). Wait, P95 and max: negative is better. Throughput and cleared-without-stopping: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI. Recovery: throughput, seconds.'
+        'Coordinated adaptive against adaptive with the same sensor on the same seeds and power state; ± is the 95% CI on the per-seed differences (the "avg. of sensors" row pairs each seed\'s sensor mean). Wait, P95 and max: negative is better. Throughput and cleared-without-stopping: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI.'
     );
     const sensors = ['average', ...SENSOR_ORDER];
     const powers = POWER_ORDER.filter((power) => conditions.some((row) => row.power_state === power));
@@ -1318,6 +1428,9 @@ function drawVersusAdaptive(report, versus, conditions) {
 }
 
 function roadLabel(road) {
+    // A slip road has no name of its own - its id (slip_<node>_<direction>) says where it is.
+    const slip = /^slip_(.+)_([a-z]+bound)$/.exec(road.road_id);
+    if (slip && (!road.name || road.name === road.road_id)) return `Slip lane at ${slip[1]}, ${slip[2]}`;
     return road.name && road.name !== road.road_id ? `${road.name} (${road.road_id})` : road.road_id;
 }
 
@@ -1377,7 +1490,14 @@ function drawRoadWaits(report, data, powers) {
  * gap between controllers. Only for runs that recorded the split - older batches skip it.
  */
 function drawRoadWaitStages(report, roads, power, valueColumns) {
-    const rows = roads.flatMap((road) => Object.entries(road.stages ?? {}).map(([stage, figures]) => ({ ...figures, road, stage })));
+    // Stages in time order (STAGE_LABELS' key order) - the stored object can list Post before the dark stages.
+    const order = Object.keys(STAGE_LABELS);
+    const rank = (stage) => (order.includes(stage) ? order.indexOf(stage) : order.length);
+    const rows = roads.flatMap((road) =>
+        Object.entries(road.stages ?? {})
+            .sort(([a], [b]) => rank(a) - rank(b))
+            .map(([stage, figures]) => ({ ...figures, road, stage }))
+    );
     if (!rows.length) return;
     report.heading(
         `Main roads by stage - ${powerLabel(power)}`,
@@ -1558,7 +1678,7 @@ function thresholdNotes(data) {
     const a = ADAPTIVE_DEFAULTS;
     const on = (flag) => (flag ? 'on' : 'off');
     return [
-        `Adaptive actuation (every sensor, plain and coordinated): a green gaps out after ${a.gapOutS} s without a detection, never shorter than ${a.minGreen} s, capped at ${a.maxGreen} s; the other phase is served once its call has persisted ${a.callDebounceS} s - one call rule for every sensor (2026-10-16); counts and queue extent are observed but never decide the switch.`,
+        `Adaptive actuation (every sensor, plain and coordinated): a green gaps out after ${a.gapOutS} s without a detection, never shorter than ${a.minGreen} s, capped at ${a.maxGreen} s; the other phase is served once its call has persisted ${a.callDebounceS} s - one call rule for every sensor (2026-10-16); counts and queue extent are observed but never decide the switch - except under Adaptive (rich call), the sensor richness test, where they can call early.`,
         `Coordinated adaptive gates: a link marries when the busiest-lane arterial flow at its two ends averages at least ${c.marryFlowPerLaneMin} veh/min per lane and a platoon crosses it within ${c.marryMaxTravelS} s, and divorces below ${Math.round(c.divorceRatio * 100)}% of that; selective marriage ${on(c.selective)}, connector routes (Jan Shoba) ${on(c.connectorRoutes)}, forced route marriage ${on(c.forceRoutes)}. Platoon messages ${on(c.platoonMessages)}: a platoon of ${c.platoonMinCars}+ vehicles holds the arterial green up to ${c.platoonExtendMaxS} s past its yield point when due within ${c.platoonLookaheadS} s, and a thinned-out cross green (${c.earlyStartGapS} s without detection) ends early for a platoon due within amber + all-red + ${c.earlyStartLeadS} s. Self-tuning ${on(c.selfTuning)}: re-plan every ${c.retuneEveryCycles} common cycles, flow smoothing ${c.retuneSmoothing}, common cycle moves at most ${c.retuneMaxStepS} s per update, saturated stages boosted ${Math.round(c.saturatedBoost * 100)}%${c.freezeAfterWarmup ? '; FROZEN after warm-up (ablation)' : ''}.`,
         `Coordinated adaptive levers: re-service of a cross call within its own window ${on(c.reservice)}; side-street max-wait cap ${on(c.sideWaitCap)} (${c.sideMaxWaitS} s); resync hold after power returns ${on(c.recoveryHold)} (${c.recoveryHoldS} s on plain adaptive before marrying back), restored junctions restart ${restartsOnArterialGreen(coordination) ? 'on the arterial green' : 'mid-plan (legacy)'}.`,
     ];
@@ -1586,7 +1706,7 @@ function restartNote(data) {
     const coordination = data.batchStamp?.coordination;
     if (!coordination) return [];
     const artefact =
-        'Under load shedding, with the earlier restart (part-way into the coordination plan), coordinated adaptive trailed plain adaptive in stage 2 on Pretorius (+5.9 s) and Lynnwood (+3.1 s) and led it on Jan Shoba (-3.4 s) - 30 seeds on the 1e58298 dynamics (the 2026-10-18 reference batches). The gap opened at the 30:00 restore, during the resync hold, and Lynnwood\'s signals were never married; that is consistent with the restart deciding which approach clears its stage-1 all-way-stop backlog first, rather than with coordination itself. In a 10-seed ablation (A5, 2026-10-18), restarting on the arterial green removed all three differences.';
+        'Under load shedding, with the earlier restart (part-way into the coordination plan), coordinated adaptive trailed plain adaptive in stage 2 on Pretorius (+5.9 s) and Lynnwood (+3.1 s) and led it on Jan Shoba (-3.4 s) - 30 seeds on the 1e58298 dynamics (the 2026-10-18 reference batches). The gap opened at minute 30 of that 90-minute protocol (its first restore), during the resync hold, and Lynnwood\'s signals were never married; that is consistent with the restart deciding which approach clears its stage-1 all-way-stop backlog first, rather than with coordination itself. In a 10-seed ablation (A5, 2026-10-18), restarting on the arterial green removed all three differences.';
     return [
         restartsOnArterialGreen(coordination)
             ? `Restart after power returns: coordinated adaptive restarts every restored junction on its arterial through green with nothing elapsed, as plain adaptive does, then runs the resync hold. ${artefact}`
@@ -1628,13 +1748,96 @@ function seedNote(data) {
     return `Seeds: ${parts.join('; ')}. Comparisons are always paired within one power state, so the offset never mixes seeds inside a delta.${range}`;
 }
 
+/** The sensors whose rich-call runs (controller mode adaptive_rich) can differ from plain adaptive - see experimentalMatrix.js. */
+const RICH_SENSORS = ['radar', 'camera', 'magnetometer'];
+
+/** Holm-adjusted p-values, in the input's order (NaN entries stay NaN and don't count towards m). */
+function holm(ps) {
+    const tested = ps.map((p, i) => ({ p, i })).filter(({ p }) => Number.isFinite(p)).sort((a, b) => a.p - b.p);
+    const adjusted = ps.map(() => NaN);
+    let running = 0;
+    tested.forEach(({ p, i }, rank) => {
+        running = Math.max(running, Math.min(1, (tested.length - rank) * p));
+        adjusted[i] = running;
+    });
+    return adjusted;
+}
+
+/**
+ * RQ2's richness test: adaptive_rich (the adaptive controller, plus an early call from a sensor's count or advance-zone
+ * queue) against plain adaptive with the same sensor, paired by seed - from the appendix's per-run rows. Drawn only
+ * when the batch has adaptive_rich runs; returns whether it was.
+ */
+function drawRichness(report, runs, data, number) {
+    const bySeed = (mode, sensor, power) => new Map(runs.filter((r) => r.controller_mode === mode && r.sensor_mode === sensor && r.power_state === power).map((r) => [r.seed, r]));
+    const capS = data.batchStamp?.postRestoreWindowS ?? 3600;
+    const recovery = (run) => run.time_to_recovery_wait_seconds ?? capS;
+    const metrics = [
+        { header: 'Wait, total', value: (r) => r.avg_wait_time, lowerBetter: true },
+        { header: 'Wait, arterial', value: (r) => r.avg_wait_time_arterial, lowerBetter: true },
+        { header: 'Wait, side streets', value: (r) => r.avg_wait_time_side_street, lowerBetter: true },
+        { header: 'P95, total', value: (r) => r.p95_wait_time, lowerBetter: true },
+        { header: 'Throughput', value: (r) => r.throughput_per_min, lowerBetter: false },
+        { header: 'Wait recovery (capped)', value: recovery, lowerBetter: true, outageOnly: true },
+    ];
+
+    const rows = POWER_ORDER.flatMap((power) =>
+        RICH_SENSORS.map((sensor) => {
+            const rich = bySeed('adaptive_rich', sensor, power);
+            const plain = bySeed('adaptive', sensor, power);
+            const pairs = [...rich.keys()].filter((seed) => plain.has(seed)).sort((a, b) => a - b).map((seed) => [rich.get(seed), plain.get(seed)]);
+            if (pairs.length < 2) return null;
+            const identical = pairs.filter(([a, b]) => metrics.every((m) => m.outageOnly || m.value(a) === m.value(b))).length;
+            const cells = metrics.map((m) => {
+                if (m.outageOnly && power === 'normal') return null;
+                const a = pairs.map(([r]) => m.value(r));
+                const b = pairs.map(([, r]) => m.value(r));
+                return a.every((v, i) => v === b[i]) ? { identical: true } : { ...paired(a, b), lowerBetter: m.lowerBetter };
+            });
+            return { power, sensor, n: pairs.length, identical, cells };
+        })
+    ).filter(Boolean);
+    if (!rows.length) return false;
+
+    const waitP = holm(rows.map((row) => (row.cells[0].identical ? NaN : row.cells[0].p)));
+    report.sectionTitle('Sensor richness', null, number);
+    report.heading(
+        'Rich call vs adaptive',
+        'Does the controller gain from what a richer sensor reports? Adaptive (rich call) is the same adaptive controller and the same sensor, but the waiting road is also served early once the sensor counts 5+ vehicles there (radar after its 3 s count smoothing, camera) or sees the queue reach its advance zone (magnetometer); otherwise the shared 3 s presence rule applies, so it can only call earlier, never later. The loop reports presence only, so under this rule it is plain adaptive by construction and is not run. Paired against plain adaptive with the same sensor on the same seeds; % change ± the 95% CI on the per-seed differences. Wait, P95 and recovery: negative is better; throughput: positive is better. Green = clear improvement, red = clear regression, uncoloured = inside the CI. "Identical" = every seed gave the same result in both modes. Identical runs = seeds where every metric matched exactly. p = total wait, paired t or Wilcoxon by the Shapiro-Wilk check on the differences, Holm-adjusted across the rows.'
+    );
+    const cellText = (cell) => (cell === null ? '—' : cell.identical ? 'identical' : fmtPaired(cell.pct, cell.pctCi, '%'));
+    const columns = [
+        { header: 'Sensor', value: (row) => SENSOR_LABELS[row.sensor] ?? row.sensor },
+        { header: 'Power', value: (row) => powerLabel(row.power) },
+        { header: 'Identical runs', value: (row) => `${row.identical}/${row.n}` },
+        ...metrics.map((m, k) => ({ header: m.header, value: (row) => cellText(row.cells[k]), metric: k })),
+        { header: 'p, total wait', value: (row, i) => (Number.isFinite(waitP[i]) ? `${waitP[i] < 0.001 ? '<0.001' : waitP[i].toFixed(3)}\n${row.cells[0].test}` : '—') },
+    ];
+    report.table({
+        head: [columns.map((column) => column.header)],
+        body: rows.map((row, i) => columns.map((column) => column.value(row, i))),
+        columnStyles: Object.fromEntries(columns.map((_, i) => [i, { halign: i < 2 ? 'left' : 'right' }])),
+        didParseCell: (hook) => {
+            if (hook.section !== 'body') return;
+            const k = columns[hook.column.index].metric;
+            const cell = k === undefined ? null : rows[hook.row.index].cells[k];
+            if (!cell || cell.identical) return;
+            const better = lowerIsBetter(cell.pct, cell.pctCi);
+            toneCell(hook.cell, better === null ? null : cell.lowerBetter ? better : !better);
+        },
+    });
+    return true;
+}
+
 function drawMethodNotes(report, data, number) {
     const minRecoveredRuns = data.minRecoveredRuns ?? 10;
     const stamp = data.batchStamp;
-    // The warm-up is measured per batch by the probe (sim/warmupProbe.js) and stored on each run.
-    const warmup = data.batchWarmupLabel
-        ? `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`
-        : 'a warm-up (not recorded for this batch)';
+    // The warm-up is measured per batch by the probe (sim/warmupProbe.js), or set by hand, and stored on each run.
+    const warmup = !data.batchWarmupLabel
+        ? 'a warm-up (not recorded for this batch)'
+        : stamp?.warmupHandPicked
+          ? `a ${data.batchWarmupLabel} warm-up, set by hand for this batch rather than by the warm-up probe,`
+          : `a ${data.batchWarmupLabel} warm-up, measured for this batch by the warm-up probe${data.hasNonStationaryBatch ? ' (capped at its maximum: at least one controller never settled)' : ''},`;
     const measured = stamp?.measuredMinutes ?? 90;
     // Post-restore windows (= wait-recovery caps) per state and scope, from the stamp where it has them.
     const capMin = (power, scopeKey, fallbackS) => {
@@ -1655,13 +1858,13 @@ function drawMethodNotes(report, data, number) {
         `Zones (the load-shedding scopes, ${zoneRefs}): zone 1 south, zone 2 middle, zone 3 north - groups of horizontal roads, read from the layout's own zone fields. A junction takes its horizontal road's zone, so a roundabout or all-way stop follows its road too; Mall Road (zone 1) has no signals to go dark. Vertical roads (${VERTICAL_ROADS}) carry no zone.`,
         `Zone wait is charged by junction (${stamp?.zoneAccounting ?? 'by-junction-v1'}): a car's wait goes to the zone of the junction it is queuing for - the junction at the end of its lane, or the one it is in. So Jan Shoba's queue at a zone 2 junction is zone 2 wait. This is unlike the total, main-arterial and side-street scopes, which are charged by road. A trip through several zones is in each, with only the wait it built up there, so the zone scopes overlap and don't sum to the total. Normal-power rows carry the zone figures too, as their baselines.`,
         `Recovery: the total, main-arterial and side-street scopes are timed from the FINAL restore (minute ${minute(restoreSeconds(data, 'rolling_blackout', SCOPES[0]) ?? 2700)} under load shedding); each zone from its own restore. Zones 1 and 3 come back while zone 2 is still dark next to them, so their recovery includes spillback from zone 2 and is not comparable to total-blackout recovery.`,
-        `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout and for load-shedding zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for load-shedding zone 2 and the load-shedding total, main-arterial and side-street scopes. The caps differ because each is the whole time left after its own restore - one shared cap would cut the total blackout short or run past the end of the load-shedding window. So recovery figures compare controllers within a section only, never across sections: a capped mean under a 60-minute cap and one under 45 minutes are not on the same scale.`,
-        'Outage window card on the cover: "Total" is the total blackout\'s dark minutes; "Load shedding Z1+3 15–30, Z2 30–45" reads zones 1 and 3 dark minutes 15-30, then zone 2 dark minutes 30-45 - minutes into the measured window.',
+        `Post-restore windows - from the restore to the end of the ${measured}-minute window, and also the wait-recovery caps: ${capMin('load_shedding', 'total', stamp?.postRestoreWindowS ?? 3600)} min for the total blackout; ${capMin('rolling_blackout', 'zone1', null)} min for load-shedding zones 1 and 3; ${capMin('rolling_blackout', 'zone2', 2700)} min for load-shedding zone 2 and the load-shedding total, main-arterial and side-street scopes. Each cap is the whole time left after its own restore, so recovery figures compare controllers within one scope only - never across sections, nor a zone 1/3 figure against the others: capped means under different caps are not on the same scale.`,
+        `Outage schedule on the cover: the total blackout's dark minutes, and for load shedding which zones are dark when - here ${rollingScheduleText(data)} - minutes into the measured window.`,
         'Paired comparisons put each ITS variant against Webster-timed fixed-time control on the same seeds and power state, so each outage section carries its own normal-power baseline rows. Wait and recovery deltas: negative is better. Throughput and cleared-without-stopping deltas: positive is better.',
         '± figures are 95% confidence half-widths with Student\'s t on n - 1 degrees of freedom (t x sample stddev / sqrt(n)): in the comparison tables on the per-seed differences against fixed-time, in the per-condition tables on each condition\'s own mean. Deltas come from the unrounded paired values, so they can differ by a few tenths from a % change worked out from the rounded means shown.',
-        'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where both sides recover throughput within 30 s, its delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
-        `Mean recovery times only average the runs that DID recover, so every recovery figure carries its recovered/runs count. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
-        'Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller - and under load shedding it is already above its pre-cut level at the final restore (stage 2 surge), so it reads 0 s. Read wait recovery and the post-recovery segments instead.',
+        'Recovery time is how long, after power returns, a metric takes to sustain its way back to its pre-cut level. Where fixed-time recovers throughput within 30 s, the delta is shown in seconds rather than as a % of a few seconds. "Did not recover" means it never did within the measured window - a real result, not missing data. Read it alongside the post-recovery steady state in the segmented table.',
+        `Every recovery figure carries its recovered/runs count. Wait recovery is shown as a capped mean (below); a throughput recovery mean averages only the runs that DID recover. A recovery delta is only computed when both sides recovered in at least ${minRecoveredRuns} runs; below that it reads "too few runs" rather than a percentage built on a handful of outliers.`,
+        `Wait recovery is mostly cut off by the end of the measured window, so it is reported as the share of runs that recovered within it, plus a capped mean that counts every run that never recovered at its scope\'s full post-restore window - a floor on the true mean that understates the gap. Throughput recovery carries little: restored junctions discharge their queues at saturation flow, so throughput is back within seconds for every controller. Under load shedding it is not reported: at the final restore throughput is already above its pre-cut level (stage 2 surge), so it reads 0 s, and each zone comes back while its neighbour is still dark, so the figure measures the spillback rather than the controller.${stamp?.demandProfile ? ' On this batch it is not reported for the total blackout either: demand follows the evening profile and falls through the window, so throughput never regains the peak-hour level it had before the cut, whatever the controller does.' : ''} Read wait recovery and the post-recovery segments instead.`,
         `Coordination (section ${SECTION.coordination}): Jan Shoba's route crosses all three zones, so in every load-shedding stage part of it is dark. Its married share is shown per stage; its route cycle only before the first cut and after the last restore - during the stages a mean cycle over the lit remainder means nothing ("—"). Load shedding fires the resync hold twice, once per restore.`,
         `Scope numbers are only comparable between batches with the same wait accounting (in the batch line on the cover).`,
         `The wait-time distribution: P95 and max per scope, the median for the total and zone scopes only; a scope's figures are over the same per-vehicle waits its mean counts. Median, P95 and "Max, run mean" average each run's own figure over the condition's runs; "Max, worst run" is the single longest wait in any of them. Runs from batches before this was recorded have no per-scope P95/max (n/a).`,
@@ -1677,23 +1880,18 @@ function drawMethodNotes(report, data, number) {
  * @param {{corridorId: string, corridorName: string, corridorUrl: ?string}} corridor
  *   `corridorUrl` is null for "All corridors" - no single layout to draw then.
  */
-/**
- * e.g. results-hatfield-realistic-2026-10-03-2130-794f8bf-dirty.pdf - named for the batch it
- * reports (its start time and code), so two PDFs can't be mistaken for the same dataset.
- */
-function reportFileName(corridorId, stamp, now) {
-    const at = stamp?.startedAt ? new Date(stamp.startedAt) : now;
-    const pad = (n) => String(n).padStart(2, '0');
-    const when = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}`;
-    const treeState = { unchecked: '-dev', unknown: '-unknown', dirty: '-dirty' }[stamp?.treeState] ?? '';
-    const code = stamp?.commit ? `-${stamp.commit}${treeState}` : '-unstamped';
-    const routing = stamp?.routingMode === 'destination' ? '-destination' : '';
-    return `results-${corridorId || 'all-corridors'}-${when}${code}${routing}.pdf`;
+async function fetchAppendixRuns(url) {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    return response.ok ? response.json() : null;
 }
 
-export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl }) {
+export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl, appendixRunsUrl, adaptiveMaxSensitivityUrl = null }) {
     // A layout that fails to load or draw just leaves the cover without it.
     const corridorLayout = corridorUrl ? await corridorLayoutImage(corridorUrl).catch(() => null) : null;
+    // Every run of the batch, for the detailed appendix - left out when it can't be fetched.
+    const appendixRuns = appendixRunsUrl ? await fetchAppendixRuns(appendixRunsUrl).catch(() => null) : null;
+    // The adaptive maximum-green sensitivity (Figure A10) - the figure is left out without it.
+    const adaptiveMaxSensitivity = adaptiveMaxSensitivityUrl ? await fetchAppendixRuns(adaptiveMaxSensitivityUrl).catch(() => null) : null;
 
     const pageTheme = currentTheme();
     applyChartTheme('light');
@@ -1712,11 +1910,37 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         report.newPage();
         drawCoordination(report, data, data.coordinationMetrics, SECTION.coordination);
         report.newPage();
-        drawMethodNotes(report, data, SECTION.methodNotes);
+        // Sensor richness only when the batch ran adaptive_rich - the method notes then move down one number.
+        const hasRichness = appendixRuns?.length ? drawRichness(report, appendixRuns, data, SECTION.methodNotes) : false;
+        if (hasRichness) report.newPage();
+        drawMethodNotes(report, data, SECTION.methodNotes + (hasRichness ? 1 : 0));
+        if (appendixRuns?.length) await drawDetailedAppendix(report, appendixRuns, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH, adaptiveMaxSensitivity });
 
         report.stampPages();
-        report.doc.save(reportFileName(corridorId, data.batchStamp, now));
+        report.doc.save(reportFileName(corridorId, data.batchStamp, now, 'pdf'));
     } finally {
         applyChartTheme(pageTheme);
     }
 }
+
+/* Shared with the Results page (resultsReportView.js), which draws these same sections as collapsible HTML. */
+export {
+    CONTENT_WIDTH,
+    COLOURS,
+    OUTAGES,
+    SCOPES,
+    SECTION,
+    ZONE_LEGEND_NOTE,
+    buildVariants,
+    comparisonTable,
+    corridorCaption,
+    corridorLayoutImage,
+    coverFacts,
+    drawCoordination,
+    drawMethodNotes,
+    drawOutageSection,
+    drawRichness,
+    fetchAppendixRuns,
+    renderChartImage,
+    timelineFor,
+};

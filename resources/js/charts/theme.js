@@ -75,6 +75,7 @@ export const MODE_COLOURS = {
     adaptive: '#8b5cf6',
     green_wave: '#059669',
     coordinated_adaptive: '#f43f5e',
+    adaptive_rich: '#0891b2',
 };
 
 export const MODE_LABELS = {
@@ -82,6 +83,7 @@ export const MODE_LABELS = {
     adaptive: 'Adaptive',
     green_wave: 'Green wave',
     coordinated_adaptive: 'Coordinated adaptive',
+    adaptive_rich: 'Adaptive (rich call)',
 };
 
 export const POWER_LABELS = {
@@ -204,11 +206,17 @@ export function lineDataset({ label, data, colour, fill = false }) {
 /* -------------------------------------------------------------------plugins */
 
 /**
- * Direct value labels above bars. Selective by construction: one label per bar,
- * skipped when the bar is too short to carry it clear of the baseline.
+ * Direct value labels above bars - every bar, short ones too (the label sits above the bar, not in it). Where a group's
+ * labels are wider than their bars, a label that would touch one already drawn is lifted above it.
  */
 export const barValueLabels = {
     id: 'barValueLabels',
+    // Room above the tallest bars for up to three lifted label rows - otherwise the top row runs off the canvas.
+    beforeInit(chart) {
+        const layout = (chart.options.layout ??= {});
+        const padding = typeof layout.padding === 'object' ? layout.padding : { top: layout.padding ?? 0, right: layout.padding ?? 0, bottom: layout.padding ?? 0, left: layout.padding ?? 0 };
+        layout.padding = { ...padding, top: Math.max(padding.top ?? 0, 40) };
+    },
     afterDatasetsDraw(chart, _args, opts) {
         const format = opts?.formatter ?? ((v) => (v === null ? '' : `${v}`));
         const { ctx } = chart;
@@ -219,15 +227,30 @@ export const barValueLabels = {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
 
-        chart.data.datasets.forEach((dataset, di) => {
-            const meta = chart.getDatasetMeta(di);
-            if (meta.hidden) return;
-            meta.data.forEach((bar, i) => {
-                const value = dataset.data[i];
-                if (value === null || value === undefined) return;
-                const height = bar.base - bar.y;
-                if (height < 16) return;
-                ctx.fillText(format(value), bar.x, bar.y - 4);
+        const visible = chart.data.datasets.map((_, di) => chart.getDatasetMeta(di)).filter((meta) => !meta.hidden);
+        chart.data.labels.forEach((_, i) => {
+            const bars = visible
+                .map((meta) => ({ bar: meta.data[i], value: chart.data.datasets[meta.index].data[i] }))
+                .filter(({ bar, value }) => bar && value !== null && value !== undefined);
+            const placed = [];
+            bars.forEach(({ bar, value }) => {
+                const text = format(value);
+                const half = ctx.measureText(text).width / 2 + 1;
+                let bottom = bar.y - 4;
+                // Lift until clear of every placed label it would overlap sideways; repeat, as a lift can meet another.
+                for (let moved = true; moved; ) {
+                    moved = false;
+                    for (const box of placed) {
+                        if (Math.abs(box.x - bar.x) < box.half + half && bottom > box.bottom - 11 && bottom - 11 < box.bottom) {
+                            bottom = box.bottom - 11;
+                            moved = true;
+                        }
+                    }
+                }
+                // Never above the reserved headroom (beforeInit), however many rows a crowded group stacks.
+                bottom = Math.max(bottom, chart.chartArea.top - 34);
+                placed.push({ x: bar.x, half, bottom });
+                ctx.fillText(text, bar.x, bottom);
             });
         });
         ctx.restore();

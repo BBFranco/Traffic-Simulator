@@ -159,8 +159,27 @@ export function buildRoutingGraph(engine, nodePenaltyS = DEFAULT_NODE_PENALTY_S,
                 return;
             }
             const penaltyS = nodePenaltyS[gate.node.control] ?? 0;
+            // What capacity-aware route choice (routing/assignment.js) needs of the approach the move leaves from.
+            const control = gate.node.control ?? 'signal';
+            const isRoundabout = control === 'roundabout';
+            const approach = {
+                nodeId: gate.node.id,
+                approachId: gate.approach.id,
+                control,
+                phase: gate.phase,
+                lanes: gate.slotLaneUse?.length || road.lanes,
+                saturationFlowPerLanePerHour: road.demand?.saturationFlowPerLanePerHour ?? null,
+            };
+            const move = (movement) => ({
+                kind: 'move',
+                nodeId: gate.node.id,
+                movement,
+                approach,
+                // The entries a car making this move drives past on the ring - the circulating flow each of them yields to.
+                passes: isRoundabout ? engine._roundaboutArmsPassed(engine.nodesInfo.get(gate.node.id), gate.approach.id, movement) : null,
+            });
             if (!gate.approach.noStraight && lanesAllow(gate.slotLaneUse, 'straight')) {
-                addArc(from, { kind: 'move', nodeId: gate.node.id, movement: 'straight' }, road, stop.atM, penaltyS);
+                addArc(from, move('straight'), road, stop.atM, penaltyS);
             }
             for (const option of engine._allowedTurnOptions(gate)) {
                 const toRoad = roads.get(optionRoadKey(option));
@@ -168,12 +187,12 @@ export function buildRoutingGraph(engine, nodePenaltyS = DEFAULT_NODE_PENALTY_S,
                     anomalies.push(`${road.key} at ${gate.node.id}: ${option.movement} turn into ${optionRoadKey(option)}, which has no lanes`);
                     continue;
                 }
-                addArc(from, { kind: 'move', nodeId: gate.node.id, movement: option.movement, option }, toRoad, option.entryDistanceM, penaltyS + (turnPenaltyS[option.movement] ?? 0));
+                addArc(from, { ...move(option.movement), option }, toRoad, option.entryDistanceM, penaltyS + (turnPenaltyS[option.movement] ?? 0));
             }
             // Round a roundabout and back the way it came (engine.js's _uturnOption()).
             const { uturnOption } = gate;
             if (uturnOption && roads.has(optionRoadKey(uturnOption))) {
-                addArc(from, { kind: 'move', nodeId: gate.node.id, movement: 'uturn', option: uturnOption }, roads.get(optionRoadKey(uturnOption)), uturnOption.entryDistanceM, penaltyS + (turnPenaltyS.uturn ?? 0));
+                addArc(from, { ...move('uturn'), option: uturnOption }, roads.get(optionRoadKey(uturnOption)), uturnOption.entryDistanceM, penaltyS + (turnPenaltyS.uturn ?? 0));
             }
         });
 

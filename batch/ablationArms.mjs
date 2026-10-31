@@ -9,6 +9,8 @@
  *   A4 - zone 3's arterial routes run without platoon messages while zone 2 is dark (no holds, no early cross-green ends)
  *   legacyRestart - a junction rebuilt on the resync hold starts part-way into the background plan, as before 2026-10-18
  *                   (restartOnArterialGreen off) - reproduces 1e58298-era coordinated outage results
+ *   gate4 / forced - dissertation plan step 15: the marriage gate relaxed from 6 to 4 veh/min/lane, or selective
+ *                   coordination off so every junction marries
  *
  * The A5 arm (held junctions start on the arterial green) became the default (restartOnArterialGreen) on 2026-10-18, so
  * A1-A4 now run on top of it; their 2026-10-18 batches ran on the legacy restart.
@@ -20,4 +22,6 @@ export const ABLATION_ARMS = {
     A3: { label: 'A3 Jan Shoba route marriage off', coordination: { connectorRouteMarriage: false } },
     A4: { label: 'A4 zone 3 platoon messages off while zone 2 is dark', coordination: { noPlatoonMessageZones: [3] } },
     legacyRestart: { label: 'legacy restart (mid-plan) after power returns', coordination: { restartOnArterialGreen: false } },
+    gate4: { label: 'step 15 relaxed marriage gate (4 veh/min/lane)', coordination: { marryFlowPerLaneMin: 4 } },
+    forced: { label: 'step 15 forced marriage (every junction coordinates)', coordination: { selective: false } },
 };

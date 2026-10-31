@@ -25,6 +25,26 @@
  * side street that can't get into an arterial queue spilling back past it is
  * saturation, not a fault (Herold at Lynnwood under green wave after an
  * outage). Starved approaches are reported, but don't fail a batch.
+ *
+ * A lockup that STARTS while any junction is dark is gridlock under all-way
+ * stops - a possible real outcome of a multi-hour outage, not necessarily a
+ * software fault (dissertation plan step 7.6, Franco 2026-10-23). It is kept
+ * apart (report().gridlock) and doesn't fail a batch; one that starts with
+ * every junction lit is the fault isLockup reports, as before. A lockup
+ * starts when the jam does: the earliest standstill on its waits-on chain (or
+ * in its cycle) - a car that joins a dark-period jam after the power is back
+ * is that jam, not a new one (long-outage pilot, 2026-10-23). And one that
+ * starts after the power is back, within AFTERMATH_REACH_M of a junction that
+ * jammed while dark - it, or any junction its queue runs back through - is that jam's aftermath - a queue held at a lit signal
+ * because the road past it is still blocked, its chain ending at the red light
+ * (Franco, 2026-10-24). Both go into report().gridlock.
+ *
+ * Separately, a car that stands inside a junction box - past its stop line and
+ * short of the far kerb, or on a turn path - for BOX_STUCK_S is recorded as
+ * box-stuck (report().boxStuck), long before the lockup limit: Franco saw
+ * southbound Duxbury cars stranded mid-junction at Lynnwood under a long
+ * outage, with Lynnwood creeping in round them (2026-10-23). Reported only,
+ * never a batch failure.
  */
 import { carRenderPoint } from './car.js';
 
@@ -36,6 +56,19 @@ import { carRenderPoint } from './car.js';
 export const LOCKUP_STILL_S = 300;
 /** Cars in a waits-on cycle that have all stood this long are a lockup - the cycle names it before the standstill limit. */
 export const CYCLE_HELD_S = 60;
+/**
+ * A chain must read stuck this many seconds running before it counts as locked. The car at a queue's head that is being
+ * released - a turner that has just found its gap, still under STILL_SPEED_MPS for a second or two with nothing to wait
+ * on - would otherwise flag the whole queue behind it as locked for the moment it takes to pull away.
+ */
+export const LOCK_CONFIRM_S = 10;
+/**
+ * A car standing this long inside a junction box is box-stuck. Above the longest signal cycle (the 120 s fallback): a
+ * right-turner waiting in the box clears on the amber, so a lit junction never holds one there for a whole cycle.
+ */
+export const BOX_STUCK_S = 120;
+/** A lit lockup this close (straight line, about two blocks) to a junction that jammed while dark, after a restore, is its aftermath. */
+export const AFTERMATH_REACH_M = 500;
 /** Below this a car counts as standing still. */
 const STILL_SPEED_MPS = 0.1;
 const CHECK_EVERY_S = 1;
@@ -54,6 +87,8 @@ export class LockupWatch {
     constructor(engine) {
         this.engine = engine;
         this.stillSinceS = new Map();
+        /** Car id -> when its waits-on chain first read stuck, for the cars whose chain still does. */
+        this.stuckSinceS = new Map();
         this.nextCheckS = 0;
         this.resetRecord();
     }
@@ -62,15 +97,55 @@ export class LockupWatch {
     resetRecord() {
         this.longest = null;
         this.longestLocked = null;
+        this.longestLockedDark = null;
         this.longestStarved = null;
         this.firstCycle = null;
+        this.firstCycleDark = null;
         this.cycleKeys = new Set();
+        /** Box-stuck cars: their ids, how many per junction, and the longest such standstill. */
+        this.boxStuckIds = new Set();
+        this.boxStuckByNode = new Map();
+        this.longestBoxStuck = null;
+        /** Junctions a dark-period jam was at (a stuck chain's car, a box-stuck car), and the post-restore lockups next to them. */
+        this.darkJamNodeIds = new Set();
+        this.darkJamCarIds = new Set();
+        this.longestLockedAftermath = null;
+        this.firstCycleAftermath = null;
+        /** [{ fromS, toS }] while any junction was dark (toS null while it still is) - what a lockup's start is classed against. */
+        this.darkSpans = [];
+    }
+
+    /**
+     * A lockup that started at `startS` with every junction lit, at `nodeIds`: after a restore (a dark span that has
+     * ended by then) and within AFTERMATH_REACH_M of a junction that jammed while dark?
+     */
+    _isAftermath(nodeIds, startS) {
+        if (!this.darkJamNodeIds.size || !this.darkSpans.some((span) => span.toS != null && span.toS <= startS)) return false;
+        const points = this.engine.nodesInfo;
+        return nodeIds.some((id) => {
+            const at = points?.get(id)?.node.point;
+            if (!at) return false;
+            return [...this.darkJamNodeIds].some((jamId) => {
+                const jam = points.get(jamId)?.node.point;
+                return jam && Math.hypot(jam.x - at.x, jam.y - at.y) <= AFTERMATH_REACH_M;
+            });
+        });
+    }
+
+    /** Was any junction dark at sim time `atS` (to this watch's 1 s resolution)? */
+    _darkAt(atS) {
+        return this.darkSpans.some((span) => atS >= span.fromS && (span.toS == null || atS < span.toS));
     }
 
     observe() {
         const nowS = this.engine.simTimeS;
         if (nowS < this.nextCheckS) return;
         this.nextCheckS = nowS + CHECK_EVERY_S;
+
+        const dark = (this.engine.darkNodes?.size ?? 0) > 0;
+        const open = this.darkSpans.at(-1)?.toS === null ? this.darkSpans.at(-1) : null;
+        if (dark && !open) this.darkSpans.push({ fromS: nowS, toS: null });
+        else if (!dark && open) open.toS = nowS;
 
         const cars = this._liveCars();
         const stillSinceS = new Map();
@@ -82,14 +157,32 @@ export class LockupWatch {
 
         const stillS = (car) => nowS - (stillSinceS.get(car.id) ?? nowS);
         const waitsOn = new Map(cars.map((entry) => [entry.car, entry.waitsOn]));
+        const stuckSinceS = new Map();
         for (const { car } of cars) {
             const seconds = stillS(car);
             if (seconds > 0 && seconds > (this.longest?.seconds ?? 0)) this.longest = { seconds, ...this._describe(car), atS: nowS };
             if (seconds < LOCKUP_STILL_S) continue;
-            const key = this._chainStuck(car, waitsOn, stillS) ? 'longestLocked' : 'longestStarved';
+            const stuck = this._chainStuck(car, waitsOn, stillS);
+            if (stuck) stuckSinceS.set(car.id, this.stuckSinceS.get(car.id) ?? nowS);
+            // A chain that has only just read stuck is a release in progress, not yet a lockup.
+            if (stuck && nowS - stuckSinceS.get(car.id) < LOCK_CONFIRM_S) continue;
+            let key = 'longestStarved';
+            if (stuck && this._darkAt(this._chainStartS(car, waitsOn, stillS, nowS))) {
+                key = 'longestLockedDark';
+                if (!this.darkJamCarIds.has(car.id)) {
+                    this.darkJamCarIds.add(car.id);
+                    this.darkJamNodeIds.add(this._nearestNodeId(car));
+                }
+            } else if (stuck) {
+                const startS = nowS - seconds;
+                const aftermath = this._isAftermath([this._nearestNodeId(car)], startS) || this._isAftermath(this._chainNodeIds(car, waitsOn), startS);
+                key = aftermath ? 'longestLockedAftermath' : 'longestLocked';
+            }
             if (seconds > (this[key]?.seconds ?? 0)) this[key] = { seconds, ...this._describe(car), atS: nowS };
         }
+        this.stuckSinceS = stuckSinceS;
         this._findCycles(cars, nowS);
+        this._findBoxStuck(cars, stillS, nowS);
     }
 
     /** What a batch run stores (diagnostics.lockup) - rounded, plain data. */
@@ -105,6 +198,20 @@ export class LockupWatch {
             cycles: this.cycleKeys.size,
             firstCycle: this.firstCycle,
             isLockup: this.longestLocked !== null || this.firstCycle !== null,
+            /** Cars that stood BOX_STUCK_S or more inside a junction box: how many, per junction, and the longest. Null if none. */
+            boxStuck: this.boxStuckIds.size
+                ? { cars: this.boxStuckIds.size, byNode: Object.fromEntries(this.boxStuckByNode), longest: { ...plain(this.longestBoxStuck), startedDark: this.longestBoxStuck.startedDark } }
+                : null,
+            /** A lockup that started while a junction was dark - gridlock under all-way stops, reported but not a fault. */
+            gridlock:
+                this.longestLockedDark || this.firstCycleDark || this.longestLockedAftermath || this.firstCycleAftermath
+                    ? {
+                          locked: plain(this.longestLockedDark),
+                          firstCycle: this.firstCycleDark,
+                          /** Lit lockups after a restore next to a dark-period jam (AFTERMATH_REACH_M) - its aftermath, not a fault. */
+                          aftermath: this.longestLockedAftermath || this.firstCycleAftermath ? { locked: plain(this.longestLockedAftermath), firstCycle: this.firstCycleAftermath } : null,
+                      }
+                    : null,
         };
     }
 
@@ -118,33 +225,102 @@ export class LockupWatch {
         return true;
     }
 
+    /** Records every car standing BOX_STUCK_S or more inside a junction box (_boxNodeId()). */
+    _findBoxStuck(cars, stillS, nowS) {
+        for (const entry of cars) {
+            const seconds = stillS(entry.car);
+            if (seconds < BOX_STUCK_S) continue;
+            const nodeId = this._boxNodeId(entry);
+            if (!nodeId) continue;
+            if (!this.boxStuckIds.has(entry.car.id)) {
+                this.boxStuckIds.add(entry.car.id);
+                this.boxStuckByNode.set(nodeId, (this.boxStuckByNode.get(nodeId) ?? 0) + 1);
+            }
+            const startedDark = this._darkAt(nowS - seconds);
+            if (startedDark) this.darkJamNodeIds.add(nodeId);
+            if (seconds > (this.longestBoxStuck?.seconds ?? 0)) {
+                this.longestBoxStuck = { seconds, ...this._describe(entry.car), nodeId, atS: nowS, startedDark };
+            }
+        }
+    }
+
+    /**
+     * The junction whose box `entry`'s car is in, or null: a car on a turn path (a roundabout's ring included, a driveway
+     * not), or a lane car whose centre is past a stop line on its road and whose rear is short of that junction's far kerb.
+     */
+    _boxNodeId({ car, gates }) {
+        const path = car.turnPath;
+        if (path) return path.driveway || path.fromDriveway ? null : path.ringNodeId ?? this._nearestNodeId(car);
+        for (const gate of gates ?? []) {
+            const crossedWidthM = gate.phase === 0 ? gate.node.crossRoadWidthM : gate.node.arterialRoadWidthM;
+            if (car.distanceM > gate.stopLineDistanceM && car.distanceM - car.lengthM / 2 < gate.centreDistanceM + (crossedWidthM ?? 0) / 2) return gate.node.id;
+        }
+        return null;
+    }
+
+    /**
+     * The junctions along `car`'s waits-on chain, itself to the head of its queue. A lit lockup whose queue runs back
+     * from a dark-period jam is that jam's aftermath wherever its tail stands: Prospect & Hilda, 515 m from the nearest
+     * dark jam, stood behind a Prospect queue held at Grosvenor, 293 m from one (long-protocol give-up batch, 2026-10-25).
+     */
+    _chainNodeIds(car, waitsOn) {
+        const seen = new Set();
+        const nodeIds = new Set();
+        for (let at = car; at && !seen.has(at) && seen.size < MAX_CHAIN; at = waitsOn.get(at)) {
+            seen.add(at);
+            nodeIds.add(this._nearestNodeId(at));
+        }
+        return [...nodeIds];
+    }
+
+    /** When the jam `car` is stuck in began: the earliest standstill on its waits-on chain, itself to the head of its queue. */
+    _chainStartS(car, waitsOn, stillS, nowS) {
+        const seen = new Set();
+        let longest = 0;
+        for (let at = car; at && !seen.has(at) && seen.size < MAX_CHAIN; at = waitsOn.get(at)) {
+            longest = Math.max(longest, stillS(at));
+            seen.add(at);
+        }
+        return nowS - longest;
+    }
+
     /** Every vehicle on the network, with what it waits on in its own lane (the car just ahead, if close). */
     _liveCars() {
         const { engine } = this;
         const result = [];
-        const addLane = (lane) => {
+        const gatesOf = new Map();
+        const addLane = (gates) => (lane) => {
             const sorted = [...lane.cars].sort((a, b) => b.distanceM - a.distanceM);
             sorted.forEach((car, i) => {
                 const ahead = sorted[i - 1];
                 const close = ahead && ahead.distanceM - car.distanceM - (ahead.lengthM + car.lengthM) / 2 < LANE_FOLLOW_GAP_M;
-                result.push({ car, waitsOn: close ? ahead : null });
+                result.push({ car, waitsOn: close ? ahead : null, gates });
+                gatesOf.set(car, gates);
             });
         };
-        for (const state of engine.carriagewayState.values()) state.lanes.forEach(addLane);
-        for (const state of engine.connectorState.values()) {
-            state.fwd.lanes.forEach(addLane);
-            state.rev.lanes.forEach(addLane);
+        for (const [id, state] of engine.carriagewayState) state.lanes.forEach(addLane(engine.carriagewaysById.get(id)?.gates));
+        for (const [id, state] of engine.connectorState) {
+            const dirs = engine.connectorDirs.get(id);
+            state.fwd.lanes.forEach(addLane(dirs?.fwd?.gates));
+            state.rev.lanes.forEach(addLane(dirs?.rev?.gates));
         }
         for (const car of engine.turningCars) result.push({ car, waitsOn: this._turningWaitsOn(car) });
         this._addRoundaboutExitWaits(result);
-        for (const entry of result) if (!entry.waitsOn && !entry.car.turnPath) entry.waitsOn = this._frontCarWaitsOn(entry.car);
+        for (const entry of result) if (!entry.waitsOn && !entry.car.turnPath) entry.waitsOn = this._frontCarWaitsOn(entry.car, gatesOf.get(entry.car));
         return result;
     }
 
-    /** A front-of-queue car held for a blocked turn waits on the car where it would land; one at the end of its road, on the lane it joins. */
-    _frontCarWaitsOn(car) {
+    /**
+     * A front-of-queue car held for a blocked turn waits on the car where it would land; one at the end of its road, on the
+     * lane it joins. Unless its signal is red: a turn once blocked stays marked so until it goes, and with that mark a
+     * right-turner waiting out the cross street's green and the cross street's left-turner waiting out its own red read
+     * as waiting on each other's landing lanes - a 61 s "cycle" that was two reds (Lynnwood & Jan Shoba, batch 87a502b4).
+     */
+    _frontCarWaitsOn(car, gates) {
         const { engine } = this;
         const option = car.turnPlan?.blockedSinceS != null ? car.turnPlan.option : null;
+        const gate = option && gates?.find((g) => g.node.id === car.turnPlan.nodeId);
+        if (gate && engine._signalHolds(gate, car)) return null;
         if (option) {
             const lanes = option.carriagewayId
                 ? engine.carriagewayState.get(option.carriagewayId)?.lanes
@@ -180,21 +356,53 @@ export class LockupWatch {
         return typeof ahead.id === 'number' ? ahead : null;
     }
 
-    /** A car held at a roundabout's yield line because its way out is backed up waits on whoever blocks that exit. */
+    /**
+     * A car held at a roundabout's yield line because its way out is backed up waits on whoever blocks that exit - one
+     * not yet let in (roundaboutExitHeld), or one let in that _driveIntoRoundabout() then refused because the room went
+     * first: two entries let in for one gap, the other got there first (Prospect & Hilda, 2026-10-25). Let in, it is no
+     * arrival any more, and with no link its chain stopped at itself - a queue that stood behind a jam read as locked.
+     */
     _addRoundaboutExitWaits(result) {
         const { engine } = this;
         const byCar = new Map(result.map((entry) => [entry.car, entry]));
         for (const info of engine.nodesInfo.values()) {
-            if (info.controllerType !== 'roundabout' || !info.roundaboutExitHeld?.size) continue;
-            for (const arrival of engine._roundaboutArrivals(info)) {
+            if (info.controllerType !== 'roundabout') continue;
+            const held = [
+                ...(info.roundaboutExitHeld?.size ? engine._roundaboutArrivals(info).filter((a) => a.gate && info.roundaboutExitHeld.has(a.car)) : []),
+                ...this._refusedRoundaboutEntrants(info),
+            ];
+            for (const arrival of held) {
                 const entry = byCar.get(arrival.car);
-                if (!entry || !info.roundaboutExitHeld.has(arrival.car) || !arrival.gate) continue;
+                if (!entry) continue;
                 const target = engine._roundaboutTarget(arrival.car, arrival.gate);
                 if (!target) continue;
-                const exitDistanceM = target.centreM + info.node.roundabout.radiusM + ROUNDABOUT_EXIT_RUN_M;
-                entry.waitsOn = blockerAt(target.lanes[target.laneIndex], exitDistanceM, arrival.car.lengthM) ?? entry.waitsOn;
+                const exitDistanceM = target.centreM + info.node.roundabout.mouthM + ROUNDABOUT_EXIT_RUN_M;
+                const lane = target.lanes[target.laneIndex];
+                // With the exit clear for a moment - a car going round took the room first - it is still that queue the
+                // entry can't get into (Prospect & Hilda, its way out backed up from the Festival stop): with no link the
+                // chain stopped at the entry and a starved approach read as locked.
+                entry.waitsOn = blockerAt(lane, exitDistanceM, arrival.car.lengthM) ?? nearestFrom(lane, exitDistanceM - LANDING_REACH_M) ?? entry.waitsOn;
             }
         }
+    }
+
+    /** The car at the front of each lane into the roundabout, short of its yield line, let in there but with no room yet where it comes out. */
+    _refusedRoundaboutEntrants(info) {
+        const { engine } = this;
+        const nodeId = info.node.id;
+        const result = [];
+        for (const gate of [...info.arterialGates, ...info.crossGates]) {
+            if (!gate.approach) continue;
+            const lanes = gate.carriageway ? engine.carriagewayState.get(gate.carriageway.id)?.lanes : engine.connectorState.get(gate.connector.id)?.[gate.dirKey]?.lanes;
+            for (const lane of lanes ?? []) {
+                // Front first, as in engine._roundaboutArrivals().
+                const car = lane.cars.find((c) => c.distanceM < gate.stopLineDistanceM);
+                if (!car?.releasedNodeIds?.has(nodeId) || car.turnPlan?.nodeId !== nodeId) continue;
+                const target = engine._roundaboutTarget(car, gate);
+                if (target && engine._roundaboutExitFull(info.node, target, car)) result.push({ car, gate });
+            }
+        }
+        return result;
     }
 
     _findCycles(cars, nowS) {
@@ -222,13 +430,19 @@ export class LockupWatch {
         const key = members.map((c) => c.id).sort((a, b) => a - b).join(',');
         if (this.cycleKeys.has(key)) return;
         this.cycleKeys.add(key);
-        if (this.firstCycle) return;
+        const heldS = Math.min(...members.map((car) => nowS - this.stillSinceS.get(car.id)));
+        const startS = Math.min(...members.map((car) => this.stillSinceS.get(car.id)));
         const described = members.map((car) => this._describe(car));
-        this.firstCycle = {
+        const nodeIds = [...new Set(described.map((d) => d.nodeId))];
+        const dark = this._darkAt(startS);
+        if (dark) nodeIds.forEach((id) => this.darkJamNodeIds.add(id));
+        const slot = dark ? 'firstCycleDark' : this._isAftermath(nodeIds, startS) ? 'firstCycleAftermath' : 'firstCycle';
+        if (this[slot]) return;
+        this[slot] = {
             carIds: described.map((d) => d.carId),
-            nodeIds: [...new Set(described.map((d) => d.nodeId))],
+            nodeIds,
             places: described.map((d) => d.place),
-            heldS: Math.round(Math.min(...members.map((car) => nowS - this.stillSinceS.get(car.id)))),
+            heldS: Math.round(heldS),
             atS: Math.round(nowS),
         };
     }
@@ -261,6 +475,13 @@ export class LockupWatch {
 }
 
 /** The car in `lane` occupying the stretch a car of `lengthM` needs at `atM` - what a blocked turn or exit waits on. */
+/** The nearest car in `lane` at or past `fromM`, however far down the road. */
+function nearestFrom(lane, fromM) {
+    let best = null;
+    for (const car of lane?.cars ?? []) if (car.distanceM >= fromM && (!best || car.distanceM < best.distanceM)) best = car;
+    return best;
+}
+
 function blockerAt(lane, atM, lengthM) {
     let best = null;
     for (const car of lane?.cars ?? []) {

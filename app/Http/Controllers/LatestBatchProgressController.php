@@ -44,6 +44,8 @@ class LatestBatchProgressController extends Controller
             ],
             'demandScale' => $config['demandScale'] ?? 1,
             'demandOverrides' => $config['demandOverrides'] ?? null,
+            // Runs posted before the page stored it: a long-protocol run carries its time-of-day demand profile.
+            'protocol' => $config['protocol'] ?? (isset($config['demandProfile']) ? 'long' : 'short'),
             'build' => $config['build'] ?? null,
             'runs' => $runs->values(),
         ]);

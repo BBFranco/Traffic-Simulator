@@ -12,6 +12,8 @@ enum ControllerMode: string
     case Adaptive = 'adaptive';
     case GreenWave = 'green_wave';
     case CoordinatedAdaptive = 'coordinated_adaptive';
+    /** RQ2's richness test: adaptive with early calls from a sensor's count or advance-zone queue (demandEstimator.js's richCallSufficient()). */
+    case AdaptiveRich = 'adaptive_rich';
 
     public function label(): string
     {
@@ -20,6 +22,7 @@ enum ControllerMode: string
             self::Adaptive => 'Adaptive',
             self::GreenWave => 'Green wave',
             self::CoordinatedAdaptive => 'Coordinated adaptive',
+            self::AdaptiveRich => 'Adaptive (rich call)',
         };
     }
 
@@ -27,7 +30,7 @@ enum ControllerMode: string
     public function splitsBySensor(): bool
     {
         return match ($this) {
-            self::Adaptive, self::CoordinatedAdaptive => true,
+            self::Adaptive, self::CoordinatedAdaptive, self::AdaptiveRich => true,
             self::Fixed, self::GreenWave => false,
         };
     }
@@ -39,6 +42,7 @@ enum ControllerMode: string
             self::Adaptive => '#8b5cf6',
             self::GreenWave => '#059669',
             self::CoordinatedAdaptive => '#f43f5e',
+            self::AdaptiveRich => '#0891b2',
         };
     }
 }

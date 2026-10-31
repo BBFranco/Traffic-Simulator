@@ -36,9 +36,18 @@
                     <span id="export-pdf-label">Export PDF</span>
                 </button>
 
+                <button type="button" id="export-csv-button" {{ $isFakeData ? 'disabled' : '' }}
+                        title="Download the condition means and the paired comparisons against fixed-time as two CSV files"
+                        class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700">
+                    <svg class="h-4 w-4 text-emerald-600 dark:text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 1.5v-1.5m0 0c0-.621.504-1.125 1.125-1.125m0 0h7.5" />
+                    </svg>
+                    <span id="export-csv-label">Export CSV</span>
+                </button>
+
                 <button type="button" id="batch-run-button"
                         class="shrink-0 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Generate dataset (900 runs)
+                    Generate dataset (1080 runs)
                 </button>
             </div>
         </div>
@@ -84,12 +93,24 @@
                 </span>
             </label>
 
+            <label class="mt-3 flex items-start gap-2 rounded-md border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
+                <input type="checkbox" id="batch-modal-long" class="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800">
+                <span>
+                    <span class="font-semibold">Long protocol (real-duration outages)</span>
+                    <span class="block text-slate-500 dark:text-slate-400">
+                        Measures 16:15-22:30 on the evening demand profile, with a 4 h total blackout or 2 h + 2 h zoned load shedding from 16:30 -
+                        as <code>runBatch.mjs --protocol=long</code>. Each run takes about 10-90 minutes and up to ~450 MB, so set fewer runs at a time.
+                        Unticked: the 90-minute window with 15-minute outages.
+                    </span>
+                </span>
+            </label>
+
             <div class="mt-4 flex items-center justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
                 <button type="button" id="batch-modal-cancel" class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
                     Cancel
                 </button>
                 <button type="button" id="batch-modal-confirm" class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-500 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400">
-                    Run batch (900 runs)
+                    Run batch (1080 runs)
                 </button>
             </div>
         </div>
@@ -97,8 +118,8 @@
 
     <div id="fake-data-banner" class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[12px] leading-relaxed text-amber-900 {{ $isFakeData ? '' : 'hidden' }} dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200/85">
         <strong class="font-semibold">Nothing below is measured yet.</strong>
-        Click <strong>Generate dataset</strong> to run the full 30-condition x 30-rep experimental matrix
-        (900 headless runs) in this browser tab and populate
+        Click <strong>Generate dataset</strong> to run the full 36-condition x 30-rep experimental matrix
+        (1080 headless runs) in this browser tab and populate
         <code class="rounded bg-amber-100 px-1 dark:bg-amber-500/10">simulation_runs</code>. It stays responsive
         while it runs - the tab is not frozen, just busy.
     </div>
@@ -143,8 +164,18 @@
     <div id="batch-progress-wrap" class="hidden mb-6 rounded-lg border border-sky-300 bg-sky-50 p-4 dark:border-sky-500/25 dark:bg-sky-500/5">
         <div class="mb-2 flex items-baseline justify-between gap-3 text-[12px] text-sky-900 dark:text-sky-200">
             <span id="batch-progress-label" class="font-semibold">Starting...</span>
-            <span class="flex items-baseline gap-3">
+            <span class="flex items-center gap-3">
                 <span id="batch-progress-pct" class="tabular-nums text-sky-700 dark:text-sky-300">0%</span>
+                {{-- results.js: how many runs go at once; changeable mid-batch (raising starts more now, lowering lets runs in progress finish). --}}
+                <select id="batch-workers-select" aria-label="Runs at a time"
+                        class="hidden rounded border border-sky-300 bg-white py-0 pl-1.5 pr-6 text-[11px] font-semibold text-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-sky-500/25 dark:bg-transparent dark:text-sky-300"></select>
+                {{-- results.js: stops handing runs to the workers (runs in progress finish), Play carries on. --}}
+                <button type="button" id="batch-pause-button"
+                        class="hidden inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">
+                    <svg id="batch-pause-icon" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5.75 3a.75.75 0 0 0-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 .75-.75V3.75A.75.75 0 0 0 7.25 3h-1.5ZM12.75 3a.75.75 0 0 0-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 .75-.75V3.75a.75.75 0 0 0-.75-.75h-1.5Z" /></svg>
+                    <svg id="batch-play-icon" class="hidden h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z" /></svg>
+                    <span id="batch-pause-label">Pause</span>
+                </button>
                 <button type="button" id="batch-details-toggle" aria-expanded="false" aria-controls="batch-details"
                         class="inline-flex items-center gap-1 rounded text-[11px] font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-100">
                     Details
@@ -176,9 +207,7 @@
     </div>
     <div id="fireworks-container" class="hidden pointer-events-none fixed inset-0 z-50"></div>
 
-    {{-- ONE filter row, scoping everything below it. The Scope select is client-side only,
-         same mechanism as "Compare against fixed-time" below - every chart already carries
-         all three scopes' numbers, so switching it never refetches. --}}
+    {{-- ONE filter row, scoping everything below it. --}}
     <div class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
         <div>
             <label for="filter-corridor" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Corridor</label>
@@ -197,220 +226,21 @@
                 @endforeach
             </select>
         </div>
-        <div>
-            <label for="filter-its-target" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Compare against fixed-time</label>
-            <select id="filter-its-target" class="{{ $select }}">
-                @include('results.partials.its-target-options')
-            </select>
-        </div>
-        <div>
-            <label for="filter-scope" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Scope</label>
-            <select id="filter-scope" class="{{ $select }}">
-                @foreach ($scopeLabels as $scope => $label)
-                    <option value="{{ $scope }}" {{ $loop->first ? 'selected' : '' }}>{{ $label }}</option>
-                @endforeach
-            </select>
-        </div>
         <p class="ms-auto max-w-xs text-[10px] leading-relaxed text-slate-500">
-            Corridor filters every chart, table, and the batch-run corridor; compare-against picks
-            which ITS configuration the cards below are paired against fixed-time; scope picks
-            which roads' traffic they measure.
+            Corridor and routing pick the batch; the report below is the same one the PDF export prints, one section at a time.
         </p>
     </div>
 
-    {{-- ============================================ the research question --}}
-    <div class="mb-4">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Does ITS beat the fixed-time baseline?</h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-            Paired comparison against Webster-timed fixed-time control on the same seeds, across every
-            stat block below.
-        </p>
-    </div>
-
-    <section class="mb-8">
-        <div class="grid gap-3 sm:grid-cols-2" id="research-question-cards">
-            @include('results.partials.research-question-cards')
-        </div>
-    </section>
-
-    {{-- ============================================ more headline metrics --}}
-    <div id="metric-section-groups">
-        @include('results.partials.metric-section-groups')
-    </div>
-
-    {{-- ========================================================= bar trio --}}
-    <section class="mb-8">
-        <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <div>
-                <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Per-condition means</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400">
-                    Each controller mode under each power state. Adaptive's bars follow the
-                    "Compare against fixed-time" selection above.
-                </p>
-            </div>
-            {{-- Shared legend: identity is text + swatch, never colour alone. --}}
-            <ul class="flex flex-wrap items-center gap-x-4 gap-y-1">
-                @foreach ($controllerModes as $mode)
-                    <li class="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300">
-                        <span class="h-2.5 w-2.5 rounded-full" style="background-color: {{ $modeColours[$mode] }}"></span>
-                        {{ $modeLabels[$mode] }}
-                    </li>
-                @endforeach
-            </ul>
-        </div>
-
-        <div class="grid gap-4 xl:grid-cols-3">
-            @foreach ([
-                ['id' => 'chart-wait', 'title' => 'Average wait time', 'unit' => 'seconds per vehicle', 'better' => 'lower is better'],
-                ['id' => 'chart-throughput', 'title' => 'Throughput', 'unit' => 'vehicles cleared per minute', 'better' => 'higher is better'],
-                ['id' => 'chart-cleared', 'title' => 'Cleared without stopping', 'unit' => '% of vehicles', 'better' => 'higher is better'],
-            ] as $chart)
-                {{-- min-w-0 matters: without it the grid item takes its min-content
-                     width from the canvas, the canvas sizes itself from the item, and
-                     the chart overflows the card. --}}
-                <figure class="min-w-0 {{ $card }} p-4">
-                    <figcaption class="mb-1">
-                        <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">{{ $chart['title'] }}</span>
-                        <span class="text-[10px] text-slate-500">{{ $chart['unit'] }} · {{ $chart['better'] }}</span>
-                    </figcaption>
-                    <div class="relative h-[260px] w-full">
-                        <canvas id="{{ $chart['id'] }}"></canvas>
-                    </div>
-                </figure>
-            @endforeach
-        </div>
-
-        {{-- Table twin for the three charts above. --}}
-        <details class="mt-3 {{ $card }}">
-            <summary class="cursor-pointer px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
-                Show data table
-            </summary>
-            <div class="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
-                <table id="per-condition-table" class="w-full min-w-[720px] text-left text-xs">
-                    <thead class="{{ $tableHead }}">
-                        <tr>
-                            <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
-                            <th scope="col" class="px-4 py-2 font-semibold">Power state</th>
-                            <th scope="col" class="px-4 py-2 font-semibold">Sensor</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Runs</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Avg wait (s, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Throughput (/min, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Cleared w/o stop (%, ± 95% CI)</th>
-                            <th scope="col" class="px-4 py-2 text-right font-semibold">Recovery - thru (s, recovered/runs)</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                        @include('results.partials.per-condition-rows')
-                    </tbody>
-                </table>
-            </div>
-        </details>
-    </section>
-
-    <div id="routing-metrics">
-        @include('results.partials.routing-metrics')
-    </div>
-
-    {{-- ============================================ segmented + distribution --}}
-    <section class="mb-8">
-        <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Outages, segmented</h2>
-        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            Pre-outage / during-outage / post-recovery averages, computed from cumulative
-            counters rather than a rolling window - this is what shows the real Adaptive-vs-
-            Fixed-time gap on either side of the outage, instead of a snapshot near the end of
-            the run. During the outage every controller mode runs the same all-way-stop control,
-            but each carries in the queue it had when the power went, so the during-outage figures
-            still differ by controller. The wait distribution columns (median/p95/max) are always Total scope
-            regardless of the selector above - a single mean can't tell "everyone waits a bit
-            longer" apart from "most people are fine, a few are stranded", but that distribution
-            isn't split by arterial/side-street. Under load shedding, during-outage covers both
-            stages and post-recovery starts at the final restore.
-        </p>
-
-        <div class="overflow-x-auto {{ $card }}" id="segmented-table">
-            <table class="w-full min-w-[1080px] text-left text-xs">
-                <thead class="{{ $tableHead }}">
-                    <tr>
-                        <th scope="col" class="px-4 py-2 font-semibold">Controller mode</th>
-                        <th scope="col" class="px-4 py-2 font-semibold">Power</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Median wait (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">P95 wait (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, run mean (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Max wait, worst run (s, Total)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery wait (s)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Pre-outage thru (/min)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">During-outage thru (/min)</th>
-                        <th scope="col" class="px-4 py-2 text-right font-semibold">Post-recovery thru (/min)</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200 tabular-nums dark:divide-slate-800">
-                    @include('results.partials.segmented-rows')
-                </tbody>
-            </table>
-        </div>
-    </section>
-
-    {{-- ========================================================= recovery --}}
-    <section class="mb-8 grid gap-4 xl:grid-cols-2">
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - wait time</span>
-                <span class="text-[10px] text-slate-500">
-                    average wait, seconds per vehicle · shaded band marks the outage window (power is
-                    restored at its right edge) · adaptive follows the "Compare against fixed-time"
-                    selection above
-                </span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery-wait"></canvas>
-            </div>
-        </figure>
-
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Recovery after a power cut - throughput</span>
-                <span class="text-[10px] text-slate-500">
-                    vehicles cleared per minute · shaded band marks the outage window (power is
-                    restored at its right edge) · adaptive follows the "Compare against fixed-time"
-                    selection above
-                </span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery"></canvas>
-            </div>
-        </figure>
-
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery - wait time</span>
-                <span class="text-[10px] text-slate-500">seconds back to pre-cut wait · lower is better · mean of recovered runs only (recovered/runs)</span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery-time-wait"></canvas>
-            </div>
-        </figure>
-
-        <figure class="min-w-0 {{ $card }} p-4">
-            <figcaption class="mb-1">
-                <span class="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">Time to recovery - throughput</span>
-                <span class="text-[10px] text-slate-500">seconds back to pre-cut throughput · lower is better · mean of recovered runs only (recovered/runs)</span>
-            </figcaption>
-            <div class="relative h-[280px] w-full">
-                <canvas id="chart-recovery-time"></canvas>
-            </div>
-        </figure>
+    {{-- ============================================ the report - resultsReportView.js draws the PDF's sections here --}}
+    <section id="report-view" class="mb-10" aria-live="polite">
+        <p class="text-xs text-slate-500 dark:text-slate-400">Loading the report…</p>
     </section>
 
     {{-- ====================================================== recent runs --}}
     <section class="mb-10">
         <h2 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Recent runs</h2>
         <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            One row per completed batch run, most recent first - not filtered by the "Compare against
-            fixed-time" selection above, so it can easily show a different sensor mode than whatever
-            aggregate you're looking at. Rows matching the current selection are highlighted; the rest
-            are dimmed rather than hidden, so you can still audit recent activity generally.
+            One row per completed batch run, most recent first - a quick audit of what the database last stored.
         </p>
 
         <div class="overflow-x-auto {{ $card }}">

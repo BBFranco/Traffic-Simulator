@@ -23,6 +23,7 @@ class UserCorridorLayouts
         private readonly CorridorRepository $templates,
         private readonly CorridorLaneUseEditor $laneUseEditor,
         private readonly CorridorRoutingTierEditor $routingTierEditor,
+        private readonly CorridorSlipLaneEditor $slipLaneEditor,
     ) {}
 
     /**
@@ -89,6 +90,21 @@ class UserCorridorLayouts
     }
 
     /**
+     * Replaces the layout's slip lanes with the set the Road Editor drew (CorridorSlipLaneEditor) - checked in full before anything is stored.
+     *
+     * @param  array<int, array{nodeId: string, direction: string, backM: int|float}>  $slipLanes
+     * @param  array<int, array<string, mixed>>  $connectors
+     * @param  array<int, array{from: string, to: string, fromAtM?: int|float, toAtM?: int|float, slip?: bool}>  $joins
+     */
+    public function updateSlipLanes(CorridorLayout $layout, array $slipLanes, array $connectors, array $joins): void
+    {
+        $config = $this->copy($layout->config);
+        $this->slipLaneEditor->apply($config, $slipLanes, $connectors, $joins);
+
+        $layout->update(['config' => $config]);
+    }
+
+    /**
      * Applies Destinations edits - tiers, added and removed blocks (CorridorRoutingTierEditor) - checked in full before anything is stored.
      *
      * @param  array<int, array{id: string, tier: int|float|string}>  $tiers
@@ -101,6 +117,12 @@ class UserCorridorLayouts
         $this->routingTierEditor->apply($config, $tiers, $added, $removed);
 
         $layout->update(['config' => $config]);
+    }
+
+    /** Overwrites the template file of the same id with the layout, so batches run on it. False if there is no such template. */
+    public function publishToTemplate(CorridorLayout $layout): bool
+    {
+        return $this->templates->replace($layout->slug, $this->copy($layout->config));
     }
 
     /** Puts back the layout as it was imported. False if it has no edits. */

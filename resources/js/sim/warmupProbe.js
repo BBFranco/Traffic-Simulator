@@ -28,8 +28,11 @@ import { detectPlateau } from './plateau.js';
 
 /** 2 simulated hours per probe run - long enough to see the slowest (green wave) ramp end and check the level after it. */
 export const PROBE_DURATION_TICKS = 72000;
-/** Runs averaged per controller. */
-export const PROBE_REPLICATIONS = 3;
+/**
+ * Runs averaged per controller. 6 since 2026-10-22: with 3, the 5-minute demand oscillation left fixed-time side
+ * streets "drifting 17%" and capped the warm-up at 90 min; 6 seeds levelled at 10 min and chose 60.
+ */
+export const PROBE_REPLICATIONS = 6;
 /** The chosen warm-up never goes below the old constant - the small corridors were checked at it. */
 export const MIN_WARMUP_TICKS = 3600;
 /** Cushion on the slowest measured levelling-off point - a margin, not itself measured. */

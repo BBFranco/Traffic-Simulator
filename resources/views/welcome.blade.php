@@ -37,7 +37,7 @@
                         IoT-enabled smart traffic management
                     </span>
 
-                    <h1 class="sr-only">ARTIS — Adaptive Road Traffic Intersection System</h1>
+                    <h1 class="sr-only">ARTIS — Adaptive Road Traffic Intersection Simulator</h1>
 
                     <p class="mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-400">
                         A browser-based traffic simulator that runs fixed-time, sensor-adaptive and green-wave

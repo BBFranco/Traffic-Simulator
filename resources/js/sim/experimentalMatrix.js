@@ -1,5 +1,5 @@
 /**
- * experimentalMatrix.js - the dissertation's 12-condition experimental matrix
+ * experimentalMatrix.js - the dissertation's experimental matrix
  * (controller mode x power state x sensor mode), shared by the CLI batch
  * driver (batch/runBatch.mjs, build step 13) and the /results page's
  * batch-run button (build step 17) so the two never drift apart.
@@ -11,7 +11,16 @@
  *   3 power states x (1 fixed + 1 green wave + 4 adaptive + 4 coordinated adaptive) = 30 conditions.
  * The power states: normal, load_shedding (the total blackout - every junction dark) and rolling_blackout
  * (batchSchedule.js's ROLLING_SCHEDULE - zone by zone).
+ *
+ * Plus RQ2's richness test (2026-10-22), appended after the main matrix: adaptive_rich - the same adaptive controller
+ * and field sensors, but calls may come early from a sensor's count or advance-zone queue (demandEstimator.js's
+ * richCallSufficient()) - for the three sensors that report more than presence, at normal power and the total
+ * blackout: 6 conditions, so 36 in all. The loop is left out: presence is all it reports, so under that rule it is
+ * the plain adaptive loop run by construction. Each pairs by seed with the same sensor's plain adaptive run.
  */
+export const RICH_SENSOR_MODES = ['radar', 'camera', 'magnetometer'];
+export const RICH_POWER_STATES = ['normal', 'load_shedding'];
+
 export const POWER_STATES = ['normal', 'load_shedding', 'rolling_blackout'];
 export const SENSOR_MODES = ['inductive_loop', 'radar', 'camera', 'magnetometer'];
 
@@ -25,6 +34,11 @@ export function buildExperimentalMatrix() {
         }
         for (const sensorMode of SENSOR_MODES) {
             conditions.push({ key: `coordinated_adaptive_${powerState}_${sensorMode}`, controllerMode: 'coordinated_adaptive', sensorMode, powerState });
+        }
+    }
+    for (const powerState of RICH_POWER_STATES) {
+        for (const sensorMode of RICH_SENSOR_MODES) {
+            conditions.push({ key: `adaptive_rich_${powerState}_${sensorMode}`, controllerMode: 'adaptive_rich', sensorMode, powerState });
         }
     }
     return conditions;

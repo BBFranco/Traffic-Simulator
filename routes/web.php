@@ -3,10 +3,14 @@
 use App\Http\Controllers\CorridorLaneUseController;
 use App\Http\Controllers\CorridorLayoutController;
 use App\Http\Controllers\CorridorRoutingTierController;
+use App\Http\Controllers\CorridorSlipLaneController;
 use App\Http\Controllers\CorridorTemplateController;
+use App\Http\Controllers\CorridorTemplatePublishController;
 use App\Http\Controllers\LatestBatchProgressController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
+use App\Http\Controllers\ResultsAdaptiveMaxSensitivityController;
+use App\Http\Controllers\ResultsAppendixRunsController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\RoadEditorController;
 use App\Http\Controllers\SimulationRunController;
@@ -56,6 +60,16 @@ Route::middleware('auth')->group(function () {
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.lane-use.destroy');
 
+    // Slip lanes: a left-turn lane peeling off as its own road round the corner (drawn in the browser).
+    Route::put('/corridors/{corridor}/slip-lanes', [CorridorSlipLaneController::class, 'update'])
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.slip-lanes.update');
+
+    // Overwrites the shared template (what batches run on) with the user's saved layout.
+    Route::post('/corridors/{corridor}/publish-template', CorridorTemplatePublishController::class)
+        ->where('corridor', '[A-Za-z0-9_-]+')
+        ->name('corridors.publish-template');
+
     // Destinations section of the Road Editor: block tiers for destination routing ("Revert to original" covers them too).
     Route::put('/corridors/{corridor}/routing-tiers', [CorridorRoutingTierController::class, 'update'])
         ->where('corridor', '[A-Za-z0-9_-]+')
@@ -70,6 +84,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/results/data', [ResultsController::class, 'data'])->name('results.data');
     // What the latest batch stored before it stopped - the Resume button carries on from there.
     Route::get('/results/latest-batch-progress', LatestBatchProgressController::class)->name('results.latest-batch-progress');
+    // Every run of the batches shown, for the report's appendix (the dissertation's figures and tables).
+    Route::get('/results/appendix-runs', ResultsAppendixRunsController::class)->name('results.appendix-runs');
+    // The adaptive maximum-green sensitivity's curves, for the appendix's Figure A10.
+    Route::get('/results/adaptive-max-sensitivity', ResultsAdaptiveMaxSensitivityController::class)->name('results.adaptive-max-sensitivity');
 
     // One intersection at a time with test traffic - click the lane arrows, save them into the corridor file.
     Route::get('/road-editor', [RoadEditorController::class, 'index'])->name('road-editor');
