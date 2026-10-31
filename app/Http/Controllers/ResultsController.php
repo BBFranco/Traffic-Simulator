@@ -156,6 +156,7 @@ class ResultsController extends Controller
                 'resultsDataUrl' => route('results.data'),
                 'latestBatchProgressUrl' => route('results.latest-batch-progress'),
                 'appendixRunsUrl' => route('results.appendix-runs'),
+                'adaptiveMaxSensitivityUrl' => route('results.adaptive-max-sensitivity'),
                 'defaultCorridorId' => $corridors[0]['id'] ?? null,
                 'trafficCounts' => $trafficCounts,
             ],

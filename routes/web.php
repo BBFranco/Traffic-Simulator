@@ -9,6 +9,7 @@ use App\Http\Controllers\CorridorTemplatePublishController;
 use App\Http\Controllers\LatestBatchProgressController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecoveryTickController;
+use App\Http\Controllers\ResultsAdaptiveMaxSensitivityController;
 use App\Http\Controllers\ResultsAppendixRunsController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\RoadEditorController;
@@ -85,6 +86,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/results/latest-batch-progress', LatestBatchProgressController::class)->name('results.latest-batch-progress');
     // Every run of the batches shown, for the report's appendix (the dissertation's figures and tables).
     Route::get('/results/appendix-runs', ResultsAppendixRunsController::class)->name('results.appendix-runs');
+    // The adaptive maximum-green sensitivity's curves, for the appendix's Figure A10.
+    Route::get('/results/adaptive-max-sensitivity', ResultsAdaptiveMaxSensitivityController::class)->name('results.adaptive-max-sensitivity');
 
     // One intersection at a time with test traffic - click the lane arrows, save them into the corridor file.
     Route::get('/road-editor', [RoadEditorController::class, 'index'])->name('road-editor');

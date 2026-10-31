@@ -21,12 +21,19 @@
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
  *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart|gate4|forced]
  *     [--protocol=short|long] [--sensors=inductive_loop,radar]
- *     [--fixed-floor=50|60] [--give-up=<min>] [--tag=<name>]
+ *     [--fixed-floor=50|60] [--give-up=<min>] [--tag=<name>] [--adaptive-max=sartsm] [--rep-range=0-9]
  *
  * Phase 3 sensitivity options (all 'sensitivity' batches, written to results/<condition>.<variant>/, never over the
  * baseline): --fixed-floor sets a practice minimum cycle on fixed-time signals (plan step 14); --give-up sets how long an
  * arrival queues at a full entry before giving up (engine.js's ENTRY_BACKLOG_BALK_S, 15 min); --tag names the variant
- * folder for any other sweep.
+ * folder for any other sweep. --adaptive-max=sartsm caps plain adaptive's maximum greens to a 120 s cycle where the usual
+ * 45 s maxima could exceed it (phasePlan.js's sartsmMaxGreens(), dissertation plan Phase 4 item 6). --tag is also stored
+ * in each run's raw_config_json.tag, which is how /results finds a sensitivity batch (e.g. adaptive-max-sartsm and its
+ * same-build baseline adaptive-max-45 - AdaptiveMaxSensitivity.php).
+ *
+ * --rep-range=<from>-<to> runs only those reps (0-based, inclusive) - one shard of a batch, so several processes can share
+ * a condition; give the shards the same --batch-id and --warmup-ticks. A shard keeps its own checkpoint and is resumed
+ * with its own --power and --rep-range.
  *
  * --protocol=long runs batchSchedule.js's LONG_PROTOCOL (dissertation plan steps 7-8): 375 measured minutes from 16:15
  * on the evening demand profile, a 4 h total blackout or 2 h + 2 h zoned load shedding from 16:30, rows every 5 s and
@@ -109,6 +116,8 @@ function parseArgs(argv) {
         power: null,
         websterTurnWeight: false,
         fixedFloor: 0,
+        adaptiveMax: 'default',
+        repRange: null,
         giveUpMin: null,
         tag: null,
         demandScale: 1,
@@ -138,6 +147,8 @@ function parseArgs(argv) {
         else if (key === 'fixed-floor') args.fixedFloor = Number(value);
         else if (key === 'give-up') args.giveUpMin = Number(value);
         else if (key === 'tag') args.tag = value;
+        else if (key === 'adaptive-max') args.adaptiveMax = value;
+        else if (key === 'rep-range') args.repRange = value.split('-').map(Number);
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
         else if (key === 'batch-id') args.batchId = value;
@@ -146,6 +157,8 @@ function parseArgs(argv) {
         else if (key === 'protocol') args.protocol = value;
         else if (key === 'sensors') args.sensors = value.split(',');
     }
+    if (!['default', 'sartsm'].includes(args.adaptiveMax)) throw new Error(`--adaptive-max=${args.adaptiveMax}: default or sartsm.`);
+    if (args.repRange && !(args.repRange.length === 2 && args.repRange.every(Number.isInteger) && args.repRange[0] >= 0 && args.repRange[0] <= args.repRange[1])) throw new Error('--rep-range=<from>-<to>, e.g. 0-9.');
     if (!['short', 'long'].includes(args.protocol)) throw new Error(`--protocol=${args.protocol}: short or long.`);
     if (args.protocol === 'long') {
         args.duration = LONG_PROTOCOL.measuredTicks;
@@ -266,23 +279,23 @@ const accToJson = (acc) => acc && { reps: acc.reps, total: [...acc.total], arter
 const accFromJson = (json) => json && { reps: json.reps, total: new Map(json.total), arterial: new Map(json.arterial), sideStreet: new Map(json.sideStreet) };
 
 /** The checkpoint `--resume=<batchId>` picks: the batch's only unfinished part, or the part run with the same --power. */
-function findCheckpoint(batchId, power) {
+function findCheckpoint(batchId, power, repRange) {
     const files = fs.existsSync(CHECKPOINT_DIR) ? fs.readdirSync(CHECKPOINT_DIR).filter((name) => name.startsWith(`${batchId}`) && name.endsWith('.json')) : [];
     const parts = files.map((name) => ({ file: path.join(CHECKPOINT_DIR, name), checkpoint: JSON.parse(fs.readFileSync(path.join(CHECKPOINT_DIR, name), 'utf8')) }));
     if (!parts.length) throw new Error(`No checkpoint for batch ${batchId} in ${CHECKPOINT_DIR}.`);
-    const samePower = (part) => (part.checkpoint.args.power ?? []).join(',') === (power ?? []).join(',');
-    const candidates = power ? parts.filter(samePower) : parts.filter((part) => !part.checkpoint.finishedAt);
+    const samePower = (part) => (part.checkpoint.args.power ?? []).join(',') === (power ?? []).join(',') && (part.checkpoint.args.repRange ?? []).join('-') === (repRange ?? []).join('-');
+    const candidates = power || repRange ? parts.filter(samePower) : parts.filter((part) => !part.checkpoint.finishedAt);
     if (candidates.length === 1) return candidates[0];
     if (!power && parts.every((part) => part.checkpoint.finishedAt)) throw new Error(`Batch ${batchId} already finished - nothing to resume.`);
-    const listed = parts.map((part) => `--power=${(part.checkpoint.args.power ?? ['all']).join(',')}${part.checkpoint.finishedAt ? ' (finished)' : ''}`).join(', ');
+    const listed = parts.map((part) => `--power=${(part.checkpoint.args.power ?? ['all']).join(',')}${part.checkpoint.args.repRange ? ` --rep-range=${part.checkpoint.args.repRange.join('-')}` : ''}${part.checkpoint.finishedAt ? ' (finished)' : ''}`).join(', ');
     throw new Error(`Batch ${batchId} has ${candidates.length ? 'several unfinished parts' : 'no matching part'} (${listed}) - pass the part's --power.`);
 }
 
 async function main() {
     const cliArgs = parseArgs(process.argv.slice(2));
-    const resumed = cliArgs.resume ? findCheckpoint(cliArgs.resume, cliArgs.power) : null;
+    const resumed = cliArgs.resume ? findCheckpoint(cliArgs.resume, cliArgs.power, cliArgs.repRange) : null;
     // A resume runs on the batch's own settings - only where it posts to can change.
-    const args = resumed ? { ...resumed.checkpoint.args, post: cliArgs.post ?? resumed.checkpoint.args.post, probeOnly: false } : cliArgs;
+    const args = resumed ? { adaptiveMax: 'default', repRange: null, ...resumed.checkpoint.args, post: cliArgs.post ?? resumed.checkpoint.args.post, probeOnly: false } : cliArgs;
     const corridorPath = path.join(ROOT, 'corridors', `${args.corridor}.json`);
     const corridorConfig = withSweepSettings(JSON.parse(fs.readFileSync(corridorPath, 'utf8')), args);
     const prints = fingerprint(corridorConfig);
@@ -307,8 +320,9 @@ async function main() {
         const batchId = args.batchId ?? randomUUID();
         checkpoint = { batchId, args, warmup, batchStartedAt, build, fingerprint: prints, done: {}, recovery: {}, recoveryPosted: [], lockups: [], starved: [], mismatches: 0, finishedAt: null };
         fs.mkdirSync(CHECKPOINT_DIR, { recursive: true });
-        checkpointFile = path.join(CHECKPOINT_DIR, `${batchId}${args.power ? `.${args.power.join('+')}` : ''}.json`);
-        console.log(`Batch ${batchId}${args.batchId ? ' (posting into an existing batch)' : ''}. Resume it with --resume=${batchId}${args.power ? ` --power=${args.power.join(',')}` : ''} if it stops.`);
+        const shard = args.repRange ? `.reps${args.repRange.join('-')}` : '';
+        checkpointFile = path.join(CHECKPOINT_DIR, `${batchId}${args.power ? `.${args.power.join('+')}` : ''}${shard}.json`);
+        console.log(`Batch ${batchId}${args.batchId ? ' (posting into an existing batch)' : ''}. Resume it with --resume=${batchId}${args.power ? ` --power=${args.power.join(',')}` : ''}${args.repRange ? ` --rep-range=${args.repRange.join('-')}` : ''} if it stops.`);
     }
     const { batchId, warmup, batchStartedAt, build } = checkpoint;
     const saveCheckpoint = () => fs.writeFileSync(checkpointFile, JSON.stringify(checkpoint));
@@ -322,13 +336,14 @@ async function main() {
     const rollingWindows = long ? LONG_PROTOCOL.rollingSchedule : ROLLING_SCHEDULE;
     if (long) console.log(`Protocol: ${LONG_PROTOCOL.id} - ${args.duration * args.dt / 60} measured min, demand ${EVENING_PROFILE.id} from 16:15, outage from 16:30.`);
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
-    const batchKind = args.tag || args.giveUpMin != null || args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
+    const batchKind = args.tag || args.adaptiveMax !== 'default' || args.giveUpMin != null || args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
     const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
     if (arm) console.log(`Ablation: ${arm.label} ${JSON.stringify(arm.coordination)}`);
     if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
         throw new Error(`"${args.corridor}" has no zones - a rolling blackout needs them (scripts/add-zones.mjs).`);
     }
-    const totalRuns = matrix.length * args.reps;
+    const [repFrom, repTo] = args.repRange ?? [0, args.reps - 1];
+    const totalRuns = matrix.length * (Math.min(repTo, args.reps - 1) - repFrom + 1);
     let completed = Object.values(checkpoint.done).flat().length;
     const pendingPosts = [];
     /** Runs finished since the last successful POST - marked done only once the server has them. */
@@ -351,13 +366,13 @@ async function main() {
         saveCheckpoint();
     };
 
-    console.log(`Running ${matrix.length} conditions x ${args.reps} reps = ${totalRuns} runs against "${args.corridor}"${completed ? ` (${totalRuns - completed} left)` : ''}...`);
+    console.log(`Running ${matrix.length} conditions x ${totalRuns / matrix.length} reps${args.repRange ? ` (reps ${repFrom}-${repTo})` : ''} = ${totalRuns} runs against "${args.corridor}"${completed ? ` (${totalRuns - completed} left)` : ''}...`);
     if (args.post) console.log(`Will POST results to ${args.post} in batches of ${POST_BATCH_SIZE}.`);
 
     for (const condition of matrix) {
         // An ablation arm writes beside the others, never over them - the arms share condition keys.
         // So do a sweep's runs: --tag names their folder, else the floor or give-up setting does.
-        const variant = args.tag ?? args.ablation ?? (args.fixedFloor ? `floor${args.fixedFloor}` : args.giveUpMin != null ? `giveup${args.giveUpMin}` : null);
+        const variant = args.tag ?? args.ablation ?? (args.adaptiveMax !== 'default' ? `adaptive-max-${args.adaptiveMax}` : args.fixedFloor ? `floor${args.fixedFloor}` : args.giveUpMin != null ? `giveup${args.giveUpMin}` : null);
         const outDir = path.join(ROOT, 'results', variant ? `${condition.key}.${variant}` : condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
@@ -365,7 +380,7 @@ async function main() {
         const rollingSchedule = condition.powerState === 'rolling_blackout' ? rollingWindows : null;
         const done = new Set(checkpoint.done[condition.key] ?? []);
 
-        for (let rep = 0; rep < args.reps; rep += 1) {
+        for (let rep = repFrom; rep <= Math.min(repTo, args.reps - 1); rep += 1) {
             const seed = seedForRep(args.baseSeed, condition.powerState, rep);
             if (done.has(seed)) continue;
             const runStartedMs = Date.now();
@@ -383,6 +398,7 @@ async function main() {
                 routingMode: args.routing,
                 websterTurnWeight: args.websterTurnWeight,
                 fixedFloorS: args.fixedFloor,
+                adaptiveMaxGreen: args.adaptiveMax,
                 entryBacklogBalkS: args.giveUpMin != null ? args.giveUpMin * 60 : undefined,
                 coordination: arm?.coordination ?? {},
                 ...(long ? { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds } : {}),
@@ -423,7 +439,7 @@ async function main() {
             }
 
             if (args.post) {
-                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build, batchKind }));
+                pendingPosts.push(toApiPayload(summary, batchId, { warmupStationary: warmup.stationary, warmupDrifting: warmup.drifting ?? null, warmupSettle: warmup.settle ?? null, batchStartedAt, build, batchKind, tag: args.tag }));
 
                 // Every rep of an outage condition folds into this condition's recovery
                 // curve, so the chart on /results averages the same population the "time to

@@ -101,6 +101,10 @@ class HtmlReport {
 
     ensureSpace() {}
 
+    headingHeight() {
+        return 0;
+    }
+
     /** The panel's summary already shows the title; the drawer's own subtitle (e.g. the appendix's run count) updates it. */
     sectionTitle(title, subtitle, number = null) {
         this.section = number;
@@ -377,7 +381,7 @@ function drawSectionNav(container, panels) {
  * Draws the whole report into `container` from the page's live results payload - the same `data` the PDF export reads.
  * Called again after a filter change refreshes the payload.
  */
-export function renderReportView(container, data, { corridorUrl = null, appendixRunsUrl = null } = {}) {
+export function renderReportView(container, data, { corridorUrl = null, appendixRunsUrl = null, adaptiveMaxSensitivityUrl = null } = {}) {
     if (!container) return;
     container.replaceChildren();
     if (!data.aggregates?.length) {
@@ -435,7 +439,8 @@ export function renderReportView(container, data, { corridorUrl = null, appendix
                     report.paragraph('The per-run data for the appendix could not be loaded.');
                     return;
                 }
-                await drawDetailedAppendix(report, all, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH });
+                const adaptiveMaxSensitivity = adaptiveMaxSensitivityUrl ? await fetchAppendixRuns(adaptiveMaxSensitivityUrl).catch(() => null) : null;
+                await drawDetailedAppendix(report, all, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH, adaptiveMaxSensitivity });
             },
         },
     ];

@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MIN_CYCLE_S, MIN_GREEN_S, buildStages, fixedTimeGreens } from '../../resources/js/sim/controllers/phasePlan.js';
+import { MAX_CYCLE_S, MIN_CYCLE_S, MIN_GREEN_S, buildStages, fixedTimeGreens, sartsmMaxGreens } from '../../resources/js/sim/controllers/phasePlan.js';
 
 const S = 1250;
 const demand = (perLanePerMin) => ({ spawnRatePerLanePerMin: perLanePerMin, saturationFlowPerLanePerHour: S });
@@ -57,4 +57,48 @@ test('oversaturated (Y >= 1): the 120 s fallback, above both floors', () => {
     const { greens, cycleLengthS } = plan(15, 10);
     assert.equal(cycleLengthS, 120);
     assert.ok(greens.every((g) => g >= MIN_GREEN_S));
+});
+
+/*
+ * The adaptive maximum-green sensitivity (sartsmMaxGreens(), plan Phase 4 item 6). Stages in buildStages() order:
+ * [turn 0, through 0, turn 1, through 1] with both turn arrows (weight 1), so L = 16 s and the usual maxima
+ * 25 + 45 + 25 + 45 = 140 s make a 156 s cycle - over 120 s, so the cap applies: the maxima share 104 s.
+ */
+const bothTurns = (turn0PerMin, turn1PerMin) => [
+    { demand: demand(turn0PerMin), weight: 1 },
+    { demand: demand(turn1PerMin), weight: 1 },
+];
+const sartsm = (arterialPerMin, crossPerMin, turn) => sartsmMaxGreens(buildStages(turn), demand(arterialPerMin), demand(crossPerMin), turn);
+
+test('SARTSM max green: a two-stage junction keeps 45 s on both roads (2 x 45 + 8 = 98 s fits in 120 s)', () => {
+    assert.equal(MAX_CYCLE_S, 120);
+    assert.deepEqual(sartsm(8, 4, [null, null]), [45, 45]);
+    assert.deepEqual(sartsm(15, 10, [null, null]), [45, 45]);
+});
+
+test('SARTSM max green: Webster greens scaled to a 120 s cycle, the arterial held at its 45 s maximum', () => {
+    // y = 0.096 (turn 0) + 0.288 + 0.048 (turn 1) + 0.144 = 0.576: C0 = (1.5 x 16 + 5) / 0.424 = 68.40 s, 52.40 s of green
+    // split 8.73 / 26.20 / 4.37 -> 6 (turn minimum) / 13.10. Scaled to 104 s the arterial would get 50.4 s > 45 s: held at
+    // 45 s, the other three share the remaining 59 s in their Webster proportions.
+    const turn = bothTurns(2, 1);
+    const effective = 29 / 0.424 - 16;
+    const webster = [(0.096 / 0.576) * effective, (0.288 / 0.576) * effective, 6, (0.144 / 0.576) * effective];
+    const free = webster[0] + webster[2] + webster[3];
+    const maxima = sartsm(6, 3, turn);
+    near(maxima[1], 45, 'arterial');
+    near(maxima[0], (webster[0] / free) * 59, 'arterial turn');
+    near(maxima[2], (webster[2] / free) * 59, 'cross turn');
+    near(maxima[3], (webster[3] / free) * 59, 'cross');
+    near(maxima.reduce((sum, g) => sum + g, 0) + 16, 120, 'cycle');
+});
+
+test('SARTSM max green: minimum and usual maximum both hold - 8 s cross floor, 45 s / 25 s caps', () => {
+    // y = 0.048 + 0.672 + 0.048 + 0.024: Webster ~7.5 / 104.7 / 7.5 / 3.7 -> 7. Scaled to 104 s: the arterial caps at
+    // 45 s and the cross floors at adaptive's 8 s minimum; the turns' 25.5 s each then cap at 25 s. 103 s <= 104 s.
+    assert.deepEqual(sartsm(14, 0.5, bothTurns(1, 1)), [25, 45, 25, 8]);
+});
+
+test('SARTSM max green: oversaturated - the 120 s fallback greens are the maxima (12 s turns, 40 s through)', () => {
+    const maxima = sartsm(15, 10, bothTurns(5, 5));
+    [12, 40, 12, 40].forEach((g, i) => near(maxima[i], g, `stage ${i}`));
 });

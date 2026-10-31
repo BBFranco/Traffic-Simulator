@@ -1572,6 +1572,7 @@ function drawReport() {
             renderReportView(container, data, {
                 corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
                 appendixRunsUrl: `${data.appendixRunsUrl}?${params}`,
+                adaptiveMaxSensitivityUrl: `${data.adaptiveMaxSensitivityUrl}?${params}`,
             })
         )
         .catch((error) => {
@@ -1604,6 +1605,7 @@ exportPdfButton?.addEventListener('click', async () => {
             corridorName: corridorSelect?.selectedOptions[0]?.textContent.trim() || 'All corridors',
             corridorUrl: corridorId ? data.corridorUrlTemplate.replace('__ID__', encodeURIComponent(corridorId)) : null,
             appendixRunsUrl: `${data.appendixRunsUrl}?${currentFilterParams()}`,
+            adaptiveMaxSensitivityUrl: `${data.adaptiveMaxSensitivityUrl}?${currentFilterParams()}`,
         });
     } catch (error) {
         // eslint-disable-next-line no-alert

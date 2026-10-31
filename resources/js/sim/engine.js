@@ -26,8 +26,8 @@ import {
 } from './car.js';
 import { nextPoissonArrival, fluctuatingDemand, mobilShouldChangeLane, mobilIsSafe, COORDINATED_DEFAULTS, IDM_DEFAULTS } from './equations.js';
 import { FixedTimeController } from './controllers/fixedTime.js';
-import { AdaptiveController, MAX_TURN_GREEN_S } from './controllers/adaptive.js';
-import { MIN_TURN_GREEN_S } from './controllers/phasePlan.js';
+import { AdaptiveController } from './controllers/adaptive.js';
+import { MIN_TURN_GREEN_S, buildStages, sartsmMaxGreens } from './controllers/phasePlan.js';
 import {
     AllWayStopController,
     MIN_STOP_DWELL_S,
@@ -1308,11 +1308,13 @@ export class SimulationEngine {
     }
 
     /** Full restart: new seed, fresh cars, fresh stats. Also what the seed-determinism check (build step 12) needs. */
-    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, fixedFloorS = 0, entryBacklogBalkS = ENTRY_BACKLOG_BALK_S, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
+    reset({ seed, arterialModes, demand, sensorMode, batteryBackedSensors, power, truckRatio = 0, busRatio = 0, randomEvents = false, routingMode = null, websterTurnWeight = false, fixedFloorS = 0, adaptiveMaxGreen = 'default', entryBacklogBalkS = ENTRY_BACKLOG_BALK_S, coordination = {}, sensorSpecSet = DEFAULT_SENSOR_SPEC_SET, sensorErrors = false, callRule = 'presence' }) {
         /** Sensitivity runs only - see phasePlan.js's controllerConfigFor(). */
         this.websterTurnWeight = websterTurnWeight;
         /** Fixed-time practice cycle floor in s (plan step 14) - 0 is the SARTSM 30 s baseline. */
         this.fixedFloorS = fixedFloorS;
+        /** Plain adaptive's maximum greens: 'default' (45 s, 25 s x weight per turn) or 'sartsm' - the sensitivity arm (phasePlan.js's sartsmMaxGreens()). */
+        this.adaptiveMaxGreen = adaptiveMaxGreen;
         /** How long an arrival queues at a full entry before giving up - the give-up sensitivity (plan Phase 3) varies it. */
         this.entryBacklogBalkS = entryBacklogBalkS;
         /** Coordinated adaptive's layer switches and thresholds (equations.js's COORDINATED_DEFAULTS) - ablation runs turn layers off. */
@@ -2315,8 +2317,26 @@ export class SimulationEngine {
         for (const info of nodeInfos) {
             if (info.controllerType === 'fixed') {
                 info.controller.recompute(this._arterialDemandAt(info.node), this._crossDemandFor(info.node), this._turnStagesAt(info));
+            } else if (info.controllerType === 'adaptive' && this.adaptiveMaxGreen === 'sartsm') {
+                info.controller.maxGreens = this._adaptiveMaxGreensAt(info);
             }
         }
+    }
+
+    /**
+     * The maximum-green sensitivity's per-stage maxima at an adaptive junction, from the same demand fixed-time plans on
+     * - null (the usual maxima) unless the run asked for 'sartsm'. As `{ through: [s, s], turn: [s | null, s | null] }`.
+     */
+    _adaptiveMaxGreensAt(info) {
+        if (this.adaptiveMaxGreen !== 'sartsm') return null;
+        const turn = this._turnStagesAt(info);
+        const stages = buildStages(turn);
+        const maxima = sartsmMaxGreens(stages, this._arterialDemandAt(info.node), this._crossDemandFor(info.node), turn);
+        const at = (phase, isTurn) => {
+            const i = stages.findIndex((stage) => stage.phase === phase && stage.turn === isTurn);
+            return i < 0 ? null : maxima[i];
+        };
+        return { through: [at(0, false), at(1, false)], turn: [at(0, true), at(1, true)] };
     }
 
     /** Green wave across the arterial's signals - its roundabouts and stops keep their own control. */
@@ -2708,7 +2728,7 @@ export class SimulationEngine {
             info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand, this._turnStagesAt(info), this.fixedFloorS);
         } else if (arterialState.mode === 'adaptive') {
             info.controllerType = 'adaptive';
-            info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null));
+            info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null), this._adaptiveMaxGreensAt(info));
             info.callPersistenceS = [0, 0];
             info.countSamples = [[], []];
             info.detectors = new Map();
@@ -5491,7 +5511,7 @@ export class SimulationEngine {
                 phaseState: controller.phaseState,
                 elapsedS: controller.phaseElapsed,
                 minS: inTurn ? MIN_TURN_GREEN_S * weight : controller.params.minGreen,
-                maxS: inTurn ? MAX_TURN_GREEN_S * weight : controller.params.maxGreen,
+                maxS: controller.maxGreenFor(phase, inTurn),
                 gapOutS: controller.params.gapOutS,
                 sinceDetectionS: controller.secondsSinceLastDetection,
             };
@@ -5582,7 +5602,8 @@ export class SimulationEngine {
 
         if (info.controllerType === 'adaptive' && controller.inTurn) return 'turn arrow - holds while its lane keeps actuating, gaps out after';
         if (info.controllerType === 'adaptive') {
-            const { minGreen, maxGreen, gapOutS, minCallToSwitch, callDebounceS, maxCallWaitS } = controller.params;
+            const { minGreen, gapOutS, minCallToSwitch, callDebounceS, maxCallWaitS } = controller.params;
+            const maxGreen = controller.maxGreenFor(phase, false);
             const otherQueue = phase === 0 ? crossQueue : arterialQueue; // ground truth, for the human reading this
             const otherName = phase === 0 ? 'cross street' : 'arterial';
             const usesNarrowSensor = this.sensorSpecSet !== 'legacy' || !this.sensorSpec.outputs.count;

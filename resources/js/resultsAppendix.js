@@ -709,6 +709,80 @@ async function figureTimeseries(data, timelineFor, render) {
     return panels.length ? compose(panels, 'column') : null;
 }
 
+/** Figure A10's arms (AdaptiveMaxSensitivity.php): fixed-time from the main batch, adaptive (loop) under each maximum-green rule. */
+const ADAPTIVE_MAX_ARMS = [
+    { key: 'fixed', label: 'Fixed-time', colour: COLOUR.fixed, dash: CONTROLLER_DASH.fixed },
+    { key: 'default', label: 'Adaptive, loop – 45 s max green', colour: COLOUR.adaptive, dash: CONTROLLER_DASH.adaptive },
+    { key: 'sartsm', label: 'Adaptive, loop – SARTSM max green (cycle ≤ 120 s)', colour: '#9b2f8f', dash: [2, 2] },
+];
+/** Panel 2's window: from zone 2's cut to half an hour past the final restore. */
+const ZONE2_WINDOW_MIN = { from: 135, to: 300 };
+
+/** Figure A10: the adaptive maximum-green sensitivity under load shedding - mean wait, then vehicles standing in zone 2. */
+async function figureAdaptiveMax(sensitivity, data, timelineFor, render) {
+    const arms = sensitivity?.arms;
+    if (!arms || ADAPTIVE_MAX_ARMS.some((arm) => !arms[arm.key]?.n)) return null;
+    const timeline = timelineFor(data, 'rolling_blackout');
+    const bands = (timeline?.darkWindows ?? []).map((w) => ({
+        from: w.fromS / 60,
+        to: w.toS / 60,
+        colour: w.zones?.length && !w.zones.includes(1) ? 'rgba(98,80,214,0.10)' : 'rgba(227,73,72,0.10)',
+        label: w.zones?.length ? `Zone${w.zones.length > 1 ? 's' : ''} ${w.zones.join(' + ')} dark` : 'All junctions dark',
+    }));
+    /** One line per arm: bin i plotted at its midpoint, in minutes. */
+    const lines = (seriesKey, binKey, inWindow = () => true) =>
+        ADAPTIVE_MAX_ARMS.map((arm) => {
+            const binMin = arms[arm.key][binKey] / 60;
+            return {
+                label: `${arm.label} (n = ${arms[arm.key].n})`,
+                data: (arms[arm.key][seriesKey] ?? []).map((v, i) => (Number.isFinite(v) ? point((i + 0.5) * binMin, v) : null)).filter((p) => p && inWindow(p.x)),
+                showLine: true,
+                pointRadius: 0,
+                borderWidth: 2,
+                borderDash: arm.dash,
+                borderColor: arm.colour,
+                backgroundColor: arm.colour,
+            };
+        });
+    const waitLines = lines('wait', 'waitBinS');
+    const lastMin = Math.max(...waitLines.flatMap((line) => line.data.map((p) => p.x)));
+    const wait = chartImage(
+        render,
+        {
+            type: 'scatter',
+            datasets: waitLines,
+            title: 'Network mean wait',
+            showLegend: false,
+            plugins: [shadeBands],
+            pluginOptions: { shadeBands: { bands } },
+            scales: {
+                x: axis({ min: 0, max: Math.ceil(lastMin / 15) * 15, ticks: { stepSize: 15 } }),
+                y: axis({ min: 0, title: 'Mean wait (s)' }),
+            },
+        },
+        1000,
+        330
+    );
+    const standing = chartImage(
+        render,
+        {
+            type: 'scatter',
+            datasets: lines('zone2Standing', 'standingBinS', (x) => x >= ZONE2_WINDOW_MIN.from && x <= ZONE2_WINDOW_MIN.to),
+            title: 'Vehicles standing in zone 2',
+            showLegend: true,
+            plugins: [shadeBands],
+            pluginOptions: { shadeBands: { bands: bands.map((b) => ({ ...b, from: Math.max(b.from, ZONE2_WINDOW_MIN.from), to: Math.min(b.to, ZONE2_WINDOW_MIN.to) })).filter((b) => b.to > b.from) } },
+            scales: {
+                x: axis({ min: ZONE2_WINDOW_MIN.from, max: ZONE2_WINDOW_MIN.to, title: 'Minutes into the measured window', ticks: { stepSize: 15 } }),
+                y: axis({ min: 0, title: 'Mean vehicles standing' }),
+            },
+        },
+        1000,
+        380
+    );
+    return compose([wait, standing], 'column');
+}
+
 function quantile(sorted, q) {
     const at = (sorted.length - 1) * q;
     const lo = Math.floor(at);
@@ -948,7 +1022,7 @@ function figureCoordTradeoff(d, render) {
  * Draws the appendix into `report` (resultsPdf.js's Report). `helpers`: renderChartImage, timelineFor and the page's
  * content width (mm) - passed in so this module needs nothing else from resultsPdf.js.
  */
-export async function drawDetailedAppendix(report, runs, data, { renderChartImage, timelineFor, contentWidthMm }) {
+export async function drawDetailedAppendix(report, runs, data, { renderChartImage, timelineFor, contentWidthMm, adaptiveMaxSensitivity = null }) {
     const d = indexRuns(runs);
     const capFor = (power) => data.batchStamp?.postRestoreWindowSByScope?.[power]?.total ?? FALLBACK_CAP_S[power];
     const table = (title, caption, head, body, note = null) => {
@@ -958,7 +1032,7 @@ export async function drawDetailedAppendix(report, runs, data, { renderChartImag
     };
     const figure = (title, caption, built) => {
         if (!built) return;
-        report.ensureSpace(contentWidthMm * built.aspect + 22);
+        report.ensureSpace(contentWidthMm * built.aspect + report.headingHeight(caption) + 4);
         report.heading(title, caption, { level: 'card' });
         report.image(built.image, contentWidthMm, contentWidthMm * built.aspect);
     };
@@ -981,6 +1055,11 @@ export async function drawDetailedAppendix(report, runs, data, { renderChartImag
     figure('Figure A7', 'Segment means of total wait before, during and after each outage, by controller. The chart form of Table A6.', await figureSegments(d, renderChartImage));
     figure('Figure A8', 'Mean wait per vehicle by sensor model within each adaptive controller and power state (95% confidence intervals). The chart form of Table A8.', await figureSensors(d, renderChartImage));
     figure('Figure A9', 'Coordinated minus plain adaptive control on the same seeds: change in arterial wait against change in side-street wait, by sensor (colour) and power state (marker); 95% confidence intervals. The chart form of Table A9.', figureCoordTradeoff(d, renderChartImage));
+    figure(
+        'Figure A10',
+        `Sensitivity: adaptive control (inductive loop only) with SARTSM Vol 3 §7.5.2(3) maximum greens - Webster greens scaled to a cycle of at most 120 s, applied only at junctions whose 45 s maxima could exceed it - against the 45 s default, under load shedding; 30 paired seeds. Top: network mean wait; bottom: mean vehicles standing in zone 2. Both adaptive arms are Node runs on the same build, so the 45 s arm (not Figure A4's adaptive line, the mean of four sensors) is the comparison; fixed-time is from the main batch. Compare Figure A4 (bottom).`,
+        await figureAdaptiveMax(adaptiveMaxSensitivity, data, timelineFor, renderChartImage)
+    );
 
     report.newPage();
     table(

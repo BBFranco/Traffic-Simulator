@@ -10,7 +10,7 @@
  * Webster's formulas (equations.js) are used unchanged - a turn stage is one more phase in them,
  * with y = q / s for its busiest turn lane.
  */
-import { websterOptimumCycle, websterGreenSplit } from '../equations.js';
+import { ADAPTIVE_DEFAULTS, websterOptimumCycle, websterGreenSplit } from '../equations.js';
 
 export const LOST_TIME_PER_PHASE_S = 4;
 export const YELLOW_S = 3;
@@ -23,6 +23,10 @@ export const MIN_GREEN_S = 7;
 export const MIN_TURN_GREEN_S = 6;
 /** No signal cycle shorter than this: SARTSM Vol 3 §6.13.2 - a shorter one "would not meet minimum green requirements". */
 export const MIN_CYCLE_S = 30;
+/** SARTSM Vol 3 §6.13.2's longest cycle - "or drivers assume the signals have failed". The adaptive maximum-green sensitivity's cap (sartsmMaxGreens()). */
+export const MAX_CYCLE_S = 120;
+/** Adaptive control's longest protected-turn green before its weight (controllers/adaptive.js) - it also ends as soon as its lane stops actuating the detector. */
+export const MAX_TURN_GREEN_S = 25;
 /** Used when Webster's method is undefined (Y >= 1, oversaturated) - keep cycling rather than throw mid-run. */
 export const FALLBACK_CYCLE_S = 120;
 /** A turn stage's green in that fallback cycle, before its weight. */
@@ -34,9 +38,10 @@ export const FALLBACK_TURN_GREEN_S = 12;
  * q, the turn `weight` only on the minimum green; `websterTurnWeight` (a sensitivity run only)
  * also scales a protected turn's q by its weight before Webster (engine.js's _turnStagesAt()).
  */
-export function controllerConfigFor({ websterTurnWeight = false, fixedFloorS = 0 } = {}) {
+export function controllerConfigFor({ websterTurnWeight = false, fixedFloorS = 0, adaptiveMaxGreen = 'default' } = {}) {
     return {
         ...(fixedFloorS ? { fixedTimeFloorS: fixedFloorS } : {}),
+        ...(adaptiveMaxGreen === 'sartsm' ? { adaptiveMaxGreen: 'sartsm-webster-c120' } : {}),
         websterTurnInput: websterTurnWeight ? 'q-x-weight' : 'real-q',
         turnWeightActsOn: websterTurnWeight ? 'min-green+webster-q' : 'min-green',
         minGreenS: MIN_GREEN_S,
@@ -139,6 +144,52 @@ export function floorWithinCycle(stages, greens, cycleLengthS) {
             result[i] = total > 0 ? (greens[i] / total) * budget : budget / free.length;
             if (result[i] < minGreenOf(stages[i])) {
                 result[i] = minGreenOf(stages[i]);
+                pinned.add(i);
+                changed = true;
+            }
+        }
+        if (!changed) break;
+    }
+    return result;
+}
+
+/** An adaptive stage's usual maximum green: 45 s for a through green, 25 s x weight for a protected turn. */
+export function defaultAdaptiveMaxGreen(stage) {
+    return stage.turn ? MAX_TURN_GREEN_S * stage.weight : ADAPTIVE_DEFAULTS.maxGreen;
+}
+
+/**
+ * The adaptive maximum-green sensitivity (dissertation plan Phase 4, item 6): SARTSM Vol 3 §7.5.2(3) - in heavy flow
+ * an actuated signal runs to its maxima, so they are set as for fixed-time control, within §6.13.2's 120 s cycle.
+ * A junction whose usual maxima plus lost time fit in MAX_CYCLE_S keeps them (every two-stage junction: 2 x 45 + 8 =
+ * 98 s); §7.5.2(2)'s 30-60 s range still applies there. Otherwise the maxima are its fixed-time Webster greens
+ * (fixedTimeGreens(), SARTSM minimums and the oversaturated fallback included) scaled so they plus lost time make
+ * exactly MAX_CYCLE_S, each held between its minimum (adaptive's 8 s, a turn's 6 s x weight) and its usual maximum,
+ * the time a held stage frees or takes shared over the rest. Minimums win should they alone need more than 120 s.
+ * Per stage, in buildStages() order.
+ */
+export function sartsmMaxGreens(stages, arterialDemand, crossDemand, turn) {
+    const usual = stages.map(defaultAdaptiveMaxGreen);
+    const budget = MAX_CYCLE_S - lostTimeS(stages);
+    if (usual.reduce((sum, g) => sum + g, 0) <= budget) return usual;
+    const { greens } = fixedTimeGreens(stages, arterialDemand, crossDemand, turn);
+    const floors = stages.map((s) => (s.turn ? MIN_TURN_GREEN_S * s.weight : ADAPTIVE_DEFAULTS.minGreen));
+    return sharesWithin(greens, floors, usual, budget);
+}
+
+/** `budget` split in proportion to `weights`, each share held within [floors[i], caps[i]] - held shares pinned, the rest re-split. */
+function sharesWithin(weights, floors, caps, budget) {
+    const result = weights.slice();
+    const pinned = new Set();
+    for (let pass = 0; pass < weights.length; pass += 1) {
+        const free = weights.map((_, i) => i).filter((i) => !pinned.has(i));
+        const left = budget - [...pinned].reduce((sum, i) => sum + result[i], 0);
+        const total = free.reduce((sum, i) => sum + weights[i], 0);
+        let changed = false;
+        for (const i of free) {
+            const share = total > 0 ? (weights[i] / total) * left : left / free.length;
+            result[i] = Math.min(caps[i], Math.max(floors[i], share));
+            if (result[i] !== share) {
                 pinned.add(i);
                 changed = true;
             }

@@ -56,6 +56,7 @@ const readsSensors = (controllerMode) => controllerMode === 'adaptive' || contro
  *                             null keeps the corridor's (random when it has no `routing` section)
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
  * @param fixedFloorS          sensitivity runs only (plan step 14): fixed-time cycles never shorter than this many s (50 or 60); 0 = SARTSM 30 s
+ * @param adaptiveMaxGreen     sensitivity runs only (plan Phase 4 item 6): 'sartsm' caps plain adaptive's maxima to a 120 s cycle (phasePlan.js's sartsmMaxGreens()); 'default' = 45 s
  * @param entryBacklogBalkS    sensitivity runs only: s an arrival queues at a full entry before giving up; undefined = engine.js's ENTRY_BACKLOG_BALK_S
  * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
  *                             { platoonMessages: false, selfTuning: false } for the layer ablation
@@ -82,6 +83,7 @@ export function runHeadless({
     routingMode = null,
     websterTurnWeight = false,
     fixedFloorS = 0,
+    adaptiveMaxGreen = 'default',
     entryBacklogBalkS = undefined,
     coordination = {},
     sensorSpecSet = undefined,
@@ -111,6 +113,7 @@ export function runHeadless({
         routingMode,
         websterTurnWeight,
         fixedFloorS,
+        adaptiveMaxGreen,
         entryBacklogBalkS,
         coordination,
         sensorSpecSet,
@@ -627,7 +630,7 @@ function buildSummary({
             waitAccounting: WAIT_ACCOUNTING,
             ...(engine.zones.length ? { zoneAccounting: ZONE_ACCOUNTING } : {}),
             controllerConfig: {
-                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight, fixedFloorS: engine.fixedFloorS }),
+                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight, fixedFloorS: engine.fixedFloorS, adaptiveMaxGreen: engine.adaptiveMaxGreen }),
                 // Which coordination layers ran (and their thresholds) - so an ablation run never reads as the full mode.
                 ...(controllerMode === 'coordinated_adaptive' ? { coordination: { ...engine.coordination } } : {}),
             },

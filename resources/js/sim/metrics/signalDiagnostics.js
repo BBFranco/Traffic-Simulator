@@ -70,7 +70,7 @@ export class SignalDiagnostics {
         const row = this._row();
         const turn = s.greenKey.endsWith('t');
         add(turn ? row.turnGreenS : s.greenKey === '0' ? row.arterialGreenS : row.crossGreenS, s.greenElapsedS);
-        const maxGreen = controller.params?.maxGreen;
+        const maxGreen = controller.maxGreenFor ? controller.maxGreenFor(Number(s.greenKey), false) : controller.params?.maxGreen;
         if (!turn && maxGreen != null && s.greenElapsedS >= maxGreen - 0.05) row.maxOuts += 1;
     }
 

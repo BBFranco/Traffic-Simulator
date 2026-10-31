@@ -625,6 +625,12 @@ class Report {
      * A heading (3.1) - or, with `level: 'card'`, one numbered like a chart card (3.1.2) inside a subsection. `swatch`
      * draws a colour mark before the title (a zone's tint); the title itself stays in text ink.
      */
+    /** Millimetres heading() takes for this caption, so a figure can keep its heading and image on one page. */
+    headingHeight(caption) {
+        const lines = caption ? this.doc.setFontSize(8).splitTextToSize(caption, CONTENT_WIDTH).length : 0;
+        return 7.5 + (lines ? lines * 3.6 + 1.5 : 0);
+    }
+
     heading(title, caption, { level = 'sub', swatch = null } = {}) {
         title = this.numbered(title, level);
         const { doc } = this;
@@ -1879,11 +1885,13 @@ async function fetchAppendixRuns(url) {
     return response.ok ? response.json() : null;
 }
 
-export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl, appendixRunsUrl }) {
+export async function exportResultsPdf(data, { corridorId, corridorName, corridorUrl, appendixRunsUrl, adaptiveMaxSensitivityUrl = null }) {
     // A layout that fails to load or draw just leaves the cover without it.
     const corridorLayout = corridorUrl ? await corridorLayoutImage(corridorUrl).catch(() => null) : null;
     // Every run of the batch, for the detailed appendix - left out when it can't be fetched.
     const appendixRuns = appendixRunsUrl ? await fetchAppendixRuns(appendixRunsUrl).catch(() => null) : null;
+    // The adaptive maximum-green sensitivity (Figure A10) - the figure is left out without it.
+    const adaptiveMaxSensitivity = adaptiveMaxSensitivityUrl ? await fetchAppendixRuns(adaptiveMaxSensitivityUrl).catch(() => null) : null;
 
     const pageTheme = currentTheme();
     applyChartTheme('light');
@@ -1906,7 +1914,7 @@ export async function exportResultsPdf(data, { corridorId, corridorName, corrido
         const hasRichness = appendixRuns?.length ? drawRichness(report, appendixRuns, data, SECTION.methodNotes) : false;
         if (hasRichness) report.newPage();
         drawMethodNotes(report, data, SECTION.methodNotes + (hasRichness ? 1 : 0));
-        if (appendixRuns?.length) await drawDetailedAppendix(report, appendixRuns, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH });
+        if (appendixRuns?.length) await drawDetailedAppendix(report, appendixRuns, data, { renderChartImage, timelineFor, contentWidthMm: CONTENT_WIDTH, adaptiveMaxSensitivity });
 
         report.stampPages();
         report.doc.save(reportFileName(corridorId, data.batchStamp, now, 'pdf'));
