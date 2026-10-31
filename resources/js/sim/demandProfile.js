@@ -31,6 +31,18 @@ export function profileMultiplier(profile, clockS) {
     return points[points.length - 1].pct / profile.peakPct;
 }
 
+/**
+ * The time-of-day plan sensitivity (dissertation plan, after Phase 4): the demand a fixed-time plan in force at `clockS` is
+ * timed for - the share of the clock hour it falls in, as a multiple of the peak. Plans change on the hour, each timed to
+ * its own hour's flow, which is the best a time-of-day schedule could do with this profile.
+ */
+export function hourPlanMultiplier(profile, clockS) {
+    const hour = Math.floor(clockS / 3600) % 24;
+    const hours = Object.keys(profile.hourPct).map(Number).sort((a, b) => a - b);
+    const held = hour < hours[0] ? hours[0] : hour > hours[hours.length - 1] ? hours[hours.length - 1] : hour;
+    return profile.hourPct[held] / profile.peakPct;
+}
+
 /** "16:15" for 58500 s. */
 export function clockLabel(clockS) {
     const minutes = Math.round(clockS / 60);

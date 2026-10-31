@@ -21,7 +21,7 @@
  *     [--controllers=fixed,green_wave] [--power=normal,load_shedding,rolling_blackout] [--batch-id=<uuid>]
  *     [--webster-turn-weight] [--demand-scale=0.9] [--end-to-end-share=0.2] [--ablation=baseline|A1|A2|A3|A4|legacyRestart|gate4|forced]
  *     [--protocol=short|long] [--sensors=inductive_loop,radar]
- *     [--fixed-floor=50|60] [--give-up=<min>] [--tag=<name>] [--adaptive-max=sartsm] [--rep-range=0-9]
+ *     [--fixed-floor=50|60] [--give-up=<min>] [--tag=<name>] [--adaptive-max=sartsm] [--fixed-tod] [--rep-range=0-9]
  *
  * Phase 3 sensitivity options (all 'sensitivity' batches, written to results/<condition>.<variant>/, never over the
  * baseline): --fixed-floor sets a practice minimum cycle on fixed-time signals (plan step 14); --give-up sets how long an
@@ -29,7 +29,8 @@
  * folder for any other sweep. --adaptive-max=sartsm caps plain adaptive's maximum greens to a 120 s cycle where the usual
  * 45 s maxima could exceed it (phasePlan.js's sartsmMaxGreens(), dissertation plan Phase 4 item 6). --tag is also stored
  * in each run's raw_config_json.tag, which is how /results finds a sensitivity batch (e.g. adaptive-max-sartsm and its
- * same-build baseline adaptive-max-45 - AdaptiveMaxSensitivity.php).
+ * same-build baseline adaptive-max-45 - AdaptiveMaxSensitivity.php). --fixed-tod (long protocol only) re-times fixed-time signals
+ * on the hour for that hour's evening demand instead of one peak plan (runHeadless.js's fixedTimeOfDay).
  *
  * --rep-range=<from>-<to> runs only those reps (0-based, inclusive) - one shard of a batch, so several processes can share
  * a condition; give the shards the same --batch-id and --warmup-ticks. A shard keeps its own checkpoint and is resumed
@@ -117,6 +118,7 @@ function parseArgs(argv) {
         websterTurnWeight: false,
         fixedFloor: 0,
         adaptiveMax: 'default',
+        fixedTod: false,
         repRange: null,
         giveUpMin: null,
         tag: null,
@@ -148,6 +150,7 @@ function parseArgs(argv) {
         else if (key === 'give-up') args.giveUpMin = Number(value);
         else if (key === 'tag') args.tag = value;
         else if (key === 'adaptive-max') args.adaptiveMax = value;
+        else if (key === 'fixed-tod') args.fixedTod = true;
         else if (key === 'rep-range') args.repRange = value.split('-').map(Number);
         else if (key === 'demand-scale') args.demandScale = Number(value);
         else if (key === 'end-to-end-share') args.endToEndShare = Number(value);
@@ -158,6 +161,7 @@ function parseArgs(argv) {
         else if (key === 'sensors') args.sensors = value.split(',');
     }
     if (!['default', 'sartsm'].includes(args.adaptiveMax)) throw new Error(`--adaptive-max=${args.adaptiveMax}: default or sartsm.`);
+    if (args.fixedTod && args.protocol !== 'long') throw new Error('--fixed-tod needs --protocol=long (the evening demand profile).');
     if (args.repRange && !(args.repRange.length === 2 && args.repRange.every(Number.isInteger) && args.repRange[0] >= 0 && args.repRange[0] <= args.repRange[1])) throw new Error('--rep-range=<from>-<to>, e.g. 0-9.');
     if (!['short', 'long'].includes(args.protocol)) throw new Error(`--protocol=${args.protocol}: short or long.`);
     if (args.protocol === 'long') {
@@ -336,7 +340,7 @@ async function main() {
     const rollingWindows = long ? LONG_PROTOCOL.rollingSchedule : ROLLING_SCHEDULE;
     if (long) console.log(`Protocol: ${LONG_PROTOCOL.id} - ${args.duration * args.dt / 60} measured min, demand ${EVENING_PROFILE.id} from 16:15, outage from 16:30.`);
     // A sweep point is never the baseline: adopting a demand level means editing the corridor's own demand ranges.
-    const batchKind = args.tag || args.adaptiveMax !== 'default' || args.giveUpMin != null || args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
+    const batchKind = args.tag || args.adaptiveMax !== 'default' || args.fixedTod || args.giveUpMin != null || args.websterTurnWeight || args.fixedFloor || args.demandScale !== 1 || args.endToEndShare != null || args.ablation != null ? 'sensitivity' : 'main';
     const arm = args.ablation != null ? ABLATION_ARMS[args.ablation] : null;
     if (arm) console.log(`Ablation: ${arm.label} ${JSON.stringify(arm.coordination)}`);
     if (matrix.some((c) => c.powerState === 'rolling_blackout') && ![...(corridorConfig.arterials ?? [])].some((a) => a.zone != null)) {
@@ -372,7 +376,7 @@ async function main() {
     for (const condition of matrix) {
         // An ablation arm writes beside the others, never over them - the arms share condition keys.
         // So do a sweep's runs: --tag names their folder, else the floor or give-up setting does.
-        const variant = args.tag ?? args.ablation ?? (args.adaptiveMax !== 'default' ? `adaptive-max-${args.adaptiveMax}` : args.fixedFloor ? `floor${args.fixedFloor}` : args.giveUpMin != null ? `giveup${args.giveUpMin}` : null);
+        const variant = args.tag ?? args.ablation ?? (args.adaptiveMax !== 'default' ? `adaptive-max-${args.adaptiveMax}` : args.fixedTod ? 'fixed-tod' : args.fixedFloor ? `floor${args.fixedFloor}` : args.giveUpMin != null ? `giveup${args.giveUpMin}` : null);
         const outDir = path.join(ROOT, 'results', variant ? `${condition.key}.${variant}` : condition.key);
         fs.mkdirSync(outDir, { recursive: true });
 
@@ -399,6 +403,7 @@ async function main() {
                 websterTurnWeight: args.websterTurnWeight,
                 fixedFloorS: args.fixedFloor,
                 adaptiveMaxGreen: args.adaptiveMax,
+                fixedTimeOfDay: args.fixedTod,
                 entryBacklogBalkS: args.giveUpMin != null ? args.giveUpMin * 60 : undefined,
                 coordination: arm?.coordination ?? {},
                 ...(long ? { demandProfile: { profile: EVENING_PROFILE, startClockS: LONG_PROTOCOL.startClockS }, sampleEverySeconds: LONG_PROTOCOL.sampleEverySeconds } : {}),

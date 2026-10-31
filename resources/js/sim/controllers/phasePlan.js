@@ -38,10 +38,11 @@ export const FALLBACK_TURN_GREEN_S = 12;
  * q, the turn `weight` only on the minimum green; `websterTurnWeight` (a sensitivity run only)
  * also scales a protected turn's q by its weight before Webster (engine.js's _turnStagesAt()).
  */
-export function controllerConfigFor({ websterTurnWeight = false, fixedFloorS = 0, adaptiveMaxGreen = 'default' } = {}) {
+export function controllerConfigFor({ websterTurnWeight = false, fixedFloorS = 0, adaptiveMaxGreen = 'default', fixedTimeOfDay = false } = {}) {
     return {
         ...(fixedFloorS ? { fixedTimeFloorS: fixedFloorS } : {}),
         ...(adaptiveMaxGreen === 'sartsm' ? { adaptiveMaxGreen: 'sartsm-webster-c120' } : {}),
+        ...(fixedTimeOfDay ? { fixedTimeOfDay: 'hourly-evening-profile' } : {}),
         websterTurnInput: websterTurnWeight ? 'q-x-weight' : 'real-q',
         turnWeightActsOn: websterTurnWeight ? 'min-green+webster-q' : 'min-green',
         minGreenS: MIN_GREEN_S,

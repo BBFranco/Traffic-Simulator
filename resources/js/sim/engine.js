@@ -1313,6 +1313,8 @@ export class SimulationEngine {
         this.websterTurnWeight = websterTurnWeight;
         /** Fixed-time practice cycle floor in s (plan step 14) - 0 is the SARTSM 30 s baseline. */
         this.fixedFloorS = fixedFloorS;
+        /** The demand fixed-time plans are timed for, as a multiple of the design (peak) demand - 1 except in the time-of-day plan sensitivity (setFixedPlanScale()). */
+        this.fixedPlanScale = 1;
         /** Plain adaptive's maximum greens: 'default' (45 s, 25 s x weight per turn) or 'sartsm' - the sensitivity arm (phasePlan.js's sartsmMaxGreens()). */
         this.adaptiveMaxGreen = adaptiveMaxGreen;
         /** How long an arrival queues at a full entry before giving up - the give-up sensitivity (plan Phase 3) varies it. */
@@ -2316,10 +2318,37 @@ export class SimulationEngine {
         }
         for (const info of nodeInfos) {
             if (info.controllerType === 'fixed') {
-                info.controller.recompute(this._arterialDemandAt(info.node), this._crossDemandFor(info.node), this._turnStagesAt(info));
+                info.controller.recompute(...this._fixedPlanInputs(info));
             } else if (info.controllerType === 'adaptive' && this.adaptiveMaxGreen === 'sartsm') {
                 info.controller.maxGreens = this._adaptiveMaxGreensAt(info);
             }
+        }
+    }
+
+    /**
+     * A fixed-time plan's Webster inputs - arterial demand, cross demand, turn stages - with every flow scaled by
+     * fixedPlanScale. At the default 1 they are the design-demand inputs unchanged.
+     */
+    _fixedPlanInputs(info) {
+        const arterial = this._arterialDemandAt(info.node);
+        const cross = this._crossDemandFor(info.node);
+        const turn = this._turnStagesAt(info);
+        const k = this.fixedPlanScale;
+        if (k === 1) return [arterial, cross, turn];
+        const scale = (d) => (d ? { ...d, spawnRatePerLanePerMin: d.spawnRatePerLanePerMin * k } : d);
+        return [scale(arterial), scale(cross), turn.map((t) => (t ? { ...t, demand: scale(t.demand) } : t))];
+    }
+
+    /**
+     * Time-of-day plan sensitivity: re-time every lit fixed-time signal for `scale` x the design demand (runHeadless.js,
+     * on the hour). The switch takes effect at once, mid-cycle, from the current stage - a simple transition. Dark
+     * junctions pick the plan up when they are rebuilt on the restore.
+     */
+    setFixedPlanScale(scale) {
+        if (scale === this.fixedPlanScale) return;
+        this.fixedPlanScale = scale;
+        for (const info of this.nodesInfo.values()) {
+            if (info.controllerType === 'fixed') info.controller.recompute(...this._fixedPlanInputs(info));
         }
     }
 
@@ -2725,7 +2754,7 @@ export class SimulationEngine {
             info.allWayStopOccupants = new Map();
         } else if (arterialState.mode === 'fixed') {
             info.controllerType = 'fixed';
-            info.controller = new FixedTimeController(this._arterialDemandAt(info.node), crossDemand, this._turnStagesAt(info), this.fixedFloorS);
+            info.controller = new FixedTimeController(...this._fixedPlanInputs(info), this.fixedFloorS);
         } else if (arterialState.mode === 'adaptive') {
             info.controllerType = 'adaptive';
             info.controller = new AdaptiveController(undefined, info.turnStages.map((stage) => stage?.weight ?? null), this._adaptiveMaxGreensAt(info));

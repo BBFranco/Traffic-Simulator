@@ -18,7 +18,7 @@ import { buildStages, controllerConfigFor, fixedTimeGreens, stageRatios } from '
 import { sensorSpecHash } from './sensorSpecs.js';
 import { SignalDiagnostics } from './metrics/signalDiagnostics.js';
 import { ZoneFlow } from './metrics/zoneFlow.js';
-import { profileMultiplier } from './demandProfile.js';
+import { hourPlanMultiplier, profileMultiplier } from './demandProfile.js';
 import { avgWait, carsInDriveways, divertedPct, meanDrivewayWaitS, meanTripDelayS, meanTripS, throughputPerMin as perMin, zeroStopPct } from './metrics/definitions.js';
 
 /** Row/perArterial id for the traffic on `scope: "arterial"` connectors, counted in the arterial scope. */
@@ -56,6 +56,7 @@ const readsSensors = (controllerMode) => controllerMode === 'adaptive' || contro
  *                             null keeps the corridor's (random when it has no `routing` section)
  * @param websterTurnWeight    sensitivity runs only: Webster's protected-turn q scaled by the stage's weight
  * @param fixedFloorS          sensitivity runs only (plan step 14): fixed-time cycles never shorter than this many s (50 or 60); 0 = SARTSM 30 s
+ * @param fixedTimeOfDay       sensitivity runs only (time-of-day plans): with a demandProfile, fixed-time signals are re-timed on the hour for that hour's demand (demandProfile.js's hourPlanMultiplier()); false = one peak plan all evening
  * @param adaptiveMaxGreen     sensitivity runs only (plan Phase 4 item 6): 'sartsm' caps plain adaptive's maxima to a 120 s cycle (phasePlan.js's sartsmMaxGreens()); 'default' = 45 s
  * @param entryBacklogBalkS    sensitivity runs only: s an arrival queues at a full entry before giving up; undefined = engine.js's ENTRY_BACKLOG_BALK_S
  * @param coordination         coordinated adaptive's overrides of equations.js's COORDINATED_DEFAULTS - e.g.
@@ -84,6 +85,7 @@ export function runHeadless({
     websterTurnWeight = false,
     fixedFloorS = 0,
     adaptiveMaxGreen = 'default',
+    fixedTimeOfDay = false,
     entryBacklogBalkS = undefined,
     coordination = {},
     sensorSpecSet = undefined,
@@ -121,6 +123,8 @@ export function runHeadless({
         ...(controllerMode === 'adaptive_rich' ? { callRule: 'rich' } : {}),
     });
 
+    /** Recorded on the run's config only - the re-timing itself happens in the tick loop below. */
+    engine.fixedTimeOfDay = Boolean(fixedTimeOfDay && demandProfile);
     const sampleEveryTicks = Math.max(1, Math.round(sampleEverySeconds / dt));
     const rows = [];
     const sideStreetRows = [];
@@ -148,6 +152,7 @@ export function runHeadless({
         const measuredTick = tick - warmupTicks;
         if (demandProfile && tick % ticksPerSecond === 0) {
             engine.demandMultiplier = profileMultiplier(demandProfile.profile, demandProfile.startClockS + measuredTick * dt);
+            if (fixedTimeOfDay) engine.setFixedPlanScale(hourPlanMultiplier(demandProfile.profile, demandProfile.startClockS + measuredTick * dt));
         }
 
         if (!statsReset && measuredTick >= 0) {
@@ -630,7 +635,7 @@ function buildSummary({
             waitAccounting: WAIT_ACCOUNTING,
             ...(engine.zones.length ? { zoneAccounting: ZONE_ACCOUNTING } : {}),
             controllerConfig: {
-                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight, fixedFloorS: engine.fixedFloorS, adaptiveMaxGreen: engine.adaptiveMaxGreen }),
+                ...controllerConfigFor({ websterTurnWeight: engine.websterTurnWeight, fixedFloorS: engine.fixedFloorS, adaptiveMaxGreen: engine.adaptiveMaxGreen, fixedTimeOfDay: engine.fixedTimeOfDay }),
                 // Which coordination layers ran (and their thresholds) - so an ablation run never reads as the full mode.
                 ...(controllerMode === 'coordinated_adaptive' ? { coordination: { ...engine.coordination } } : {}),
             },
