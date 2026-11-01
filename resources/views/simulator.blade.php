@@ -68,9 +68,16 @@
                         <x-segmented control="replay-power-state" size="sm" value="normal"
                                      :options="$replayPowerOptions" />
                     </div>
+                    <div class="mt-3">
+                        <div class="mb-1 flex items-center gap-1.5">
+                            <label for="replay-seed-select" class="text-xs font-medium text-slate-700 dark:text-slate-300">Batch seed</label>
+                            <x-info-tip text="Every seed this condition was run on in the batch. Picking a condition, power state or seed plays that exact run." />
+                        </div>
+                        <select id="replay-seed-select" class="{{ $select }} font-mono"></select>
+                    </div>
                     <button type="button" id="replay-load-button"
                             class="mt-3 w-full rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:bg-sky-500/20">
-                        Load &amp; play
+                        Play from start
                     </button>
                     <p id="replay-status" class="mt-1.5 text-[10px] leading-relaxed text-slate-500"></p>
                 </div>

@@ -23,6 +23,7 @@ import { Renderer2D } from './renderers/Renderer2D.js';
 import { VIEW_2D, VIEW_3D } from './renderers/RendererInterface.js';
 import { SimulationEngine } from './sim/engine.js';
 import { ROLLING_SCHEDULE } from './sim/batchSchedule.js';
+import { profileMultiplier } from './sim/demandProfile.js';
 import { LiveMetrics } from './sim/metrics/liveMetrics.js';
 import { LiveStatsPanel } from './sim/metrics/liveStatsPanel.js';
 import { applyChartTheme } from './charts/theme.js';
@@ -126,9 +127,8 @@ const RUN_TO_TIME_FRAME_BUDGET_MS = 40;
 let pauseAfterCatchUp = true;
 
 /**
- * Batch-dataset runs available to replay, one representative per (controller_mode,
- * power_state, sensor_mode) condition - fetched from GET /simulator/sample-runs. See
- * fetchSampleRuns().
+ * Every run of the latest batch available to replay (id, seed and condition only) - fetched
+ * from GET /simulator/sample-runs. See fetchSampleRuns().
  */
 let sampleRuns = [];
 /** The "Power" side of the replay picker - 'normal' | 'load_shedding' | 'rolling_blackout'. */
@@ -183,6 +183,7 @@ const el = {
     replayEmptyState: document.getElementById('replay-empty-state'),
     replayPicker: document.getElementById('replay-picker'),
     replayFamilySelect: document.getElementById('replay-family-select'),
+    replaySeedSelect: document.getElementById('replay-seed-select'),
     replayLoadButton: document.getElementById('replay-load-button'),
     replayStatus: document.getElementById('replay-status'),
     runStatePill: document.getElementById('run-state-pill'),
@@ -279,7 +280,7 @@ function selectedText(select) {
 function railSummaries() {
     return {
         'rail-scenario': () => `${selectedText(el.corridorSelect)} · seed ${el.seedInput.value}`,
-        'rail-replay': () => selectedText(document.getElementById('replay-family-select')),
+        'rail-replay': () => `${selectedText(el.replayFamilySelect)} · seed ${el.replaySeedSelect.value}`,
         'rail-signal': () => {
             const counts = new Map();
             for (const mode of Object.values(state.arterialModes)) counts.set(mode, (counts.get(mode) ?? 0) + 1);
@@ -349,6 +350,8 @@ segmentedHandlers.set('view', (value) => {
 
 segmentedHandlers.set('replay-power-state', (value) => {
     replaySelectedPowerState = value;
+    populateReplaySeedSelect();
+    playSelectedReplay();
 });
 
 /* -------------------------------------------------------- corridor loading */
@@ -442,9 +445,8 @@ async function fetchCorridor(id) {
 }
 
 /**
- * Loads the "replay a batch run" picker's options for the given corridor - one representative
- * run per (controller_mode, power_state, sensor_mode) condition, from that corridor's latest batch
- * in the current routing mode. Called every time a corridor finishes loading (see loadCorridor())
+ * Loads the "replay a batch run" picker's options for the given corridor - every run of that
+ * corridor's latest batch in the current routing mode. Called every time a corridor finishes loading (see loadCorridor())
  * or Destination routing is toggled, so the picker never offers a run for a corridor or routing
  * mode that isn't the one on screen.
  */
@@ -452,7 +454,7 @@ async function fetchSampleRuns(corridorId) {
     if (!el.replayPicker) return; // picker markup not present (should always exist, defensive only)
 
     try {
-        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}&routing=${state.routingMode}`;
+        const url = `/simulator/sample-runs?corridor=${encodeURIComponent(corridorId)}`;
         const response = await fetch(url, { headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const body = await response.json();
@@ -500,6 +502,34 @@ function populateReplayFamilySelect() {
         })
     );
     if ([...families.keys()].includes(previousValue)) el.replayFamilySelect.value = previousValue;
+    populateReplaySeedSelect();
+}
+
+/** The selected condition's runs at the selected power state, by seed. */
+function replayCandidates() {
+    const familyKey = el.replayFamilySelect.value;
+    return sampleRuns
+        .filter((run) => replayFamilyKey(run) === familyKey && run.power_state === replaySelectedPowerState)
+        .sort((a, b) => a.seed - b.seed);
+}
+
+/** Lists the seeds the chosen condition ran on, keeping the current seed when it is one of them (paired comparisons). */
+function populateReplaySeedSelect() {
+    const previousSeed = el.replaySeedSelect.value || String(state.seed);
+    const candidates = replayCandidates();
+
+    el.replaySeedSelect.replaceChildren(
+        ...candidates.map((run, index) => {
+            const option = document.createElement('option');
+            option.value = String(run.seed);
+            option.dataset.runId = run.id;
+            option.textContent = `${run.seed}  (run ${index + 1} of ${candidates.length})`;
+            return option;
+        })
+    );
+    el.replaySeedSelect.disabled = candidates.length === 0;
+    if (candidates.some((run) => String(run.seed) === previousSeed)) el.replaySeedSelect.value = previousSeed;
+    railAccordion?.refresh();
 }
 
 function renderCorridorSummary() {
@@ -1156,9 +1186,13 @@ function clearCorridorError() {
     el.corridorError?.classList.add('hidden');
 }
 
-/** Full restart at t=0 with the current seed/config - shared by Reset, seed change and seed randomise. */
-function restartEngine() {
-    engine.reset(engineResetOptions());
+/**
+ * Full restart at t=0 with the current seed/config - shared by Reset, seed change and seed randomise.
+ * `extraResetOptions` are engine settings with no control of their own (a replay's call rule and
+ * sensor set); any later restart drops them again.
+ */
+function restartEngine(extraResetOptions = {}) {
+    engine.reset({ ...engineResetOptions(), ...extraResetOptions });
     syncDriveways();
     accumulatorS = 0;
     lastFrameMs = null;
@@ -1228,7 +1262,6 @@ el.destinationRoutingInput.addEventListener('change', () => {
     state.routingMode = el.destinationRoutingInput.checked ? 'destination' : 'random';
     restartEngine();
     logChange('routingMode', state.routingMode);
-    fetchSampleRuns(state.corridorId); // the replay picker offers that routing mode's latest batch
 });
 
 document.getElementById('battery-backed-sensors').addEventListener('change', (event) => {
@@ -1332,10 +1365,15 @@ const REPLAY_POWER_LABELS = { normal: 'at normal power', load_shedding: 'with a 
 const REPLAY_POWER_NOUNS = { normal: 'normal-power', load_shedding: 'total-blackout', rolling_blackout: 'load-shedding' };
 
 async function startReplay(run) {
-    if (run.corridor_config !== state.corridorId) {
-        await loadCorridor(run.corridor_config);
-        el.corridorSelect.value = run.corridor_config;
-    }
+    const config = run.raw_config_json ?? {};
+
+    // The batch ran on the shared template with the batch dialog's demand overrides, not on the
+    // user's own saved layout - load exactly that, or the replay is a different network.
+    const templateUrl = boot.corridorTemplateUrlTemplate.replace('__ID__', encodeURIComponent(run.corridor_config));
+    const response = await fetch(templateUrl, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`Failed to load the batch's corridor template (HTTP ${response.status}).`);
+    await loadCorridor(run.corridor_config, { config: withDemandOverrides(await response.json(), config.demandOverrides ?? {}) });
+    el.corridorSelect.value = run.corridor_config;
 
     state.seed = run.seed;
     el.seedInput.value = state.seed;
@@ -1376,18 +1414,23 @@ async function startReplay(run) {
 
     // Batch runs apply one controller mode to every arterial (see runHeadless.js) - the live
     // page's default is per-arterial, so this has to be forced, not just left to whatever the
-    // corridor's own default happened to be.
+    // corridor's own default happened to be. adaptive_rich is adaptive on the rich call rule.
+    const isRich = run.controller_mode === 'adaptive_rich';
     for (const arterial of layout.arterials) {
-        state.arterialModes[arterial.id] = run.controller_mode;
+        state.arterialModes[arterial.id] = isRich ? 'adaptive' : run.controller_mode;
     }
     buildArterialModeControls();
     railAccordion?.refresh();
 
-    restartEngine(); // real engine.reset() with all of the above now in `state`
+    // real engine.reset() with all of the above now in `state`, plus the run's settings no control holds
+    restartEngine({
+        ...(config.sensorSpecSet ? { sensorSpecSet: config.sensorSpecSet } : {}),
+        sensorErrors: Boolean(config.sensorErrors),
+        ...(isRich ? { callRule: 'rich' } : {}),
+    });
     // A fixed-time run is its own baseline; any other replay compares against its fixed-time twin.
     livePanel.setContext({ routingActive: engine.routingActive, replayTwin: run.controller_mode === 'fixed' ? null : run.fixed_twin ?? null });
 
-    const config = run.raw_config_json ?? {};
     const warmupTicks = config.warmupTicks ?? 0;
     replay = {
         ticks: 0,
@@ -1401,7 +1444,10 @@ async function startReplay(run) {
         durationTicks: config.durationTicks ?? Infinity,
         outageStarted: false,
         outageEnded: false,
+        /** The long protocol's time-of-day demand ({ peakPct, hourPct, startClockS }) - null on a flat-demand run. */
+        demandProfile: config.demandProfile ?? null,
     };
+    applyReplayDemandProfile();
 
     if (warmupTicks > 0) {
         // Reuse the "Run to t=1000s" catch-up mechanism to blast through warm-up silently -
@@ -1421,27 +1467,41 @@ async function startReplay(run) {
     logChange('replay', `${label} - ${powerLabel} (seed ${state.seed})`);
 }
 
-el.replayLoadButton?.addEventListener('click', async () => {
-    const familyKey = el.replayFamilySelect.value;
-    const run = sampleRuns.find((r) => replayFamilyKey(r) === familyKey && r.power_state === replaySelectedPowerState);
-    if (!run) {
+/** Bumped per request so a slow fetch can't start a run the picker has already moved past. */
+let replayRequest = 0;
+
+/** Fetches the picked batch run (its recorded timeline and fixed-time twin) and plays it. */
+async function playSelectedReplay() {
+    const runId = el.replaySeedSelect.selectedOptions[0]?.dataset.runId;
+    if (!runId) {
         if (el.replayStatus) {
             el.replayStatus.textContent = `No ${REPLAY_POWER_NOUNS[replaySelectedPowerState] ?? 'normal-power'} run found for this condition.`;
         }
         return;
     }
 
+    const request = ++replayRequest;
     el.replayLoadButton.disabled = true;
     try {
-        await startReplay(run);
+        const response = await fetch(`/simulator/sample-runs/${encodeURIComponent(runId)}`, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const run = await response.json();
+        if (request === replayRequest) await startReplay(run);
     } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Replay failed to start', error);
         if (el.replayStatus) el.replayStatus.textContent = `Replay failed: ${error.message}`;
     } finally {
-        el.replayLoadButton.disabled = false;
+        if (request === replayRequest) el.replayLoadButton.disabled = false;
     }
+}
+
+el.replayFamilySelect?.addEventListener('change', () => {
+    populateReplaySeedSelect();
+    playSelectedReplay();
 });
+el.replaySeedSelect?.addEventListener('change', playSelectedReplay);
+el.replayLoadButton?.addEventListener('click', playSelectedReplay);
 
 el.runToggle.addEventListener('click', () => {
     runUntilS = null;
@@ -1696,6 +1756,8 @@ function tickEngine() {
         }
     }
 
+    applyReplayDemandProfile();
+
     if (measuredTick >= replay.durationTicks) {
         replay = null;
         runUntilS = null;
@@ -1704,6 +1766,32 @@ function tickEngine() {
         renderRunPill();
         logChange('replay', 'reached end of recorded run - paused');
     }
+}
+
+/**
+ * A long-protocol replay's evening demand: the multiplier runHeadless.js sets once a simulated
+ * second, before that tick, from the clock at the measured tick (negative through warm-up).
+ */
+function applyReplayDemandProfile() {
+    if (!replay?.demandProfile || replay.ticks % Math.round(1 / FIXED_DT_S) !== 0) return;
+    const measuredTick = replay.ticks - replay.warmupTicks;
+    engine.demandMultiplier = profileMultiplier(replay.demandProfile, replay.demandProfile.startClockS + measuredTick * FIXED_DT_S);
+}
+
+/** results.js's applyDemandOverrides(): the batch dialog's per-street demand on a corridor config. */
+function withDemandOverrides(corridorConfig, overrides) {
+    const clone = structuredClone(corridorConfig);
+    for (const street of [...(clone.arterials ?? []), ...(clone.connectors ?? [])]) {
+        const override = overrides[street.id];
+        if (!override) continue;
+        street.demand = {
+            ...street.demand,
+            spawnRatePerLanePerMinMin: override.min,
+            spawnRatePerLanePerMinMax: override.max,
+            saturationFlowPerLanePerHour: override.saturationFlowPerLanePerHour,
+        };
+    }
+    return clone;
 }
 
 /* --------------------------------------------------------------------- boot */

@@ -661,8 +661,12 @@ Files: `resources/views/simulator.blade.php`, `resources/js/simulator.js`, `reso
 - **Corridor picker** — loads a JSON layout; description/fact chips update live.
 - **Seed input + Random button** — same seed + config reproduces an
   identical run.
-- **Replay a batch run** — loads one recorded run per (controller, sensor,
-  power) condition from `/simulator/sample-runs`, forcing every control to
+- **Replay a batch run** — lists every run of the corridor's latest main batch
+  (any routing mode) from `/simulator/sample-runs` as condition + power + batch
+  seed; picking any of them fetches that run (`/simulator/sample-runs/{run}`)
+  and plays it at once on the shared corridor template with the batch's demand
+  overrides, its evening demand profile (long protocol), sensor set and call
+  rule (the seed field shows the batch seed), forcing every control to
   match the recorded conditions, fast-forwarding through warm-up, then
   auto-triggering the power outage at the original tick and auto-pausing at
   the recorded duration's end.

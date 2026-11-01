@@ -75,8 +75,9 @@ Route::middleware('auth')->group(function () {
         ->where('corridor', '[A-Za-z0-9_-]+')
         ->name('corridors.routing-tiers.update');
 
-    // One representative batch-dataset run per condition, for the "replay a batch run" picker.
+    // The latest batch's runs (condition + seed), for the "replay a batch run" picker, and the one it plays.
     Route::get('/simulator/sample-runs', [SimulatorController::class, 'sampleRuns'])->name('simulator.sample-runs');
+    Route::get('/simulator/sample-runs/{simulationRun}', [SimulatorController::class, 'replayRun'])->name('simulator.sample-runs.show');
 
     Route::get('/results', [ResultsController::class, 'index'])->name('results');
     // JSON refresh for the batch-run button (build step 17) - re-render charts

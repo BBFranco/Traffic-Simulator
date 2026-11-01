@@ -38,6 +38,8 @@ class SimulatorComposer
                 'defaultCorridorId' => $data['defaultCorridorId'] ?? null,
                 'defaultCorridor' => $data['defaultCorridor'] ?? null,
                 'corridorUrlTemplate' => route('corridors.show', ['corridor' => '__ID__']),
+                // A replay runs on the shared template the batch ran on, not the user's own layout.
+                'corridorTemplateUrlTemplate' => route('corridor-templates.show', ['corridor' => '__ID__']),
             ],
         ]);
     }

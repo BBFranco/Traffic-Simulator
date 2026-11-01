@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BatchKind;
-use App\Enums\RoutingMode;
 use App\Models\SimulationRun;
 use App\Support\UserCorridorLayouts;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,51 +40,48 @@ class SimulatorController extends Controller
     }
 
     /**
-     * One representative run per (controller_mode, power_state, sensor_mode) condition from
-     * the corridor's latest main batch in the requested routing mode (`?routing=`, random by
-     * default) - feeds the Simulator page's "replay a batch run" picker. The lowest `id` in each
-     * group is as good a representative as any other rep of the same condition (same
-     * distribution, different seed), so this doesn't need to be configurable.
-     *
-     * `raw_config_json` carries everything (seed, warmup/outage/duration ticks) a replay needs
-     * to reproduce that run's exact timeline - see runHeadless.js's buildSummary().
-     * `fixed_twin` is the same batch's fixed-time run on the same seed and power state, for the
-     * live panel's "vs fixed-time" delta - null when the batch has none.
+     * Every run of the corridor's latest main batch, whatever its routing mode - feeds the Simulator
+     * page's "replay a batch run" picker, which offers each (controller_mode, sensor_mode,
+     * power_state) condition with the seeds it ran on. Not tied to the page's routing toggle: the
+     * random-turn batches are older short-protocol ones. Kept to the picker's columns; replayRun()
+     * serves the one run actually played.
      */
     public function sampleRuns(Request $request): JsonResponse
     {
         $corridor = $request->query('corridor');
-        $routingMode = RoutingMode::tryFrom((string) $request->query('routing')) ?? RoutingMode::Random;
 
         $latestBatchId = SimulationRun::query()
-            ->where('routing_mode', $routingMode->value)
             ->where('batch_kind', BatchKind::Main->value)
             ->when($corridor, fn (Builder $query) => $query->where('corridor_config', $corridor))
             ->latest('id')
             ->value('batch_id');
 
-        $ids = SimulationRun::query()
-            ->where('batch_id', $latestBatchId)
-            ->selectRaw('MIN(id) as id')
-            ->groupBy('controller_mode', 'power_state', 'sensor_mode')
-            ->pluck('id');
-
         $runs = SimulationRun::query()
-            ->whereIn('id', $ids)
-            ->get(['id', 'seed', 'controller_mode', 'sensor_mode', 'power_state', 'routing_mode', 'corridor_config', 'raw_config_json']);
-
-        $fixedTwins = SimulationRun::query()
             ->where('batch_id', $latestBatchId)
-            ->where('controller_mode', 'fixed')
-            ->whereIn('seed', $runs->pluck('seed'))
-            ->get(['seed', 'power_state', 'avg_wait_time', 'throughput_per_min'])
-            ->keyBy(fn (SimulationRun $run): string => "{$run->seed}|{$run->power_state->value}");
-
-        $runs->each(fn (SimulationRun $run) => $run->setAttribute(
-            'fixed_twin',
-            $fixedTwins->get("{$run->seed}|{$run->power_state->value}")?->only(['avg_wait_time', 'throughput_per_min'])
-        ));
+            ->orderBy('id')
+            ->get(['id', 'seed', 'controller_mode', 'sensor_mode', 'power_state']);
 
         return response()->json(['runs' => $runs]);
+    }
+
+    /**
+     * One batch run, ready to replay. `raw_config_json` carries everything (seed, warmup/outage/
+     * duration ticks) a replay needs to reproduce that run's exact timeline - see runHeadless.js's
+     * buildSummary(). `fixed_twin` is the same batch's fixed-time run on the same seed and power
+     * state, for the live panel's "vs fixed-time" delta - null when the batch has none.
+     */
+    public function replayRun(SimulationRun $simulationRun): JsonResponse
+    {
+        $fixedTwin = SimulationRun::query()
+            ->where('batch_id', $simulationRun->batch_id)
+            ->where('controller_mode', 'fixed')
+            ->where('seed', $simulationRun->seed)
+            ->where('power_state', $simulationRun->power_state->value)
+            ->first(['avg_wait_time', 'throughput_per_min']);
+
+        return response()->json([
+            ...$simulationRun->only(['id', 'seed', 'controller_mode', 'sensor_mode', 'power_state', 'routing_mode', 'corridor_config', 'raw_config_json']),
+            'fixed_twin' => $fixedTwin?->only(['avg_wait_time', 'throughput_per_min']),
+        ]);
     }
 }
